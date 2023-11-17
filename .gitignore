@@ -17,7 +17,6 @@ triggers/*
 .env*
 *.env
 !template*.env
-!sheet_ids.env
 service_account_credentials.json
 oauth.json
 mycreds.txt
