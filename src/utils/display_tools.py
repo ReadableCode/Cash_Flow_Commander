@@ -224,3 +224,4 @@ def display_file_tree(root_dir, indent=0, ls_ignore_patterns=[]):
                 ls_unignored_file_paths.append(path)
 
     return ls_unignored_file_paths
+
