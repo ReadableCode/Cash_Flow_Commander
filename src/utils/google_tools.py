@@ -857,23 +857,31 @@ def get_book_id_from_parent_folder_id_oauth(parent_folder_id, book_name):
 
 
 def get_file_list_from_folder_id(folder_id):
-    # authenticate with the Google Drive API using your service account credentials
+    # Authenticate with the Google Drive API using your service account credentials
     credentials = service_account.Credentials.from_service_account_info(
         json.loads(os.getenv(google_service_account_var), strict=False),
         scopes=["https://www.googleapis.com/auth/drive"],
     )
     service = build("drive", "v3", credentials=credentials)
 
-    # retrieve a list of files in the specified folder
-    results = (
-        service.files()
-        .list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="nextPageToken, files(id, name)",
+    files = []
+    page_token = None
+
+    while True:
+        # Retrieve a list of files in the specified folder
+        results = (
+            service.files()
+            .list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="nextPageToken, files(id, name)",
+                pageToken=page_token,
+            )
+            .execute()
         )
-        .execute()
-    )
-    files = results.get("files", [])
+        files.extend(results.get("files", []))
+        page_token = results.get("nextPageToken", None)
+        if page_token is None:
+            break
 
     if not files:
         print_logger("No files found.")
@@ -1561,4 +1569,3 @@ def append_text_to_doc_by_id(id, text):
 
 
 # %%
-
