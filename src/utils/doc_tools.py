@@ -1,5 +1,5 @@
 # %%
-## Imports ##
+# Imports #
 
 import os
 import pandas
@@ -24,14 +24,14 @@ from utils.display_tools import print_logger
 
 
 # %%
-## Variables ##
+# Variables #
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 docs_dir = os.path.join(grandparent_dir, "docs")
 
 
 # %%
-## Link Formatting Tools ##
+# Link Formatting Tools #
 
 
 def get_git_link(script_path, repo_owner, repo_name, branch_name):
@@ -107,7 +107,7 @@ def get_link_from_resource_type(
 
 
 # %%
-## Markdown Tools ##
+# Markdown Tools #
 
 dict_markdown_levels = {
     1: {
@@ -151,7 +151,7 @@ def get_markdown_line(level, name, link=""):
 
 
 # %%
-## Logging Tools ##
+# Logging Tools #
 
 
 def log_data_pipeline_unified(
@@ -224,4 +224,3 @@ def log_data_pipeline_unified(
 
 
 # %%
-

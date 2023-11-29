@@ -1,5 +1,5 @@
 # %%
-## Imports ##
+# Imports #
 
 import os
 import sys
@@ -22,7 +22,7 @@ from utils.config_utils import (
 )
 
 # %%
-## Variables ##
+# Variables #
 
 dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
@@ -30,7 +30,7 @@ if os.path.exists(dotenv_path):
 
 
 # %%
-## Functions ##
+# Functions #
 
 
 def pprint_df(dframe, showindex=False, num_cols=None, num_decimals=2):
@@ -221,4 +221,3 @@ def display_file_tree(root_dir, indent=0, ls_ignore_patterns=[]):
                 ls_unignored_file_paths.append(path)
 
     return ls_unignored_file_paths
-

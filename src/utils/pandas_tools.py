@@ -1,5 +1,5 @@
 # %%
-## Imports ##
+# Imports #
 
 import os
 import argparse
@@ -21,7 +21,7 @@ from utils.display_tools import print_logger, pprint_df
 
 
 # %%
-## Functions ##
+# Functions #
 
 
 def merge_and_return_unmerged(df1, df2, merge_cols, how="left"):
@@ -59,7 +59,7 @@ def merge_and_return_unmerged(df1, df2, merge_cols, how="left"):
 
 
 # %%
-## Main ##
+# Main #
 
 
 if __name__ == "__main__":

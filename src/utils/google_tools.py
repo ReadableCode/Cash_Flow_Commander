@@ -982,7 +982,7 @@ def get_file_tree_from_folder_id_for_file_type(
                         break
                     except:
                         print_logger(
-                            f"###### Failed to get file tree for folder {file['name']} with ID {file['id']}. Trying again in {5 * attempt} seconds. ######",
+                            f"##### Failed to get file tree for folder {file['name']} with ID {file['id']}. Trying again in {5 * attempt} seconds. #####",
                             level="error",
                         )
                         time.sleep(5 * attempt)
