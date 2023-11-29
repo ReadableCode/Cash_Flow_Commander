@@ -1,8 +1,5 @@
 # %%
-## Imports ##
-
-if __name__ != "__main__":
-    print(f"Importing {__name__}")
+# Imports #
 
 import pygsheets
 import os
@@ -40,7 +37,7 @@ from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
 
 
 # %%
-## Google ##
+# Google #
 
 dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
@@ -97,7 +94,7 @@ except Exception as e:
 
 
 # %%
-## Frequently Used Functions ##
+# Frequently Used Functions #
 
 dict_connected_books = {}
 dict_connected_sheets = {}
@@ -750,7 +747,7 @@ def write_df_to_range_of_sheet_obj(
 
 
 # %%
-## Entire Sheet Operations ##
+# Entire Sheet Operations #
 
 
 def copy_sheet_book_to_book(source_book, ls_source_sheets, ls_dest_books):
@@ -776,7 +773,7 @@ def copy_sheet_book_to_book(source_book, ls_source_sheets, ls_dest_books):
 
 
 # %%
-## Auth and gets ##
+# Auth and gets #
 
 
 def get_google_authentication():
@@ -1417,7 +1414,7 @@ def convert_tab_name_to_hyperlink(book_obj, tab_name, link_text):
 
 
 # %%
-## Permission Management ##
+# Permission Management #
 
 
 def get_editors_from_spreadsheet(sheet_id, print_output=True):
@@ -1485,7 +1482,7 @@ def share_list_sheets_to_email(sheet_id_list, email, role="writer", test_mode=Tr
 
 
 # %%
-## Google Docs ##
+# Google Docs #
 
 
 def authenticate_for_google_docs():

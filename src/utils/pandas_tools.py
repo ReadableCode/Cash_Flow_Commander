@@ -1,9 +1,6 @@
 # %%
 ## Imports ##
 
-if __name__ != "__main__":
-    print(f"Importing {__name__}")
-
 import os
 import argparse
 import sys
@@ -88,4 +85,3 @@ if __name__ == "__main__":
 
 
 # %%
-

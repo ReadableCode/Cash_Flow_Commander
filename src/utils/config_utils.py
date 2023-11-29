@@ -1,8 +1,5 @@
 # %%
-## Paths ##
-
-if __name__ != "__main__":
-    print(f"Importing {__name__}")
+# Paths #
 
 import os
 import sys
@@ -31,5 +28,5 @@ if __name__ == "__main__":
     print(f"grandparent_dir: {grandparent_dir}")
     print(f"data_dir: {data_dir}")
 
-# %%
 
+# %%

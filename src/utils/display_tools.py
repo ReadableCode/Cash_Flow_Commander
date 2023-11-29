@@ -1,9 +1,6 @@
 # %%
 ## Imports ##
 
-if __name__ != "__main__":
-    print(f"Importing {__name__}")
-
 import os
 import sys
 from tabulate import tabulate
