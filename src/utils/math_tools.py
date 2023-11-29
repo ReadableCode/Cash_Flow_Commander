@@ -47,4 +47,3 @@ def is_diff_with_errors(delta_percent, threshold):
             return "Diff"
         else:
             return ""
-

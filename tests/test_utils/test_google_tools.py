@@ -1,5 +1,5 @@
 # %%
-## Imports ##
+# Imports #
 
 import os
 import sys
@@ -14,7 +14,7 @@ from src.utils.google_tools import get_book_sheet_df
 from src.utils.display_tools import pprint_ls, pprint_df, print_logger
 
 # %%
-## Tests ##
+# Tests #
 
 
 def test_get_book_sheet_df():
@@ -24,7 +24,7 @@ def test_get_book_sheet_df():
 
 
 # %%
-## Main ##
+# Main #
 
 if __name__ == "__main__":
     test_get_book_sheet_df()
