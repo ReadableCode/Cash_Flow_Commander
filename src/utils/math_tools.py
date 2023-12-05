@@ -1,4 +1,6 @@
 def multiply_with_errors(x, y):
+    if x == 0 or y == 0:
+        return 0
     if x == "ERROR" or y == "ERROR":
         return "ERROR"
     else:
