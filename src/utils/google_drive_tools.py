@@ -139,31 +139,6 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
     return results[0]["id"]
 
 
-# print(
-#     get_drive_file_id_from_folder_id_path(
-#         "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm",
-#         ["uploadtest"],
-#         is_folder=True,
-#     )
-# )  # 1Ch2EZIzgZPf-U0wF8aOiftbwYB_mn4Hp
-
-# print(
-#     get_drive_file_id_from_folder_id_path(
-#         "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm",
-#         ["test", "2023-W05_ODL_Requirements.csv"],
-#         is_folder=False,
-#     )
-# )  # 1yGWkJ2pKMek83BNZEgZ34D3_Y2GtY8Uh
-
-# print(
-#     get_drive_file_id_from_folder_id_path(
-#         "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm",
-#         ["test", "2023-W38_ODL_Requirements.csv"],
-#         is_folder=False,
-#     )
-# )  # 1_MWXlksino2a1uKTtZinsx_aA0b8gGXu
-
-
 def get_file_list_from_folder_id(folder_id):
     files = []
     page_token = None
@@ -191,9 +166,6 @@ def get_file_list_from_folder_id(folder_id):
         return files
 
 
-# print(get_file_list_from_folder_id("1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm")) # returns ls_dicts
-
-
 def get_file_list_from_folder_id_file_path(root_folder_id, ls_file_path):
     ls_directory_path = ls_file_path
 
@@ -204,14 +176,6 @@ def get_file_list_from_folder_id_file_path(root_folder_id, ls_file_path):
     ls_files_dict = get_file_list_from_folder_id(folder_id)
 
     return ls_files_dict
-
-
-# print(
-#     get_file_list_from_folder_id_file_path(
-#         "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm",
-#         ["test", "2023-W38_ODL_Requirements.csv"],
-#     )
-# )
 
 
 def download_file_by_id(id, path, max_retries=3):
@@ -250,13 +214,6 @@ def download_file_by_id(id, path, max_retries=3):
         print("Download successful!")
     else:
         print("Max retries reached. Download failed.")
-
-
-# download_file_by_id(
-#     "1ksuvuNvZNscaGasIBRchH6NCY8QVLS7a",
-#     os.path.join(data_dir, "test_output_download.csv"),
-#     max_retries=3,
-# )
 
 
 def download_and_get_drive_file_path(
@@ -299,16 +256,6 @@ def download_and_get_drive_file_path(
         print_logger(f"File already exists: {ls_file_path}")
 
     return dest_file_path
-
-
-# print(
-#     download_and_get_drive_file_path(
-#         "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm",
-#         ["test_download", "2022-W32_PO_Costs_Snowflake.csv"],
-#         force_download=False,
-#         dest_root_dir_override=None,
-#     )
-# )
 
 
 # %%
