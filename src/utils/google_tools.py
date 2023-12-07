@@ -61,6 +61,24 @@ else:
     )
 
 
+credentials = service_account.Credentials.from_service_account_info(
+    json.loads(os.getenv(google_service_account_var), strict=False),
+    scopes=["https://www.googleapis.com/auth/drive"],
+)
+# Create a Google Drive API client
+drive_service = build("drive", "v3", credentials=credentials)
+
+
+credentials_docs = service_account.Credentials.from_service_account_info(
+    json.loads(os.getenv(google_service_account_var), strict=False),
+    scopes=["https://www.googleapis.com/auth/documents"],
+)
+# Create a Google Docs API client
+docs_service = build("docs", "v1", credentials=credentials_docs)
+
+ls_files_downloaded_this_run = []
+
+
 # %%
 
 gc = pygsheets.authorize(
@@ -825,6 +843,7 @@ def get_file_list_from_folder_id_oauth(folder_id):
     return parent_folder_files
 
 
+# TODO remove since moved to drive tools, replace references
 def get_file_list_from_folder_id_file_path(root_folder_id, ls_file_path):
     ls_directory_path = ls_file_path
 
@@ -853,21 +872,15 @@ def get_book_id_from_parent_folder_id_oauth(parent_folder_id, book_name):
             return file_id
 
 
+# TODO remove since moved to drive tools, replace references
 def get_file_list_from_folder_id(folder_id):
-    # Authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
     files = []
     page_token = None
 
     while True:
         # Retrieve a list of files in the specified folder
         results = (
-            service.files()
+            drive_service.files()
             .list(
                 q=f"'{folder_id}' in parents and trashed=false",
                 fields="nextPageToken, files(id, name)",
@@ -887,163 +900,7 @@ def get_file_list_from_folder_id(folder_id):
         return files
 
 
-def get_file_list_from_folder_id_with_type(folder_id):
-    # authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
-    # retrieve a list of files in the specified folder
-    results = (
-        service.files()
-        .list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="nextPageToken, files(id, name, mimeType)",
-        )
-        .execute()
-    )
-    files = results.get("files", [])
-
-    if not files:
-        print_logger("No files found.")
-        return None
-    else:
-        return files
-
-
-def check_if_ignored(ls_ignore_patterns, file_name):
-    for ignore_pattern in ls_ignore_patterns:
-        if ignore_pattern in file_name:
-            return True
-    return False
-
-
-def get_file_tree_from_folder_id_for_file_type(
-    folder_id,
-    indent=0,
-    ls_file_exts=None,
-    folders_already_scanned=[],
-    curr_folder_path=[],
-    dict_cur_files={},
-    ls_ignore_folders=[],
-):
-    # authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
-    # retrieve a list of files in the specified folder that end in ".yxwz"
-    results = (
-        service.files()
-        .list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="nextPageToken, files(id, name, mimeType, parents)",
-        )
-        .execute()
-    )
-    files = results.get("files", [])
-
-    if not files:
-        # print_logger("No files found.")
-        return None
-    else:
-        for file in files:
-            if not ls_file_exts or (
-                file["name"].split(".")[-1] in ls_file_exts
-                and file["mimeType"] != "application/vnd.google-apps.folder"
-            ):
-                print(" " * indent + "├── " + file["name"])
-                path_with_filename = curr_folder_path.copy()
-                path_with_filename.append(file["name"])
-                dict_cur_files[file["id"]] = path_with_filename
-            if (
-                file["mimeType"] == "application/vnd.google-apps.folder"
-                and file["id"] not in folders_already_scanned
-                and not check_if_ignored(ls_ignore_folders, file["name"])
-            ):
-                print(" " * indent + "├── " + file["name"])
-                subfolder_file_path = curr_folder_path.copy()
-                subfolder_file_path.append(file["name"])
-                for attempt in range(6):
-                    try:
-                        subfolder_files = get_file_tree_from_folder_id_for_file_type(
-                            file["id"],
-                            indent + 4,
-                            folders_already_scanned=folders_already_scanned,
-                            curr_folder_path=subfolder_file_path,
-                            dict_cur_files=dict_cur_files,
-                            ls_file_exts=ls_file_exts,
-                            ls_ignore_folders=ls_ignore_folders,
-                        )
-                        break
-                    except:
-                        print_logger(
-                            f"##### Failed to get file tree for folder {file['name']} with ID {file['id']}. Trying again in {5 * attempt} seconds. #####",
-                            level="error",
-                        )
-                        time.sleep(5 * attempt)
-
-                if subfolder_files:
-                    dict_cur_files.update(subfolder_files)
-                folders_already_scanned.append(file["id"])
-    return dict_cur_files
-
-
-def get_file_list_from_folder_id_recursive(folder_id, level=1):
-    # authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
-    # retrieve a list of files in the specified folder
-    file_list = (
-        service.files()
-        .list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="nextPageToken, files(id, name, parents, mimeType)",
-        )
-        .execute()
-    )
-
-    files = []
-
-    for file in file_list["files"]:
-        if (
-            "mimeType" not in file
-            or file["mimeType"] == "application/vnd.google-apps.folder"
-        ):
-            files.append(
-                {
-                    "id": file["id"],
-                    "name": file["name"],
-                    "parents": file["parents"],
-                    "type": "folder",
-                }
-            )
-
-            # recursively call the function for each subfolder
-            files += get_file_list_from_folder_id_recursive(file["id"], level + 1)
-
-        else:
-            files.append(
-                {
-                    "id": file["id"],
-                    "name": file["name"],
-                    "parents": file["parents"],
-                    "type": "file",
-                    "mimeType": file["mimeType"],
-                }
-            )
-
-    return files
-
-
+# TODO remove since moved to drive tools, replace references
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
     """
     Given a folder ID and a list of folder and file names, returns the ID of the file with the specified name that
@@ -1060,41 +917,45 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
     Raises:
         ValueError: If the specified folder or file cannot be found in the specified path.
     """
-    # authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
     curr_dir_id = folder_id
     for folder_name in ls_file_path[:-1]:
         print_logger(
             f"Scanning folder {folder_name} with ID {curr_dir_id}", level="debug"
         )
-        # search for the folder by name and within the current directory
-        query = f"name='{folder_name}' and '{curr_dir_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
-        results = (
-            service.files()
-            .list(q=query, fields="files(id, name)")
-            .execute()
-            .get("files", [])
-        )
+
+        file_found = False  # Initialize a flag variable to False
+
+        while not file_found:
+            # Retrieve a list of files in the specified folder
+            # search for the folder by name and within the current directory
+            query = f"name='{folder_name}' and '{curr_dir_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+            results = (
+                drive_service.files().list(q=query, fields="files(id, name)").execute()
+            )
+
+            # Iterate through the files on the current page
+            for file in results.get("files", []):
+                if file.get("name") == folder_name:
+                    curr_dir_id = file["id"]
+                    file_found = True  # Set the flag to True when the file is found
+                    break  # Exit the loop if the file is found
+
+            page_token = results.get("nextPageToken", None)
+
+            if page_token is None or file_found:
+                break  # Exit the loop if the file is found or if there are no more pages
 
         if not results:
             raise ValueError(f"Folder not found: {folder_name}")
 
-        curr_dir_id = results[0]["id"]
-        print_logger(f"Found folder {folder_name} with ID {curr_dir_id}")
-
-    # we've traversed all the folders, now search for the file by name within the current directory
+    # we've traversed to the final parent dir, now look for folder or file
     filename = ls_file_path[-1]
     if is_folder:
         query = f"name='{filename}' and '{curr_dir_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
     else:
         query = f"name='{filename}' and '{curr_dir_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'"
     results = (
-        service.files()
+        drive_service.files()
         .list(q=query, fields="files(id, name)")
         .execute()
         .get("files", [])
@@ -1106,52 +967,13 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
     return results[0]["id"]
 
 
-# %%
-
-
-def get_file_by_id(file_id: str) -> bytes:
-    """
-    Given a Google Drive file ID, downloads the file's contents and returns them as a bytes object.
-
-    Args:
-        file_id (str): The ID of the file to download.
-
-    Returns:
-        bytes: The contents of the downloaded file.
-    """
-    # authenticate with the Google Drive API using your service account credentials
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
-    )
-    service = build("drive", "v3", credentials=credentials)
-
-    # download the file
-    request = service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-
-    # return the downloaded file contents
-    fh.seek(0)
-    return fh.read()
-
-
+# TODO remove since moved to drive tools, replace references
 def download_file_by_id(id, path, max_retries=3):
     retries = 0
     while retries < max_retries:
         try:
-            # authenticate with the Google Drive API using your service account credentials
-            credentials = service_account.Credentials.from_service_account_info(
-                json.loads(os.getenv(google_service_account_var), strict=False),
-                scopes=["https://www.googleapis.com/auth/drive"],
-            )
-            service = build("drive", "v3", credentials=credentials)
-
             # download the file
-            request = service.files().get_media(fileId=id)
+            request = drive_service.files().get_media(fileId=id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
@@ -1184,9 +1006,7 @@ def download_file_by_id(id, path, max_retries=3):
         print("Max retries reached. Download failed.")
 
 
-ls_files_downloaded_this_run = []
-
-
+# TODO remove since moved to drive tools, replace references
 def download_and_get_drive_file_path(
     root_folder_id, ls_file_path, force_download=False, dest_root_dir_override=None
 ):
@@ -1485,22 +1305,6 @@ def share_list_sheets_to_email(sheet_id_list, email, role="writer", test_mode=Tr
 # Google Docs #
 
 
-def authenticate_for_google_docs():
-    """
-    Authenticate and create a service object for Google Docs API.
-    Returns:
-        googleapiclient.discovery.Resource: The authenticated service object for the Google Docs API.
-    """
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(google_service_account_var), strict=False),
-        scopes=["https://www.googleapis.com/auth/documents"],
-    )
-
-    service = build("docs", "v1", credentials=credentials)
-
-    return service
-
-
 def get_google_doc_from_id(id):
     """
     Get a Google Doc object by its ID.
@@ -1510,10 +1314,9 @@ def get_google_doc_from_id(id):
     Returns:
         dict: The Google Doc object, or None if an error occurred.
     """
-    service = authenticate_for_google_docs()
 
     try:
-        document = service.documents().get(documentId=id).execute()
+        document = docs_service.documents().get(documentId=id).execute()
         return document
     except HttpError as e:
         print_logger(f"Error: {e}", level="warning")
@@ -1543,10 +1346,9 @@ def append_text_to_doc_by_id(id, text):
     Returns:
         dict: The result of the batch update operation.
     """
-    service = authenticate_for_google_docs()
 
     # Get the current length of the document
-    document = service.documents().get(documentId=id).execute()
+    document = docs_service.documents().get(documentId=id).execute()
     current_length = document["body"]["content"][-1]["endIndex"] - 1
 
     requests = [
@@ -1558,7 +1360,7 @@ def append_text_to_doc_by_id(id, text):
         }
     ]
     result = (
-        service.documents()
+        docs_service.documents()
         .batchUpdate(documentId=id, body={"requests": requests})
         .execute()
     )
