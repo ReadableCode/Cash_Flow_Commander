@@ -60,23 +60,12 @@ else:
         level="debug",
     )
 
-
-credentials = service_account.Credentials.from_service_account_info(
-    json.loads(os.getenv(google_service_account_var), strict=False),
-    scopes=["https://www.googleapis.com/auth/drive"],
-)
-# Create a Google Drive API client
-drive_service = build("drive", "v3", credentials=credentials)
-
-
 credentials_docs = service_account.Credentials.from_service_account_info(
     json.loads(os.getenv(google_service_account_var), strict=False),
     scopes=["https://www.googleapis.com/auth/documents"],
 )
 # Create a Google Docs API client
 docs_service = build("docs", "v1", credentials=credentials_docs)
-
-ls_files_downloaded_this_run = []
 
 
 # %%
