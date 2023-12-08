@@ -52,6 +52,9 @@ if os.path.exists(os.path.join(file_dir, "google_config_override.yaml")):
     print_logger(
         f"Google Config Overridden with: {google_service_account_var}", level="debug"
     )
+    google_drive_folder_id_report = dict_google_config_override.get(
+        "GOOGLE_DRIVE_FOLDER_ID_REPORT", None
+    )
 else:
     google_service_account_var = "GOOGLE_SERVICE_ACCOUNT_DIGITAL_PROTON"
     print_logger(
@@ -347,7 +350,10 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
 
 # TODO URGENT move report id to config file
 def upload_report(df, ls_folder_file_path=[]):
-    report_folder_id = "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm"
+    if google_drive_folder_id_report is None:
+        raise ValueError(
+            "google_drive_folder_id_report is None, configure in yaml file"
+        )
 
     # if list longer than just filename, makedirs
     if len(ls_folder_file_path) > 1:
@@ -366,7 +372,7 @@ def upload_report(df, ls_folder_file_path=[]):
         index=False,
     )
 
-    upload_file_to_drive(report_folder_id, file_path, drive_file_path)
+    upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
 
 
 # %%
