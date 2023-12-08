@@ -17,8 +17,21 @@ data_dir_db_mirror = os.path.join(
     great_grandparent_dir, "Labor_Planning", "data_db_mirror"
 )
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
+temp_upload_dir = os.path.join(data_dir, "temp_upload")
 
 src_dir = os.path.join(grandparent_dir, "src")
+
+directories = [
+    data_dir,
+    trigger_dir,
+    log_dir,
+    drive_download_cache_dir,
+    temp_upload_dir,
+]
+for directory in directories:
+    if not os.path.exists(directory):
+        print(f"Creating directory: {directory}")
+        os.makedirs(directory)
 
 sys.path.append(src_dir)
 

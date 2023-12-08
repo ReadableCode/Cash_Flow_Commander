@@ -32,6 +32,7 @@ from utils.config_utils import (
     great_grandparent_dir,
     data_dir,
     drive_download_cache_dir,
+    temp_upload_dir,
 )
 
 from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
@@ -279,7 +280,7 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
 
     for folder_name in ls_folder_path:
         print_logger(f"Looking for folder: {folder_name}", level="info")
-        files = []
+        folder_exists = False
         page_token = None
 
         while True:
@@ -293,30 +294,47 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
                 )
                 .execute()
             )
-            files.extend(results.get("files", []))
+            for file in results.get("files", []):
+                if file.get("name") == folder_name:
+                    folder_exists = True
+                    parent_id = file["id"]
+                    break
+
             page_token = results.get("nextPageToken", None)
-            if page_token is None:
+            if page_token is None or folder_exists:
                 break
-        folder_exists = any(
-            file.get("name") == folder_name for file in results.get("files", [])
-        )
 
         if not folder_exists:
             print_logger(
                 f"Folder doesn't exist, creating folder: {folder_name}", level="info"
             )
             parent_id = create_folder_in_drive(drive_service, parent_id, folder_name)
+            print(f"Folder: {folder_name} created with ID: {parent_id}")
         else:
             print_logger(
-                f"Folder exists, navigating to folder: {folder_name}", level="info"
+                f"Folder: {folder_name} exists, navigating to folder with id {parent_id}",
+                level="info",
             )
-            for file in results.get("files", []):
-                if file.get("name") == folder_name:
-                    parent_id = file["id"]
-                    break
 
-    # Upload the file to Google Drive within the specified folder
-    file_metadata = {"name": os.path.basename(file_path), "parents": [parent_id]}
+    # Check if a file with the same name exists in the folder
+    file_name = os.path.basename(file_path)
+    existing_files = (
+        drive_service.files()
+        .list(
+            q=f"'{parent_id}' in parents and name='{file_name}' and trashed=false",
+            fields="files(id)",
+        )
+        .execute()
+    )
+
+    if existing_files.get("files"):
+        # File with the same name exists, delete it
+        existing_file_id = existing_files["files"][0]["id"]
+        drive_service.files().delete(fileId=existing_file_id).execute()
+        print(f"Existing file with the same name deleted (ID: {existing_file_id})")
+
+    # Upload the new file to Google Drive within the specified folder
+    file_metadata = {"name": file_name, "parents": [parent_id]}
     media = MediaFileUpload(file_path, mimetype="application/octet-stream")
     uploaded_file = (
         drive_service.files()
@@ -327,9 +345,28 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
     print(f'File uploaded with ID: {uploaded_file["id"]}')
 
 
-def upload_report(file_path, ls_folder_path=[]):
+# TODO URGENT move report id to config file
+def upload_report(df, ls_folder_file_path=[]):
     report_folder_id = "1g5DAEIFGjwIf04dkjw0U5d72xp5xYUrm"
-    upload_file_to_drive(report_folder_id, file_path, ls_folder_path)
+
+    # if list longer than just filename, makedirs
+    if len(ls_folder_file_path) > 1:
+        folder_path = os.path.join(temp_upload_dir, *ls_folder_file_path[:-1])
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = os.path.join(folder_path, ls_folder_file_path[-1])
+        drive_file_path = ls_folder_file_path[:-1]
+    else:
+        file_path = os.path.join(temp_upload_dir, *ls_folder_file_path)
+        drive_file_path = []
+
+    print(f"temp save file path: {file_path}")
+    print(f"drive file path: {drive_file_path}")
+    df.to_csv(
+        file_path,
+        index=False,
+    )
+
+    upload_file_to_drive(report_folder_id, file_path, drive_file_path)
 
 
 # %%
