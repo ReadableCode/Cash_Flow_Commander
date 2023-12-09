@@ -348,7 +348,6 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
     print(f'File uploaded with ID: {uploaded_file["id"]}')
 
 
-# TODO URGENT move report id to config file
 def upload_report(df, ls_folder_file_path=[]):
     if google_drive_folder_id_report is None:
         raise ValueError(
