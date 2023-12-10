@@ -39,49 +39,30 @@ from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
 # %%
 # Google #
 
+# source .env file
 dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
-with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
-    dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)
-
-if os.path.exists(os.path.join(file_dir, "google_config_override.yaml")):
-    with open(os.path.join(file_dir, "google_config_override.yaml"), "r") as outfile:
-        dict_google_config_override = yaml.load(outfile, Loader=yaml.FullLoader)
-    google_service_account_var = dict_google_config_override["GOOGLE_SERVICE_ACCOUNT"]
-    print_logger(
-        f"Google Config Overridden with: {google_service_account_var}", level="debug"
-    )
-else:
-    google_service_account_var = "GOOGLE_SERVICE_ACCOUNT_DIGITAL_PROTON"
-    print_logger(
-        f"Google Config NOT Overridden, using: GOOGLE_SERVICE_ACCOUNT_DIGITAL_PROTON",
-        level="debug",
-    )
-
+# create credentials from google service account info
 credentials_docs = service_account.Credentials.from_service_account_info(
-    json.loads(os.getenv(google_service_account_var), strict=False),
+    json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"), strict=False),
     scopes=["https://www.googleapis.com/auth/documents"],
 )
+
 # Create a Google Docs API client
 docs_service = build("docs", "v1", credentials=credentials_docs)
 
-
-# %%
-
+# create a pygsheets client
 gc = pygsheets.authorize(
-    service_account_env_var=google_service_account_var,
+    service_account_env_var="GOOGLE_SERVICE_ACCOUNT",
 )
 
-dot_env_service_account_email = json.loads(os.getenv(google_service_account_var))[
-    "client_email"
-]
-print_logger(
-    f"Google Authenticated with service account: {dot_env_service_account_email}",
-    level="debug",
-)
+# load preconfigured sheet ids
+with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
+    dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)
 
+# try to load oauth credentials
 try:
     gc_oauth = pygsheets.authorize(
         client_secret=os.path.join(

@@ -41,36 +41,29 @@ from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
 # %%
 # Google #
 
+# source .env file
 dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
-if os.path.exists(os.path.join(file_dir, "google_config_override.yaml")):
-    with open(os.path.join(file_dir, "google_config_override.yaml"), "r") as outfile:
-        dict_google_config_override = yaml.load(outfile, Loader=yaml.FullLoader)
-    google_service_account_var = dict_google_config_override["GOOGLE_SERVICE_ACCOUNT"]
-    print_logger(
-        f"Google Config Overridden with: {google_service_account_var}", level="debug"
+# create credentials from google service account info
+google_service_account_credentials = (
+    service_account.Credentials.from_service_account_info(
+        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"), strict=False),
+        scopes=["https://www.googleapis.com/auth/drive"],
     )
-    google_drive_folder_id_report = dict_google_config_override.get(
-        "GOOGLE_DRIVE_FOLDER_ID_REPORT", None
-    )
-else:
-    google_service_account_var = "GOOGLE_SERVICE_ACCOUNT_DIGITAL_PROTON"
-    print_logger(
-        f"Google Config NOT Overridden, using: GOOGLE_SERVICE_ACCOUNT_DIGITAL_PROTON",
-        level="debug",
-    )
-
-
-credentials = service_account.Credentials.from_service_account_info(
-    json.loads(os.getenv(google_service_account_var), strict=False),
-    scopes=["https://www.googleapis.com/auth/drive"],
 )
+
 # Create a Google Drive API client
-drive_service = build("drive", "v3", credentials=credentials)
+drive_service = build("drive", "v3", credentials=google_service_account_credentials)
+
+
+# %%
+# Variables #
 
 ls_files_downloaded_this_run = []
+
+google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 
 
 # %%
