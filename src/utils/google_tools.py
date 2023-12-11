@@ -44,9 +44,13 @@ dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
+service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
+service_account_email = json.loads(os.getenv(service_account_env_key))["client_email"]
+print_logger(f"google_service_account email: {service_account_email}")
+
 # create credentials from google service account info
 credentials_docs = service_account.Credentials.from_service_account_info(
-    json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"), strict=False),
+    json.loads(os.getenv(service_account_env_key), strict=False),
     scopes=["https://www.googleapis.com/auth/documents"],
 )
 
@@ -55,7 +59,7 @@ docs_service = build("docs", "v1", credentials=credentials_docs)
 
 # create a pygsheets client
 gc = pygsheets.authorize(
-    service_account_env_var="GOOGLE_SERVICE_ACCOUNT",
+    service_account_env_var=service_account_env_key,
 )
 
 # load preconfigured sheet ids

@@ -46,10 +46,14 @@ dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
+service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
+service_account_email = json.loads(os.getenv(service_account_env_key))["client_email"]
+print_logger(f"google_service_account email: {service_account_email}")
+
 # create credentials from google service account info
 google_service_account_credentials = (
     service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT"), strict=False),
+        json.loads(os.getenv(service_account_env_key), strict=False),
         scopes=["https://www.googleapis.com/auth/drive"],
     )
 )
@@ -270,9 +274,9 @@ def create_folder_in_drive(drive_service, parent_id, folder_name):
     return parent_id
 
 
-def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
+def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
     # Start with the root folder ID
-    parent_id = drive_id
+    parent_id = initial_folder_id
 
     for folder_name in ls_folder_path:
         print_logger(f"Looking for folder: {folder_name}", level="info")
@@ -324,21 +328,25 @@ def upload_file_to_drive(drive_id, file_path, ls_folder_path=[]):
     )
 
     if existing_files.get("files"):
-        # File with the same name exists, delete it
+        # replace contents of existing file
         existing_file_id = existing_files["files"][0]["id"]
-        drive_service.files().delete(fileId=existing_file_id).execute()
-        print(f"Existing file with the same name deleted (ID: {existing_file_id})")
+        media = MediaFileUpload(file_path, mimetype="application/octet-stream")
+        drive_service.files().update(
+            fileId=existing_file_id, media_body=media, fields="id"
+        ).execute()
+        print(f"Replaced existing file with ID: {existing_file_id}")
 
-    # Upload the new file to Google Drive within the specified folder
-    file_metadata = {"name": file_name, "parents": [parent_id]}
-    media = MediaFileUpload(file_path, mimetype="application/octet-stream")
-    uploaded_file = (
-        drive_service.files()
-        .create(body=file_metadata, media_body=media, fields="id")
-        .execute()
-    )
+    else:
+        # Upload the new file to Google Drive within the specified folder
+        file_metadata = {"name": file_name, "parents": [parent_id]}
+        media = MediaFileUpload(file_path, mimetype="application/octet-stream")
+        uploaded_file = (
+            drive_service.files()
+            .create(body=file_metadata, media_body=media, fields="id")
+            .execute()
+        )
 
-    print(f'File uploaded with ID: {uploaded_file["id"]}')
+        print(f'File uploaded with ID: {uploaded_file["id"]}')
 
 
 def upload_report(df, ls_folder_file_path=[]):
