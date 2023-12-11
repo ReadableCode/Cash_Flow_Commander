@@ -349,11 +349,41 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
         print(f'File uploaded with ID: {uploaded_file["id"]}')
 
 
-def upload_report(df, ls_folder_file_path=[]):
+def upload_report_csv(df, ls_folder_file_path):
+    """
+    Uploads a Pandas DataFrame to Google Drive.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to upload.
+        ls_folder_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file.
+            The final item in the list should be the name of the desired file. If a single string is provided, it will be
+            treated as the file name. Default is an empty list.
+
+    Raises:
+        ValueError: If `google_drive_folder_id_report` is None. Configure it in the YAML file.
+
+    Notes:
+        - If the `ls_folder_file_path` is a string, it will be converted to a list with one element.
+        - If the list `ls_folder_file_path` is longer than just a filename, the necessary folders will be created in the temporary
+          upload directory.
+
+    Example:
+        To upload a DataFrame to a specific folder on Google Drive:
+
+        >>> df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
+        >>> upload_report(df, ['FolderName', 'FileName.csv'])
+
+        This will upload the DataFrame as 'FileName.csv' inside the 'FolderName' folder on Google Drive.
+
+    """
     if google_drive_folder_id_report is None:
         raise ValueError(
             "google_drive_folder_id_report is None, configure in yaml file"
         )
+
+    # if ls_folder_file_path is a string, convert to list
+    if isinstance(ls_folder_file_path, str):
+        ls_folder_file_path = [ls_folder_file_path]
 
     # if list longer than just filename, makedirs
     if len(ls_folder_file_path) > 1:
