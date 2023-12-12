@@ -58,6 +58,72 @@ def merge_and_return_unmerged(df1, df2, merge_cols, how="left"):
     return merged_df, unmerged_df
 
 
+def read_csv_with_decode_error_handling(
+    file_path, run_byte_and_symbol_replacement=False
+):
+    if run_byte_and_symbol_replacement:
+        # Read the file in binary mode ('rb')
+        with open(file_path, "rb") as f:
+            file_content_bytes = f.read()
+
+        dict_bytes_to_replace = {
+            b"\x96": b"",
+            b"\x92": b"",
+            b"\x93": b"",
+            b"\x94": b"",
+            b"\xcf": b"",
+            b"\xc8": b"",
+            b"\xd1": b"",
+            b"\xd9": b"",
+            b"\xc0": b"",
+            b"\xae": b"",
+            b"\xc7": b"",
+        }
+
+        print("replaced bytes")
+
+        for byte_to_replace, replacement in dict_bytes_to_replace.items():
+            file_content_bytes = file_content_bytes.replace(
+                byte_to_replace, replacement
+            )
+
+        # Open the file in write binary mode ('wb') to overwrite its content
+        with open(file_path, "wb") as f:
+            f.write(file_content_bytes)
+
+        with open(file_path, "r") as f:
+            file_contents = f.read()
+
+        dict_strings_to_replace = {
+            "Ñ": "N",
+            "’": "",
+            "Ù": "U",
+            "À": "A",
+            "®": "",
+            "Ç": "C",
+        }
+
+        for string_to_replace, replacement in dict_strings_to_replace.items():
+            file_contents = file_contents.replace(string_to_replace, replacement)
+
+        # Write the modified contents to a new file
+        with open(file_path, "w") as f:
+            f.write(file_contents)
+
+    try:
+        df = pd.read_csv(file_path, low_memory=False)
+    except Exception as e:
+        print_logger(f"Failed to read file: {file_path} because {e}")
+        if run_byte_and_symbol_replacement:
+            raise Exception(f"Failed to read file: {file_path} because {e}")
+
+        return read_csv_with_decode_error_handling(
+            file_path, run_byte_and_symbol_replacement=True
+        )
+
+    return df
+
+
 # %%
 # Main #
 
