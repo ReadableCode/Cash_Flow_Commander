@@ -81,7 +81,7 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
 
     Args:
         folder_id (str): The ID of the top-level folder to start the search from.
-        ls_file_path (List[str]): A list of folder and file names that make up the path to the desired file. The
+        ls_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file. The
         final item in the list should be the name of the desired file.
 
     Returns:
@@ -90,6 +90,11 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
     Raises:
         ValueError: If the specified folder or file cannot be found in the specified path.
     """
+
+    # if ls_file_path is a string, convert to list
+    if isinstance(ls_file_path, str):
+        ls_file_path = [ls_file_path]
+
     curr_dir_id = folder_id
     for folder_name in ls_file_path[:-1]:
         print_logger(
