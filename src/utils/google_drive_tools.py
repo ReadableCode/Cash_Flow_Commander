@@ -489,4 +489,60 @@ def upload_report_html(df, ls_folder_file_path):
     upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
 
 
+def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
+    """
+    Uploads a list of Pandas DataFrames to Google Drive as an Excel file.
+
+    Args:
+        ls_dfs (List[pd.DataFrame]): A list of DataFrames to upload.
+        ls_tab_names (List[str]): A list of tab names for the Excel file. Must be the same length as `ls_dfs`.
+        ls_folder_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file.
+            The final item in the list should be the name of the desired file. If a single string is provided, it will be
+            treated as the file name. Default is an empty list.
+
+    Raises:
+        ValueError: If `google_drive_folder_id_report` is None. Configure it in the environment or env file.
+
+    Notes:
+        - If the `ls_folder_file_path` is a string, it will be converted to a list with one element.
+        - If the list `ls_folder_file_path` is longer than just a filename, the necessary folders will be created in the temporary
+          upload directory.
+
+    Example:
+        To upload a DataFrame to a specific folder on Google Drive:
+
+        >>> df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
+        >>> upload_report(df, ['FolderName', 'FileName.xlsx'])
+
+        This will upload the DataFrame as 'FileName.xlsx' inside the 'FolderName' folder on Google Drive.
+
+    """
+    if google_drive_folder_id_report is None:
+        raise ValueError(
+            "google_drive_folder_id_report is None, configure in yaml file"
+        )
+
+    # if ls_folder_file_path is a string, convert to list
+    if isinstance(ls_folder_file_path, str):
+        ls_folder_file_path = [ls_folder_file_path]
+
+    # if list longer than just filename, makedirs
+    if len(ls_folder_file_path) > 1:
+        folder_path = os.path.join(temp_upload_dir, *ls_folder_file_path[:-1])
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = os.path.join(folder_path, ls_folder_file_path[-1])
+        drive_file_path = ls_folder_file_path[:-1]
+    else:
+        file_path = os.path.join(temp_upload_dir, *ls_folder_file_path)
+        drive_file_path = []
+
+    print(f"temp save file path: {file_path}")
+    print(f"drive file path: {drive_file_path}")
+    with pd.ExcelWriter(file_path) as writer:
+        for df, tab_name in zip(ls_dfs, ls_tab_names):
+            df.to_excel(writer, sheet_name=tab_name, index=False)
+
+    upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
+
+
 # %%
