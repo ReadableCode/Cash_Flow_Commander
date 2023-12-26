@@ -39,24 +39,40 @@ from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
 
 
 # %%
-# Google #
+# Load Environment #
 
 # source .env file
 dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
+
+# %%
+# Google Credentials #
+
 service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
 service_account_email = json.loads(os.getenv(service_account_env_key))["client_email"]
 print_logger(f"google_service_account email: {service_account_email}")
 
-# create credentials from google service account info
-google_service_account_credentials = (
-    service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv(service_account_env_key), strict=False),
-        scopes=["https://www.googleapis.com/auth/drive"],
+
+if os.getenv(service_account_env_key):
+    print_logger("Using service account credentials from environment variable")
+    # create credentials from google service account info
+    google_service_account_credentials = (
+        service_account.Credentials.from_service_account_info(
+            json.loads(os.getenv(service_account_env_key), strict=False),
+            scopes=["https://www.googleapis.com/auth/drive"],
+        )
     )
-)
+else:
+    print_logger("Using json file for service account credentials")
+    # create credentials from json file
+    google_service_account_credentials = (
+        service_account.Credentials.from_service_account_file(
+            os.path.join(grandparent_dir, "service_account_credentials.json"),
+            scopes=["https://www.googleapis.com/auth/drive"],
+        )
+    )
 
 # Create a Google Drive API client
 drive_service = build("drive", "v3", credentials=google_service_account_credentials)
