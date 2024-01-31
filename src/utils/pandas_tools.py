@@ -24,6 +24,28 @@ from utils.display_tools import print_logger, pprint_df
 # Functions #
 
 
+def compare_dataframe_columns(df_1, df_2, df_1_name, df_2_name):
+    df_excel_columns = pd.DataFrame()
+    df_excel_columns[f"columns_{df_1_name}"] = df_1.columns.tolist()
+    df_snowflake_columns = pd.DataFrame()
+    df_snowflake_columns[f"columns_{df_2_name}"] = df_2.columns.tolist()
+
+    df_compare_columns = df_excel_columns.merge(
+        df_snowflake_columns,
+        how="outer",
+        left_on=[f"columns_{df_1_name}"],
+        right_on=[f"columns_{df_2_name}"],
+        indicator=True,
+    )
+    df_compare_columns = df_compare_columns.sort_values(by=f"columns_{df_1_name}")
+
+    print("df_compare_columns")
+    pprint_df(df_compare_columns)
+
+    print("columns not matches")
+    pprint_df(df_compare_columns[df_compare_columns["_merge"] != "both"])
+
+
 def merge_and_return_unmerged(df1, df2, merge_cols, how="left"):
     """
     Merge two dataframes on specified columns and return the merged dataframe

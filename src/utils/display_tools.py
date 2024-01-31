@@ -29,6 +29,13 @@ if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
 
+# if log level is defined in environment
+if "LOG_LEVEL" in os.environ:
+    LOG_LEVEL = os.environ["LOG_LEVEL"]
+else:
+    LOG_LEVEL = "info"
+
+
 # %%
 # Functions #
 
@@ -87,7 +94,7 @@ def print_logger(message, level="info", as_break=False):
         "error": 2,
         "critical": 1,
     }
-    if dict_levels[level.lower()] <= dict_levels[os.environ["LOG_LEVEL"]]:
+    if dict_levels[level.lower()] <= dict_levels[LOG_LEVEL]:
         print_message = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {level.upper()} - {message}"
         if not as_break:
             print(print_message)

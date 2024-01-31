@@ -274,7 +274,7 @@ def get_book(bookName, retry=True):
                 raise e
 
 
-def get_book_with_create(bookName, parent_folder_id=None):
+def get_book_with_create(bookName, parent_folder_id=None, template_id=None):
     """
     This function will create a new google sheet with the name bookName and return a Workbook object.
 
@@ -313,8 +313,9 @@ def get_book_with_create(bookName, parent_folder_id=None):
             pass
 
     print_logger(f"Creating book: {bookName}", level="info")
-    Workbook = gc.create(bookName, folder=parent_folder_id)
-    Workbook.share("jason.christiansen@hellofresh.com", role="writer")
+    Workbook = gc.create(bookName, template=template_id, folder=parent_folder_id)
+    if template_id != None:
+        Workbook.share("jason.christiansen@hellofresh.com", role="writer")
     dict_connected_books[bookName] = Workbook
     # add sheet id to yaml with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
     # dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)

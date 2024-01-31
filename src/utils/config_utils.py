@@ -17,6 +17,7 @@ data_dir_db_mirror = os.path.join(
     great_grandparent_dir, "Labor_Planning", "data_db_mirror"
 )
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
+s3_download_cache = os.path.join(data_dir, "s3_download_cache")
 temp_upload_dir = os.path.join(data_dir, "temp_upload")
 
 src_dir = os.path.join(grandparent_dir, "src")
@@ -26,6 +27,7 @@ directories = [
     trigger_dir,
     log_dir,
     drive_download_cache_dir,
+    s3_download_cache,
     temp_upload_dir,
 ]
 for directory in directories:
