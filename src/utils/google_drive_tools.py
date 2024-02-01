@@ -90,6 +90,77 @@ google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 # Get Functions #
 
 
+def check_storage_space_serice_account():
+    # Get the about resource, which includes storage quota information
+    about = drive_service.about().get(fields="storageQuota").execute()
+    print(f"Storage quota: {about['storageQuota']}")
+    used_storage = int(about["storageQuota"]["usage"])
+    total_storage = int(about["storageQuota"]["limit"])
+    used_storage_gb = used_storage / 1e9
+    total_storage_gb = total_storage / 1e9
+    print(f"Using {used_storage_gb} of {total_storage_gb} GB")
+    print(f"Percent Used: {(used_storage / total_storage) * 100} %")
+
+
+def get_top_storage_use_files(num_files=20):
+    # List files
+    results = (
+        drive_service.files()
+        .list(
+            q = "'me' in owners",
+            pageSize=num_files,
+            fields="nextPageToken, files(id, name, mimeType, size)",
+            orderBy="quotaBytesUsed desc",  # Order by size, descending
+        )
+        .execute()
+    )
+    items = results.get("files", [])
+
+    if not items:
+        print("No files found.")
+    else:
+        print("Highest Storage Files:")
+        for item in items:
+            # get parent folder id
+            file_id = item["id"]
+            file = drive_service.files().get(fileId=file_id, fields="parents").execute()
+            parent_id = file.get("parents")[0]
+            file_size = item['size']
+            file_size_MB = int(file_size) / 1e6
+            # Print files name and size
+            print(
+                f"{file_size_MB} MB, Name: {item['name']}, ID: {item['id']}, Parent ID: {parent_id}"
+            )
+
+
+def get_ls_drive_odls():
+    filename_part = "odl_with_supp_columns"
+    # List files
+    results = (
+        drive_service.files()
+        .list(
+            q = f"'me' in owners and name contains '{filename_part}'",
+            pageSize=20,
+            fields="nextPageToken, files(id, name, mimeType)",
+            orderBy="createdTime desc",  # Order by created time, descending
+        )
+        .execute()
+    )
+    items = results.get("files", [])
+
+    if not items:
+        print("No files found.")
+        return None
+    else:
+        print("Files:")
+        ls_files = []
+        for item in items:
+            print(f"{item['name']} ({item['id']})")
+            ls_files.append(item['id'])
+    
+    return ls_files
+
+
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
     """
     Given a folder ID and a list of folder and file names, returns the ID of the file with the specified name that
@@ -368,6 +439,20 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
         )
 
         print(f'File uploaded with ID: {uploaded_file["id"]}')
+
+
+# %%
+# Delete Functions #
+
+
+def delete_file_by_id(file_id):
+    # Delete the file
+    drive_service.files().delete(fileId=file_id).execute()
+    print(f"File with ID {file_id} deleted")
+
+
+# %%
+# Upload Functions #
 
 
 def upload_report_csv(df, ls_folder_file_path):
