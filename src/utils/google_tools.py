@@ -399,6 +399,9 @@ def get_book_sheet_df(
     end: str, the bottom right cell of the range to retrieve data from (default is None).
     index_column: int, the index of the column to use as the DataFrame index (default is None).
     value_render: str, the value render option to use (default is "FORMATTED_VALUE").
+        FORMATTED_VALUE: the values will be calculated & formatted in the reply according to the cell's formatting.
+        UNFORMATTED_VALUE: the values will be numerized, but values will be unformatted.
+        FORMULA: the values will not be calculated. The reply will include the formulas.
     numerize: bool, whether to convert numeric values to float (default is True).
     max_retries: int, the maximum number of retries in case of failure (default is 3).
 

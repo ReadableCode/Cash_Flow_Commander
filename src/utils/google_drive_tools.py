@@ -107,7 +107,7 @@ def get_top_storage_use_files(num_files=20):
     results = (
         drive_service.files()
         .list(
-            q = "'me' in owners",
+            q="'me' in owners",
             pageSize=num_files,
             fields="nextPageToken, files(id, name, mimeType, size)",
             orderBy="quotaBytesUsed desc",  # Order by size, descending
@@ -125,7 +125,7 @@ def get_top_storage_use_files(num_files=20):
             file_id = item["id"]
             file = drive_service.files().get(fileId=file_id, fields="parents").execute()
             parent_id = file.get("parents")[0]
-            file_size = item['size']
+            file_size = item["size"]
             file_size_MB = int(file_size) / 1e6
             # Print files name and size
             print(
@@ -139,7 +139,7 @@ def get_ls_drive_odls():
     results = (
         drive_service.files()
         .list(
-            q = f"'me' in owners and name contains '{filename_part}'",
+            q=f"'me' in owners and name contains '{filename_part}'",
             pageSize=20,
             fields="nextPageToken, files(id, name, mimeType)",
             orderBy="createdTime desc",  # Order by created time, descending
@@ -156,8 +156,8 @@ def get_ls_drive_odls():
         ls_files = []
         for item in items:
             print(f"{item['name']} ({item['id']})")
-            ls_files.append(item['id'])
-    
+            ls_files.append(item["id"])
+
     return ls_files
 
 

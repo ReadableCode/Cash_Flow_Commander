@@ -146,6 +146,42 @@ def read_csv_with_decode_error_handling(
     return df
 
 
+def apply_configuration(df, config):
+    for col in config.keys():
+        # if col doesnt exist, check for columns that should be renamed to it
+        if col not in df.columns and "incoming_columns_names" in config[col].keys():
+            for col_name in config[col]["incoming_columns_names"]:
+                if col_name in df.columns:
+                    df.rename(columns={col_name: col}, inplace=True)
+                    break
+        # if col still doesnt exist, create it
+        if col not in df.columns:
+            # if init value in config
+            if "init_value" in config[col].keys():
+                df[col] = config[col]["init_value"]
+            else:
+                raise ValueError(f"Column {col} not found in df")
+        if "replacement_strings" in config[col].keys():
+            df[col] = (
+                df[col].astype(str).str.replace(config[col]["replacement_strings"], "")
+            )
+        # fillna
+        if "replacement_values" in config[col].keys():
+            df[col] = df[col].replace(
+                config[col]["replacement_values"], config[col]["null_fill"]
+            )
+        df[col] = df[col].fillna(config[col]["null_fill"])
+        # convert type
+        df[col] = df[col].astype(config[col]["type"])
+
+    # drop cols not in config
+    for col in df.columns:
+        if col not in config.keys():
+            df = df.drop(col, axis=1)
+
+    return df
+
+
 # %%
 # Main #
 
