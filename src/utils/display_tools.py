@@ -42,12 +42,20 @@ else:
 
 def pprint_df(dframe, showindex=False, num_cols=None, num_decimals=2):
     """
-    Pretty print a pandas dataframe
-    :param dframe: pandas dataframe
-    :param showindex: boolean to show the index
-    :param num_cols: number of columns to print
-    :param num_decimals: number of decimal places to print for float values
-    :return: None
+    Pretty prints a pandas DataFrame with specified formatting options.
+
+    This function uses the tabulate library to format and print a pandas DataFrame
+    with options to limit the number of columns, adjust the number of decimal places
+    for float values, and choose whether to display the index.
+
+    Args:
+        dframe (DataFrame): The pandas DataFrame to be pretty printed.
+        showindex (bool, optional): Whether to show the DataFrame index. Defaults to False.
+        num_cols (int, optional): The maximum number of columns to display. If None, all columns are displayed. Defaults to None.
+        num_decimals (int, optional): The number of decimal places to format float values. Defaults to 2.
+
+    Returns:
+        None
     """
     floatfmt_str = f".{num_decimals}f"
 
@@ -82,10 +90,14 @@ def df_to_string(df):
 
 def print_logger(message, level="info", as_break=False):
     """
-    Print a message with a timestamp
-    :param message: message to print
-    :param level: level of the message
-    :return: None
+    Prints a message with a preceding timestamp.
+
+    Args:
+        message (str): The message to print.
+        level (str): The level of the message (e.g., "INFO", "WARNING", "ERROR").
+
+    Returns:
+        None
     """
     dict_levels = {
         "debug": 5,
@@ -110,10 +122,14 @@ def print_logger(message, level="info", as_break=False):
 
 def pprint_ls(ls, ls_title="List"):
     """
-    Pretty print a list
-    :param ls: list to print
-    :param ls_title: title of the list
-    :return: None
+    Pretty prints a list with a title.
+
+    Args:
+        ls (list): The list to print.
+        ls_title (str): The title of the list.
+
+    Returns:
+        None
     """
     # print a title box and a box that centers the title and left aligns each item of the list on a new line
 

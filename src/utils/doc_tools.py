@@ -36,8 +36,10 @@ docs_dir = os.path.join(grandparent_dir, "docs")
 
 def get_git_link(script_path, repo_owner, repo_name, branch_name):
     """
-    Get the link to the git repository
-    :return: link to the git repository
+    Gets the link to the Git repository.
+
+    Returns:
+        str: The link to the Git repository.
     """
 
     return (

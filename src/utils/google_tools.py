@@ -470,11 +470,16 @@ def get_book_sheet_values(
 
 def get_book_sheet_from_id_name(id, sheetName, retries=3):
     """
-    This function will return a Worksheet object from a google sheet using the spreadsheet id and the sheet name, will return a cached connection if it exists
-    :param id: the id of the google spreadsheet
-    :param sheetName: the name of the sheet within the google spreadsheet
-    :param retries: the maximum number of retries in case of failure (default is 3)
-    :return: a Worksheet object
+    Returns a Worksheet object from a Google Sheet using the spreadsheet ID and the sheet name.
+    Utilizes a cached connection if one exists.
+
+    Args:
+        id (str): The ID of the Google spreadsheet.
+        sheetName (str): The name of the sheet within the Google spreadsheet.
+        retries (int, optional): The maximum number of retries in case of failure. Defaults to 3.
+
+    Returns:
+        Worksheet: A Worksheet object from the specified Google Sheet.
     """
     global dict_connected_sheets
 
@@ -585,14 +590,18 @@ def WriteToSheets(
     retries=3,
 ):
     """
-    This function will write a dataframe to a google sheet, will create the sheet if it doesnt exist
-    :param bookName: the name of the google spreadsheet
-    :param sheetName: the name of the sheet within the google spreadsheet
-    :param df: the dataframe to write to the sheet
-    :param indexes: whether to write the index column to the sheet
-    :param set_note: the note to set on the sheet, None for no note, "DT" for date time, string for custom note
-    :param retries: the number of times to retry if the connection fails
-    :return: None
+    Writes a dataframe to a Google Sheet, creating the sheet if it does not exist. Optionally sets a note on the sheet.
+
+    Args:
+        bookName (str): The name of the Google spreadsheet.
+        sheetName (str): The name of the sheet within the Google spreadsheet.
+        df (DataFrame): The dataframe to write to the sheet.
+        indexes (bool): Whether to write the index column to the sheet.
+        set_note (str or None): The note to set on the sheet. Use None for no note, "DT" for date/time, or a string for a custom note.
+        retries (int): The number of times to retry if the connection fails.
+
+    Returns:
+        None
     """
 
     # global dict_connected_books
@@ -675,12 +684,16 @@ def WriteToSheets(
 
 def ClearSheet(book_name, sheet_name, start_range, end_range):
     """
-    This function will clear a range of cells on a sheet
-    :param book_name: the name of the google spreadsheet
-    :param sheet_name: the name of the sheet within the google spreadsheet
-    :param start_range: the start range of the cells to clear in the format "A1"
-    :param end_range: the end range of the cells to clear in the format "A1"
-    :return: None
+    Clears a specified range of cells on a sheet.
+
+    Args:
+        book_name (str): The name of the Google spreadsheet.
+        sheet_name (str): The name of the sheet within the Google spreadsheet.
+        start_range (str): The start range of the cells to clear, in the format "A1".
+        end_range (str): The end range of the cells to clear, in the format "A1".
+
+    Returns:
+        None
     """
 
     Worksheet = get_book_sheet(book_name, sheet_name)
@@ -689,11 +702,15 @@ def ClearSheet(book_name, sheet_name, start_range, end_range):
 
 def clear_range_of_sheet_obj(sheet_obj, start, end, retries=3):
     """
-    This function will clear a range of cells on a sheet
-    :param sheet_obj: the sheet object to write to
-    :param start: the start range of the cells to clear in the format "A1"
-    :param end: the end range of the cells to clear in the format "A1"
-    :return: None
+    Clears a specified range of cells on a sheet.
+
+    Args:
+        sheet_obj: The sheet object to write to.
+        start (str): The start range of the cells to clear, in the format "A1".
+        end (str): The end range of the cells to clear, in the format "A1".
+
+    Returns:
+        None
     """
 
     for i in range(retries):
@@ -724,14 +741,18 @@ def write_df_to_range_of_sheet_obj(
     retries=3,
 ):
     """
-    This function will write a dataframe to a range on a sheet
-    :param sheet_obj: the sheet object to write to
-    :param df: the dataframe to write to the sheet
-    :param start: the start range of the cells to clear in the format "A1"
-    :param fit: whether to fit the dataframe to the range
-    :param nan: the value to use for nan
-    :param copy_head: whether to copy the header
-    :return: None
+    Writes a DataFrame to a specified range on a sheet.
+
+    Args:
+        sheet_obj: The sheet object to write to.
+        df (DataFrame): The DataFrame to write to the sheet.
+        start (str): The start range of the cells to clear, in the format "A1".
+        fit (bool): Whether to fit the DataFrame to the range specified.
+        nan: The value to use for NaN values in the DataFrame.
+        copy_head (bool): Whether to copy the header of the DataFrame to the sheet.
+
+    Returns:
+        None
     """
 
     for i in range(retries):
