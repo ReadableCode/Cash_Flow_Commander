@@ -91,6 +91,17 @@ google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 
 
 def check_storage_space_serice_account():
+    """
+    Retrieves and prints the storage quota information for the Google Drive service account.
+
+    This function uses the Google Drive API to get the storage quota information for the service account
+    and prints the storage quota, used storage, total storage, and the percentage of storage used.
+
+    Note: This function assumes that the `drive_service` object has already been initialized.
+
+    Example usage:
+    check_storage_space_serice_account()
+    """
     # Get the about resource, which includes storage quota information
     about = drive_service.about().get(fields="storageQuota").execute()
     print(f"Storage quota: {about['storageQuota']}")
@@ -103,6 +114,17 @@ def check_storage_space_serice_account():
 
 
 def get_top_storage_use_files(num_files=20):
+    """
+    Retrieves the top storage usage files from Google Drive.
+
+    Args:
+        num_files (int): The number of files to retrieve. Default is 20.
+
+    Returns:
+        None
+    """
+    # Rest of the code...
+
     # List files
     results = (
         drive_service.files()
@@ -134,6 +156,13 @@ def get_top_storage_use_files(num_files=20):
 
 
 def get_ls_drive_odls():
+    """
+    Retrieves a list of ODL files from Google Drive.
+
+    Returns:
+        list: A list of file IDs for ODL files.
+    """
+
     filename_part = "odl_with_supp_columns"
     # List files
     results = (
@@ -233,6 +262,17 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
 
 
 def get_file_list_from_folder_id(folder_id):
+    """
+    Retrieves a list of files from the specified folder ID.
+
+    Args:
+        folder_id (str): The ID of the folder.
+
+    Returns:
+        list: A list of files in the folder, each represented as a dictionary with 'id' and 'name' keys.
+              Returns None if no files are found.
+    """
+
     files = []
     page_token = None
 
@@ -260,6 +300,17 @@ def get_file_list_from_folder_id(folder_id):
 
 
 def get_file_list_from_folder_id_file_path(root_folder_id, ls_file_path):
+    """
+    Retrieves a list of files from a given folder ID.
+
+    Args:
+        root_folder_id (str): The ID of the root folder.
+        ls_file_path (str): The path of the folder containing the files.
+
+    Returns:
+        dict: A dictionary containing the list of files in the folder.
+    """
+
     ls_directory_path = ls_file_path
 
     folder_id = get_drive_file_id_from_folder_id_path(
@@ -272,6 +323,20 @@ def get_file_list_from_folder_id_file_path(root_folder_id, ls_file_path):
 
 
 def download_file_by_id(id, path, max_retries=3):
+    """
+    Downloads a file from Google Drive by its ID and saves it to the specified path.
+
+    Args:
+        id (str): The ID of the file to download.
+        path (str): The path where the downloaded file will be saved.
+        max_retries (int, optional): The maximum number of download retries in case of failure. Defaults to 3.
+
+    Raises:
+        TimeoutError: If the download fails after the maximum number of retries.
+
+    Returns:
+        None
+    """
     retries = 0
     while retries < max_retries:
         try:
@@ -312,6 +377,18 @@ def download_file_by_id(id, path, max_retries=3):
 def download_and_get_drive_file_path(
     root_folder_id, ls_file_path, force_download=False, dest_root_dir_override=None
 ):
+    """
+    Downloads a file from Google Drive and returns the file path.
+
+    Args:
+        root_folder_id (str): The ID of the root folder in Google Drive.
+        ls_file_path (list): The list of file path components.
+        force_download (bool, optional): Whether to force download the file even if it already exists. Defaults to False.
+        dest_root_dir_override (str, optional): The destination root directory override. Defaults to None.
+
+    Returns:
+        str: The file path of the downloaded file.
+    """
     if dest_root_dir_override is not None:
         drive_download_cache_dir_to_use = dest_root_dir_override
     else:
@@ -356,6 +433,18 @@ def download_and_get_drive_file_path(
 
 
 def create_folder_in_drive(drive_service, parent_id, folder_name):
+    """
+    Creates a new folder in Google Drive.
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
+        parent_id (str): The ID of the parent folder where the new folder will be created.
+        folder_name (str): The name of the new folder.
+
+    Returns:
+        str: The ID of the newly created folder.
+    """
+
     folder_metadata = {
         "name": folder_name,
         "parents": [parent_id],
@@ -367,6 +456,18 @@ def create_folder_in_drive(drive_service, parent_id, folder_name):
 
 
 def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
+    """
+    Uploads a file to Google Drive within the specified folder path.
+
+    Args:
+        initial_folder_id (str): The ID of the initial folder where the file will be uploaded.
+        file_path (str): The path of the file to be uploaded.
+        ls_folder_path (list, optional): The list of folder names representing the folder path. Defaults to [].
+
+    Returns:
+        None
+    """
+
     # Start with the root folder ID
     parent_id = initial_folder_id
 
@@ -446,6 +547,16 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
 
 
 def delete_file_by_id(file_id):
+    """
+    Deletes a file from Google Drive by its ID.
+
+    Args:
+        file_id (str): The ID of the file to be deleted.
+
+    Returns:
+        None
+    """
+
     # Delete the file
     drive_service.files().delete(fileId=file_id).execute()
     print(f"File with ID {file_id} deleted")
