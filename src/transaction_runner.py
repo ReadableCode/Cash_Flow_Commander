@@ -19,6 +19,8 @@ from config import (
     log_dir,
 )
 
+from transaction_parser import update_and_get_transactions, import_new_files_from_drive
+
 from utils.google_tools import (
     WriteToSheets,
     get_book_sheet_df,
@@ -36,7 +38,8 @@ from utils.display_tools import print_logger, pprint_df, pprint_ls
 
 
 def check_for_files():
-    folder_path = os.path.join(data_dir, "laura_transactions")
+    import_new_files_from_drive()
+    folder_path = os.path.join(data_dir, "transaction_files_incoming")
     ls_files = glob.glob(os.path.join(folder_path, "*.csv"))
     if len(ls_files) == 0:
         print_logger(f"No files found in {data_dir}, exiting.")
@@ -46,12 +49,17 @@ def check_for_files():
         return True
 
 
-if check_for_files():
-    from transaction_parser import update_and_get_transactions
+# %%
+## Main ##
 
-    df_transactions = update_and_get_transactions()
 
-    print_logger("Updated Transactions")
+if __name__ == "__main__":
+
+    if check_for_files():
+
+        df_transactions = update_and_get_transactions()
+
+        print_logger("Updated Transactions")
 
 
 # %%

@@ -28,6 +28,12 @@ from utils.google_tools import (
     get_book_sheet,
 )
 
+from utils.google_drive_tools import (
+    get_file_list_from_folder_id,
+    download_file_by_id,
+    rename_file,
+)
+
 from utils.display_tools import print_logger, pprint_df, pprint_ls
 
 
@@ -146,7 +152,32 @@ def generate_accountant_export(df_transactions):
 ## Transaction Functions ##
 
 
+def import_new_files_from_drive():
+
+    incoming_transaction_folder_id = os.getenv("INCOMING_TRANSACTION_FOLDER_ID", None)
+    current_date_time_stamp_file = pd.to_datetime("today").strftime("%Y-%m-%d_%H-%M-%S")
+    ls_files = get_file_list_from_folder_id(incoming_transaction_folder_id)
+
+    for file in ls_files:
+        if "_downloaded" in file["name"]:
+            print_logger(f"File already downloaded: {file['name']}")
+            continue
+        output_name_without_extension, extension = os.path.splitext(file["name"])
+        downloaded_file_path = os.path.join(
+            data_dir,
+            "transaction_files_incoming",
+            f"{output_name_without_extension}_{current_date_time_stamp_file}{extension}",
+        )
+        print_logger(f"Downloading file: {file['name']} to {downloaded_file_path}")
+        download_file_by_id(file["id"], downloaded_file_path, max_retries=3)
+        rename_file(
+            file["id"],
+            f"{output_name_without_extension}_{current_date_time_stamp_file}_downloaded{extension}",
+        )
+
+
 def get_transactions_from_file(file_path):
+    print_logger(f"Getting transactions from file: {file_path}")
     df_transactions = pd.read_csv(
         file_path,
         low_memory=False,
@@ -165,10 +196,12 @@ def get_transactions_from_file(file_path):
 
 
 def get_transactions_from_incoming_files():
+    import_new_files_from_drive()
+
     df_new_transactions = pd.DataFrame()
 
-    folder_path = os.path.join(data_dir, "laura_transactions")
-    done_folder_path = os.path.join(folder_path, "done")
+    folder_path = os.path.join(data_dir, "transaction_files_incoming")
+    done_folder_path = os.path.join(data_dir, "transaction_files_completed")
     ls_files = glob.glob(os.path.join(folder_path, "*.csv"))
     for file_path in ls_files:
         df_this_file = get_transactions_from_file(file_path)
@@ -186,7 +219,9 @@ def update_and_get_transactions():
     df_transactions = pd.concat([df_current_transactions, df_new_transactions])
 
     # datetime date column
-    df_transactions["Post Date"] = pd.to_datetime(df_transactions["Post Date"])
+    df_transactions["Post Date"] = pd.to_datetime(
+        df_transactions["Post Date"], format="mixed"
+    )
     df_transactions["Post Month"] = df_transactions["Post Date"].dt.strftime("%Y-%m")
 
     df_transactions.drop_duplicates(
@@ -200,19 +235,19 @@ def update_and_get_transactions():
     )
 
     # apply get_transaction_category_details
-    df_transactions[
-        ["Income/Expense", "Income/Expense_Category", "Client_Name"]
-    ] = df_transactions.apply(
-        lambda row: pd.Series(
-            get_transaction_category_details(
-                row["Description"],
-                row["Income/Expense"],
-                row["Income/Expense_Category"],
-                row["Client_Name"],
-                row["Exclude_From_Income_Expenses"],
-            )
-        ),
-        axis=1,
+    df_transactions[["Income/Expense", "Income/Expense_Category", "Client_Name"]] = (
+        df_transactions.apply(
+            lambda row: pd.Series(
+                get_transaction_category_details(
+                    row["Description"],
+                    row["Income/Expense"],
+                    row["Income/Expense_Category"],
+                    row["Client_Name"],
+                    row["Exclude_From_Income_Expenses"],
+                )
+            ),
+            axis=1,
+        )
     )
 
     df_transactions.sort_values(by=["Post Date"], ascending=False, inplace=True)

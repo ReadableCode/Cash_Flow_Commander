@@ -543,6 +543,14 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
 
 
 # %%
+# Rename Functions #
+
+
+def rename_file(file_id, new_name):
+    drive_service.files().update(fileId=file_id, body={"name": new_name}).execute()
+
+
+# %%
 # Delete Functions #
 
 
