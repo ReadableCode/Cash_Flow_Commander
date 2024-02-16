@@ -34,18 +34,9 @@ from utils.google_drive_tools import (
     rename_file,
 )
 
+from utils.date_tools import convert_fix_date_to_pad
+
 from utils.display_tools import print_logger, pprint_df, pprint_ls
-
-
-# %% [markdown]
-## Get Transactions and Balances from Sites ##
-
-
-## Chase
-
-# - [Chase](https://secure02ea.chase.com/web/auth/dashboard#/dashboard/overviewAccounts/overview/multiProduct)
-
-#   - Click each account and then download arrow top right corner, download max range of transactions including overlap of what is currently downloaded
 
 
 # %%
@@ -153,25 +144,28 @@ def generate_accountant_export(df_transactions):
 
 
 def import_new_files_from_drive():
-
+    print_logger("Importing new files from drive")
     incoming_transaction_folder_id = os.getenv("INCOMING_TRANSACTION_FOLDER_ID", None)
     current_date_time_stamp_file = pd.to_datetime("today").strftime("%Y-%m-%d_%H-%M-%S")
     ls_files = get_file_list_from_folder_id(incoming_transaction_folder_id)
 
     for file in ls_files:
-        if "_downloaded" in file["name"]:
-            print_logger(f"File already downloaded: {file['name']}")
+        file_id = file["id"]
+        file_name = file["name"]
+        if "_downloaded" in file_name:
+            print_logger(f"File already downloaded: {file_name}")
             continue
-        output_name_without_extension, extension = os.path.splitext(file["name"])
+
+        output_name_without_extension, extension = os.path.splitext(file_name)
         downloaded_file_path = os.path.join(
             data_dir,
             "transaction_files_incoming",
             f"{output_name_without_extension}_{current_date_time_stamp_file}{extension}",
         )
-        print_logger(f"Downloading file: {file['name']} to {downloaded_file_path}")
-        download_file_by_id(file["id"], downloaded_file_path, max_retries=3)
+        print_logger(f"Downloading file: {file_name} to {downloaded_file_path}")
+        download_file_by_id(file_id, downloaded_file_path, max_retries=3)
         rename_file(
-            file["id"],
+            file_id,
             f"{output_name_without_extension}_{current_date_time_stamp_file}_downloaded{extension}",
         )
 
@@ -181,31 +175,49 @@ def get_transactions_from_file(file_path):
     df_transactions = pd.read_csv(
         file_path,
         low_memory=False,
+        index_col=False,  # Ensure pandas does not use the first column as an index
     )
+
+    # Rename and Initialize Columns
     df_transactions.rename(columns=dict_col_renames, inplace=True)
+    for col in ls_cols_initialize_if_missing:
+        if col not in df_transactions.columns.tolist():
+            df_transactions[col] = ""
+
+    # Formatting Columns
+    df_transactions["Post Date"] = df_transactions["Post Date"].apply(
+        convert_fix_date_to_pad
+    )
+    df_transactions["Post Date"] = pd.to_datetime(
+        df_transactions["Post Date"], format="%m/%d/%Y"
+    )
+    df_transactions["Post Month"] = df_transactions["Post Date"].dt.strftime("%Y-%m")
+
+    # Add Account Name
     if "Balance" in df_transactions.columns.tolist():
         df_transactions["Account Name"] = "Chase Debit"
     else:
         df_transactions["Account Name"] = "Chase Rewards"
-    for col in ls_cols_initialize_if_missing:
-        if col not in df_transactions.columns.tolist():
-            df_transactions[col] = ""
+
+    # Reorder Columns
     df_transactions = df_transactions[transactions_col_order]
 
     return df_transactions
 
 
 def get_transactions_from_incoming_files():
+    print_logger("Getting transactions from incoming files")
     import_new_files_from_drive()
 
     df_new_transactions = pd.DataFrame()
-
     folder_path = os.path.join(data_dir, "transaction_files_incoming")
     done_folder_path = os.path.join(data_dir, "transaction_files_completed")
     ls_files = glob.glob(os.path.join(folder_path, "*.csv"))
     for file_path in ls_files:
+        print_logger(f"Processing file: {file_path}", as_break=True)
         df_this_file = get_transactions_from_file(file_path)
         df_new_transactions = pd.concat([df_new_transactions, df_this_file])
+
         # move to done folder
         file_name = os.path.basename(file_path)
         os.rename(file_path, os.path.join(done_folder_path, file_name))
@@ -218,9 +230,11 @@ def update_and_get_transactions():
     df_new_transactions = get_transactions_from_incoming_files()
     df_transactions = pd.concat([df_current_transactions, df_new_transactions])
 
-    # datetime date column
+    df_transactions["Post Date"] = df_transactions["Post Date"].apply(
+        convert_fix_date_to_pad
+    )
     df_transactions["Post Date"] = pd.to_datetime(
-        df_transactions["Post Date"], format="mixed"
+        df_transactions["Post Date"], format="%m/%d/%Y"
     )
     df_transactions["Post Month"] = df_transactions["Post Date"].dt.strftime("%Y-%m")
 
