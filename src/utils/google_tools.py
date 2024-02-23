@@ -731,6 +731,59 @@ def clear_range_of_sheet_obj(sheet_obj, start, end, retries=3):
     raise Exception(f"Failed to clear range after {retries} retries")
 
 
+def clear_formatting_of_range_of_sheet_obj(sheet_obj, start, end, retries=3):
+    """
+    Clears the formatting of a specified range of cells on a sheet.
+
+    Args:
+        sheet_obj: The sheet object to write to.
+        start (str): The start range of the cells to clear, in the format "A1".
+        end (str): The end range of the cells to clear, in the format "A1".
+
+    Returns:
+        None
+    """
+
+    for i in range(retries):
+        try:
+            sheet_obj.clear(start, end, fields="userEnteredFormat")
+            return
+        except Exception as e:
+            print_logger(
+                f"Failed to clear formatting of range, error: {e}", level="warning"
+            )
+            print_logger(
+                f"Retrying {i+1} of {retries} times after {i * 20} seconds",
+                level="warning",
+            )
+            time.sleep(i * 10)
+            print_logger("Retrying now", level="warning")
+            pass
+
+    print_logger(
+        f"Failed to clear formatting of range after {retries} retries", level="warning"
+    )
+    raise Exception(f"Failed to clear formatting of range after {retries} retries")
+
+
+def clear_formatting_of_book_sheet_range(book_name, sheet_name, start, end, retries=3):
+    """
+    Clears the formatting of a specified range of cells on a sheet.
+
+    Args:
+        book_name (str): The name of the Google spreadsheet.
+        sheet_name (str): The name of the sheet within the Google spreadsheet.
+        start (str): The start range of the cells to clear, in the format "A1".
+        end (str): The end range of the cells to clear, in the format "A1".
+
+    Returns:
+        None
+    """
+
+    Worksheet = get_book_sheet(book_name, sheet_name)
+    clear_formatting_of_range_of_sheet_obj(Worksheet, start, end, retries)
+
+
 def write_df_to_range_of_sheet_obj(
     sheet_obj,
     df,
