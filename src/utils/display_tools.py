@@ -11,7 +11,8 @@ import numpy as np
 from dotenv import load_dotenv
 
 # append grandparent
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
     file_dir,

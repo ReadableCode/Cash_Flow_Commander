@@ -7,8 +7,9 @@ import sys
 from time import sleep
 import os
 
-# append parent
-sys.path.append("..")
+# append grandparent
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
     file_dir,
@@ -17,10 +18,6 @@ from utils.config_utils import (
     great_grandparent_dir,
     data_dir,
 )
-
-sys.path.append(file_dir)
-sys.path.append(parent_dir)
-sys.path.append(grandparent_dir)
 
 from utils.google_tools import (
     gc,
