@@ -4,7 +4,6 @@
 import datetime
 import pandas as pd
 import sys
-from time import sleep
 import os
 
 # append grandparent
@@ -13,21 +12,11 @@ if __name__ == "__main__":
 
 from utils.config_utils import (
     file_dir,
-    parent_dir,
-    grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
 )
 
 from utils.google_tools import (
-    gc,
-    WriteToSheets,
-    get_book,
-    get_book_sheet,
     get_book_sheet_df,
 )
-
-from utils.display_tools import print_logger, pprint_df, pprint_ls
 
 
 # %%
@@ -75,7 +64,8 @@ def get_current_datetime(format="%Y%m%d%H%M%S"):
     Returns the current datetime in the specified format string.
 
     Args:
-        format (str): The format option for the datetime string, which can be one of the following:
+        format (str): The format option for the datetime string
+            which can be one of the following:
             - "%Y%m%d%H%M%S" or "number"
             - "%Y%m%d" or "YYYYMMDD"
             - "%H%M%S" or "HHMMSS" or "time_number"
@@ -307,11 +297,6 @@ WorkingWeek = dict_dashed_pad_desc_date[today_date]
 WeekNum = WorkingWeek.split("-")[1].replace("W", "")
 Year = WorkingWeek.split("-")[0]
 
-print_logger(
-    f"today is {today}, today_date is {today_date}, current_week is {WorkingWeek}, WeekNum is {WeekNum}, Year is {Year}",
-    level="debug",
-)
-
 all_weeks_list = []
 starting_year = 2018
 starting_week = 1
@@ -331,10 +316,12 @@ df_week_list = pd.DataFrame(all_weeks_list, columns=["Week"])
 
 def week_span_to_week_list(base_week, num_weeks_back, num_weeks_forward):
     """
-    Returns a list of weeks from a specified base week, including a specified number of weeks before and after the base week.
+    Returns a list of weeks from a specified base week, including a specified number of
+    weeks before and after the base week.
 
     Args:
-        base_week (str): The week to start from, in the format "YYYY-WWW", e.g., "2022-W01".
+        base_week (str): The week to start from, in the format "YYYY-WWW"
+            e.g., "2022-W01".
         num_weeks_back (int): The number of weeks to go back from the base week.
         num_weeks_forward (int): The number of weeks to go forward from the base week.
 
@@ -357,11 +344,14 @@ def week_range_to_week_list(start_week, end_week):
     Returns a list of weeks from the base week to the end week.
 
     Args:
-        start_week (str): The week to start from, in the format "YYYY-WWW", e.g., "2022-W01".
-        end_week (str): The week to end at, in the same format as start_week, e.g., "2022-W52".
+        start_week (str): The week to start from, in the format "YYYY-WWW"
+            e.g., "2022-W01".
+        end_week (str): The week to end at, in the same format as start_week
+            e.g., "2022-W52".
 
     Returns:
-        list: A list of week strings in the format "YYYY-WWW", from start_week to end_week inclusive.
+        list: A list of week strings in the format "YYYY-WWW",
+        from start_week to end_week inclusive.
     """
     week_list = []
 
@@ -376,10 +366,12 @@ def week_range_to_week_list(start_week, end_week):
 
 def day_span_to_day_list(base_day, num_days_back, num_days_forward):
     """
-    Returns a list of days from a specified base day, including a specified number of days before and after the base day.
+    Returns a list of days from a specified base day, including a specified number of
+        days before and after the base day.
 
     Args:
-        base_day (str): The day to start from, in the format "YYYY-MM-DD", e.g., "2022-01-01".
+        base_day (str): The day to start from, in the format "YYYY-MM-DD"
+            e.g., "2022-01-01".
         num_days_back (int): The number of days to go back from the base day.
         num_days_forward (int): The number of days to go forward from the base day.
 
@@ -402,11 +394,14 @@ def day_range_to_day_list(start_day, end_day):
     Returns a list of days from the start day to the end day.
 
     Args:
-        start_day (str): The day to start from, in the format "YYYY-MM-DD", e.g., "2022-01-01".
-        end_day (str): The day to end on, in the same format as start_day, e.g., "2022-01-10".
+        start_day (str): The day to start from, in the format "YYYY-MM-DD"
+            e.g., "2022-01-01".
+        end_day (str): The day to end on, in the same format as start_day
+            e.g., "2022-01-10".
 
     Returns:
-        list: A list of day strings in the format "YYYY-MM-DD", from start_day to end_day inclusive.
+        list: A list of day strings in the format "YYYY-MM-DD"
+            from start_day to end_day inclusive.
     """
     day_list = []
 
@@ -421,10 +416,12 @@ def day_range_to_day_list(start_day, end_day):
 
 def day_span_to_day_list_no_pad(base_day, num_days_back, num_days_forward):
     """
-    Returns a list of days from a specified base day, including a specified number of days before and after the base day, with the format "YYYY-M-D".
+    Returns a list of days from a specified base day, including a specified number
+        of days before and after the base day, with the format "YYYY-M-D".
 
     Args:
-        base_day (str): The day to start from, in the format "YYYY-M-D", e.g., "2022-1-1".
+        base_day (str): The day to start from, in the format "YYYY-M-D"
+            e.g., "2022-1-1".
         num_days_back (int): The number of days to go back from the base day.
         num_days_forward (int): The number of days to go forward from the base day.
 
@@ -447,11 +444,14 @@ def getDiffWeek(base_week, num_weeks_diff):
     Returns the week a specified number of weeks away from the base week.
 
     Args:
-        base_week (str): The week to start from, in the format "YYYY-WWW", e.g., "2022-W01".
-        num_weeks_diff (int): The number of weeks to go forward (positive value) or backward (negative value) from the base week.
+        base_week (str): The week to start from, in the format "YYYY-WWW"
+            e.g., "2022-W01".
+        num_weeks_diff (int): The number of weeks to go forward (positive value)
+            or backward (negative value) from the base week.
 
     Returns:
-        str: A week in the format "YYYY-WWW", representing the week num_weeks_diff away from base_week.
+        str: A week in the format "YYYY-WWW", representing the week num_weeks_diff
+            away from base_week.
     """
     base_week_index = all_weeks_list.index(base_week)
     outputWeek = all_weeks_list[base_week_index + num_weeks_diff]
@@ -463,11 +463,14 @@ def getDiffDay(base_day, num_days_diff):
     Returns the day a specified number of days away from the base day.
 
     Args:
-        base_day (str): The day to start from, in the format "YYYY-MM-DD", e.g., "2022-01-01".
-        num_days_diff (int): The number of days to go forward (positive value) or backward (negative value) from the base day.
+        base_day (str): The day to start from, in the format "YYYY-MM-DD"
+            e.g., "2022-01-01".
+        num_days_diff (int): The number of days to go forward (positive value) or
+            backward (negative value) from the base day.
 
     Returns:
-        str: A day in the format "YYYY-MM-DD", representing the day num_days_diff away from base_day.
+        str: A day in the format "YYYY-MM-DD"
+            representing the day num_days_diff away from base_day.
     """
     base_day_index = all_days_list.index(base_day)
     outputDay = all_days_list[base_day_index + num_days_diff]
@@ -480,7 +483,8 @@ def get_weeks_out_from_week(weekMade, weekRegards):
 
     Args:
         weekMade (str): The starting week, in the format "YYYY-WWW", e.g., "2022-W01".
-        weekRegards (str): The ending week, in the same format as weekMade, e.g., "2022-W52".
+        weekRegards (str): The ending week, in the same format as weekMade
+            e.g., "2022-W52".
 
     Returns:
         int: The number of weeks between weekMade and weekRegards.
@@ -491,7 +495,8 @@ def get_weeks_out_from_week(weekMade, weekRegards):
 
 def floatHourToTime(fh):
     """
-    Converts a float hour value to a time tuple in the format of (hours, minutes, seconds).
+    Converts a float hour value to a time tuple in the format of:
+        (hours, minutes, seconds).
 
     Args:
         fh (float): The float hour to convert.
@@ -510,10 +515,12 @@ def floatHourToTime(fh):
 
 def convert_week(convert_week):
     """
-    Converts a week from the Sanders format ('2242') to the standard ISO format ('2022-W42').
+    Converts a week from the Sanders format ('2242') to the standard ISO format:
+        ('2022-W42').
 
     Args:
-        convert_week (str): The week to convert, in Sanders format (e.g., '2242' representing the 42nd week of 2022).
+        convert_week (str): The week to convert, in Sanders format
+            (e.g., '2242' representing the 42nd week of 2022).
 
     Returns:
         str: The converted week in the standard ISO format (e.g., '2022-W42').
@@ -524,7 +531,8 @@ def convert_week(convert_week):
 
 def fix_weeks(df):
     """
-    Fixes the weeks in a DataFrame, converting from the Sanders format ('2242') to the standard ISO format ('2022-W42').
+    Fixes the weeks in a DataFrame, converting from the Sanders format:
+        ('2242') to the standard ISO format ('2022-W42').
 
     Args:
         df (DataFrame): The DataFrame with weeks in the Sanders format to be fixed.
@@ -541,7 +549,8 @@ def get_today_date(format_string="YYYY-MM-DD"):
     Returns the current date in the format specified by the format_string.
 
     Args:
-        format_string (str): The format to return the date in. Currently, the only option is "YYYY-MM-DD".
+        format_string (str): The format to return the date in. Currently
+            the only option is "YYYY-MM-DD".
 
     Returns:
         str: The current date in the format specified by format_string.
@@ -571,7 +580,8 @@ def excel_date_to_datetime(excel_date):
 
 def extract_use_weeks():
     """
-    Extracts the use weeks from the database, which include 12 weeks back and 12 weeks forward from the current week.
+    Extracts the use weeks from the database, which include 12 weeks back and
+        12 weeks forward from the current week.
 
     Returns:
         DataFrame: A DataFrame containing the use weeks.
@@ -627,7 +637,7 @@ def convert_fix_date_to_no_pad(date):
 
 
 def convert_fix_date_to_pad(date):
-    if type(date) == pd._libs.tslibs.timestamps.Timestamp:
+    if isinstance(date, pd._libs.tslibs.timestamps.Timestamp):
         date = date.strftime("%Y-%m-%d")
 
     if " " in date:
@@ -645,7 +655,7 @@ def convert_fix_date_to_pad(date):
             date = excel_date_to_date_string(date)
             if date in dict_dashed_pad_desc_to_slashed_pad.keys():
                 return dict_dashed_pad_desc_to_slashed_pad[date]
-        except:
+        except Exception:
             pass
         print("Date not converted to Pad: ", date)
         raise ValueError
@@ -693,15 +703,18 @@ def get_ls_weeks_in_reporting_month(year_month):
     Returns a list of week strings in the provided month that contain "Thursday - 2".
 
     Args:
-        year_month (str): A string representing the year and month in the form "YYYY-MM", e.g., "2023-08" for August 2023.
+        year_month (str): A string representing the year and month in the form:
+            "YYYY-MM", e.g., "2023-08" for August 2023.
 
     Returns:
         list: A list of strings for each week in the month. For example:
               ["2023-W31", "2023-W32", "2023-W33", "2023-W34", "2023-W35"].
 
     Example:
-        If 'year_month' is "2023-08" and there are entries in dict_scm_weeks with "Thursday - 2" for weeks
-        "2023-W31", "2023-W32", "2023-W33", "2023-W34", and "2023-W35", the function will return:
+        If 'year_month' is "2023-08" and there are entries in dict_scm_weeks with
+            "Thursday - 2" for weeks
+        "2023-W31", "2023-W32", "2023-W33", "2023-W34", and "2023-W35",
+            the function will return:
         ["2023-W31", "2023-W32", "2023-W33", "2023-W34", "2023-W35"].
     """
     ls_thurs_2_in_year_month = []

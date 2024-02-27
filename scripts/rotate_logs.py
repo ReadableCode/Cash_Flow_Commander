@@ -1,5 +1,5 @@
 # %%
-## Imports ##
+# Imports #
 
 if __name__ != "__main__":
     print(f"Importing {__name__}")
@@ -58,7 +58,7 @@ from src.utils.date_tools import (
 
 
 # %%
-## Read Logs ##
+# Read Logs #
 
 log_file_locs = glob.glob(os.path.join(log_dir, "*.txt")) + glob.glob(
     os.path.join(log_dir, "*.log")

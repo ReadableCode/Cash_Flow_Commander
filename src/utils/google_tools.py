@@ -3,7 +3,6 @@
 
 import pygsheets
 import os
-from os.path import expanduser
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 import pandas as pd
@@ -12,13 +11,7 @@ import sys
 import time
 from google.auth.exceptions import TransportError
 from googleapiclient.errors import HttpError
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 import json
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-import io
-from googleapiclient.http import MediaIoBaseDownload
 from dotenv import load_dotenv
 import yaml
 
@@ -28,14 +21,12 @@ if __name__ == "__main__":
 
 from utils.config_utils import (
     file_dir,
-    parent_dir,
     grandparent_dir,
     great_grandparent_dir,
     data_dir,
-    drive_download_cache_dir,
 )
 
-from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
+from utils.display_tools import print_logger, pprint_df, pprint_ls
 
 
 # %%
@@ -83,7 +74,7 @@ try:
             great_grandparent_dir, "credentials", "personal", "gsheets_auth_oauth"
         ),
     )
-except Exception as e:
+except Exception:
     gc_oauth = None
     pass
 
@@ -118,7 +109,8 @@ def get_book_from_id(id, retry=True):
         return book_from_id
     except TransportError as e:
         print_logger(
-            f"Error opening connection to {id}, Trying again in 5 seconds, error: {e}",
+            f"Error opening connection to {id}, Trying again in 5 seconds, error: "
+            f"{e}",
             level="warning",
         )
         if retry:
@@ -130,44 +122,55 @@ def get_book_from_id(id, retry=True):
                 level="warning",
             )
             raise Exception(
-                f"Failed to connect to Google Sheets even after retrying because of TransportError {e}"
+                "Failed to connect to Google Sheets even after retrying because "
+                f"of TransportError {e}"
             )
     except HttpError as e:
         if e.resp.status == 429:
             print_logger(
-                f"Error HttpError 429, rate limited, opening connection to {id}, Trying again in 20 seconds, error: {e}",
+                (
+                    "Error HttpError 429, rate limited, opening connection to "
+                    + id
+                    + ", Trying again in 20 seconds, error: "
+                    + str(e)
+                ),
                 level="warning",
             )
             if retry:
                 time.sleep(20)
                 return get_book_from_id(id, retry=False)
             else:
-                print_logger(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 429: {e}",
-                    level="warning",
+                error_message = (
+                    "Failed to connect to Google Sheets even after retrying "
+                    "because of HttpError 429: " + str(e)
                 )
-                raise Exception(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 429: {e}"
-                )
+                print_logger(error_message, level="warning")
+                raise Exception(error_message)
         elif e.resp.status == 500:
             print_logger(
-                f"Error HttpError 500, internal server error, opening connection to {id}, Trying again in 120 seconds, error: {e}",
+                "Error HttpError 500, internal server error, opening connection to "
+                + id
+                + ", Trying again in 120 seconds, error: "
+                + str(e),
                 level="warning",
             )
             if retry:
                 time.sleep(120)
                 return get_book_from_id(id, retry=False)
             else:
-                print_logger(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 500: {e}",
-                    level="warning",
+                error_message = (
+                    "Failed to connect to Google Sheets "
+                    "even after retrying because of "
+                    "HttpError 500: " + str(e)
                 )
-                raise Exception(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 500: {e}"
-                )
+                print_logger(error_message, level="warning")
+                raise Exception(error_message)
         elif e.resp.status == 503:
             print_logger(
-                f"Error HttpError 503, internal server error, opening connection to {id}, Trying again in 120 seconds, error: {e}",
+                (
+                    f"Error HttpError 503, internal server error, opening "
+                    f"connection to {id}, Trying again in 120 seconds, error: {e}"
+                ),
                 level="warning",
             )
             if retry:
@@ -175,15 +178,24 @@ def get_book_from_id(id, retry=True):
                 return get_book_from_id(id, retry=False)
             else:
                 print_logger(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 503: {e}",
+                    (
+                        "Failed to connect to Google Sheets even after "
+                        f"retrying because of HttpError 503: {e}"
+                    ),
                     level="warning",
                 )
                 raise Exception(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 503: {e}"
+                    (
+                        "Failed to connect to Google Sheets even "
+                        f"after retrying because of HttpError 503: {e}"
+                    )
                 )
         elif e.resp.status == 404:
             print_logger(
-                f"HttpError 404 opening connection to {id}, Trying again in 5 seconds, error: {e}",
+                (
+                    f"HttpError 404 opening connection to {id}, "
+                    f"Trying again in 5 seconds, error: {e}"
+                ),
                 level="warning",
             )
             if retry:
@@ -191,11 +203,17 @@ def get_book_from_id(id, retry=True):
                 return get_book_from_id(id, retry=False)
             else:
                 print_logger(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 404: {e}",
+                    (
+                        "Failed to connect to Google Sheets even "
+                        f"after retrying because of HttpError 404: {e}"
+                    ),
                     level="warning",
                 )
                 raise Exception(
-                    f"Failed to connect to Google Sheets even after retrying because of HttpError 404: {e}"
+                    (
+                        "Failed to connect to Google Sheets even after "
+                        f"retrying because of HttpError 404: {e}"
+                    )
                 )
 
         else:
@@ -209,7 +227,8 @@ def get_book(bookName, retry=True):
 
     if bookName in dict_hardcoded_book_ids.keys():
         print_logger(
-            f"Book {bookName} in hardcoded book ids, using id: {dict_hardcoded_book_ids[bookName]}",
+            f"Book {bookName} in hardcoded book ids, using id: "
+            + f"{dict_hardcoded_book_ids[bookName]}",
             level="debug",
         )
         return get_book_from_id(dict_hardcoded_book_ids[bookName])
@@ -231,7 +250,8 @@ def get_book(bookName, retry=True):
             # print out what should add
             workbook_id_to_add_to_dict = Workbook.id
             print_logger(
-                f'Consider adding this to dict hardcoded book ids: "{bookName}": "{workbook_id_to_add_to_dict}"',
+                "Consider adding this to dict hardcoded book ids: "
+                + f'"{bookName}": "{workbook_id_to_add_to_dict}"',
                 level="warning",
             )
             # write to file what should add
@@ -244,7 +264,10 @@ def get_book(bookName, retry=True):
             return Workbook
         except TransportError as e:
             print_logger(
-                f"Error opening connection to {bookName}, Trying again in 5 seconds, error: {e}",
+                "Error opening connection to "
+                + bookName
+                + ", Trying again in 5 seconds, "
+                "error: " + str(e),
                 level="warning",
             )
             time.sleep(5)
@@ -259,7 +282,10 @@ def get_book(bookName, retry=True):
         except HttpError as e:
             if e.resp.status == 429:
                 print_logger(
-                    f"Error HttpError 429, rate limited, opening connection to {bookName}, Trying again in 20 seconds, error: {e}",
+                    "Error HttpError 429, rate limited, opening connection to "
+                    + bookName
+                    + ", Trying again in 20 seconds, error: "
+                    + str(e),
                     level="warning",
                 )
                 time.sleep(20)
@@ -277,12 +303,14 @@ def get_book(bookName, retry=True):
 
 def get_book_with_create(bookName, parent_folder_id=None, template_id=None):
     """
-    This function will create a new google sheet with the name bookName and return a Workbook object.
+    This function will create a new google sheet with the name
+        bookName and return a Workbook object.
 
     Parameters:
     -----------
     bookName: str, the name of the Google Sheet.
-    parent_folder_id: str, the id of the parent folder to create the sheet in (default is None).
+    parent_folder_id: str, the id of the parent folder to
+        create the sheet in (default is None).
 
     Returns:
     -----------
@@ -294,7 +322,9 @@ def get_book_with_create(bookName, parent_folder_id=None, template_id=None):
     # if already in dict_hardcoded_book_ids[bookName], then just get from there
     if bookName in dict_hardcoded_book_ids.keys():
         print_logger(
-            f"Book {bookName} in hardcoded book ids, using id: {dict_hardcoded_book_ids[bookName]}",
+            "Book {} in hardcoded book ids, using id: {}".format(
+                bookName, dict_hardcoded_book_ids[bookName]
+            ),
             level="info",
         )
         return get_book_from_id(dict_hardcoded_book_ids[bookName])
@@ -310,16 +340,14 @@ def get_book_with_create(bookName, parent_folder_id=None, template_id=None):
                 level="info",
             )
             return Workbook
-        except:
+        except Exception:
             pass
 
     print_logger(f"Creating book: {bookName}", level="info")
     Workbook = gc.create(bookName, template=template_id, folder=parent_folder_id)
-    if template_id != None:
+    if template_id is not None:
         Workbook.share("jason.christiansen@hellofresh.com", role="writer")
     dict_connected_books[bookName] = Workbook
-    # add sheet id to yaml with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
-    # dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)
     dict_hardcoded_book_ids[bookName] = Workbook.id
     # append new sheet id to yaml
     with open(os.path.join(file_dir, "sheet_ids.yaml"), "a") as outfile:
@@ -330,7 +358,8 @@ def get_book_with_create(bookName, parent_folder_id=None, template_id=None):
 
 def get_book_sheet(bookName, sheetName, retries=3):
     """
-    Returns a Worksheet object from a Google Sheet using the sheet name and the spreadsheet name.
+    Returns a Worksheet object from a Google Sheet
+        using the sheet name and the spreadsheet name.
     If a cached connection exists, it will be used instead of creating a new one.
 
     Parameters:
@@ -389,7 +418,8 @@ def get_book_sheet_df(
     max_retries=3,
 ):
     """
-    Returns a pandas DataFrame object from a Google Sheet using the sheet name and the spreadsheet name.
+    Returns a pandas DataFrame object from a Google Sheet
+        using the sheet name and the spreadsheet name.
     If a cached connection exists, it will be used instead of creating a new one.
 
     Parameters:
@@ -397,10 +427,13 @@ def get_book_sheet_df(
     bookName: str, the name of the Google Sheet.
     sheetName: str, the name of the sheet within the Google Sheet.
     start: str, the top left cell of the range to retrieve data from (default is None).
-    end: str, the bottom right cell of the range to retrieve data from (default is None).
-    index_column: int, the index of the column to use as the DataFrame index (default is None).
+    end: str, the bottom right cell of the range
+        to retrieve data from (default is None).
+    index_column: int, the index of the column to
+        use as the DataFrame index (default is None).
     value_render: str, the value render option to use (default is "FORMATTED_VALUE").
-        FORMATTED_VALUE: the values will be calculated & formatted in the reply according to the cell's formatting.
+        FORMATTED_VALUE: the values will be calculated &
+            formatted in the reply according to the cell's formatting.
         UNFORMATTED_VALUE: the values will be numerized, but values will be unformatted.
         FORMULA: the values will not be calculated. The reply will include the formulas.
     numerize: bool, whether to convert numeric values to float (default is True).
@@ -446,7 +479,8 @@ def get_book_sheet_values(
     end=None,
 ):
     """
-    Returns a list of lists of values from a Google Sheet using the sheet name and the spreadsheet name.
+    Returns a list of lists of values from a Google Sheet using
+        the sheet name and the spreadsheet name.
     If a cached connection exists, it will be used instead of creating a new one.
 
     Parameters:
@@ -454,14 +488,13 @@ def get_book_sheet_values(
     bookName: str, the name of the Google Sheet.
     sheetName: str, the name of the sheet within the Google Sheet.
     start: str, the top left cell of the range to retrieve data from (default is None).
-    end: str, the bottom right cell of the range to retrieve data from (default is None).
+    end: str, the bottom right cell of the range to retrieve data from (default is None)
 
     Returns:
     -----------
     a list of lists of values.
     """
 
-    workbook = get_book(bookName)
     worksheet = get_book_sheet(bookName, sheetName)
 
     values = worksheet.get_values(start=start, end=end)
@@ -471,13 +504,15 @@ def get_book_sheet_values(
 
 def get_book_sheet_from_id_name(id, sheetName, retries=3):
     """
-    Returns a Worksheet object from a Google Sheet using the spreadsheet ID and the sheet name.
+    Returns a Worksheet object from a Google Sheet using
+        the spreadsheet ID and the sheet name.
     Utilizes a cached connection if one exists.
 
     Args:
         id (str): The ID of the Google spreadsheet.
         sheetName (str): The name of the sheet within the Google spreadsheet.
-        retries (int, optional): The maximum number of retries in case of failure. Defaults to 3.
+        retries (int, optional): The maximum number of retries
+            in case of failure. Defaults to 3.
 
     Returns:
         Worksheet: A Worksheet object from the specified Google Sheet.
@@ -537,15 +572,18 @@ def get_book_sheet_df_from_id_name(
     except Exception as e:
         if retries == 0:
             print_logger(
-                f"Error getting sheet from id after max retries: {id}, sheetName: {sheetName}, error: {e}",
+                "Error getting sheet from id after max retries: "
+                f"{id}, sheetName: {sheetName}, error: {e}",
                 level="error",
             )
             raise Exception(
-                f"Error getting sheet from id after max retries: {id}, sheetName: {sheetName}, error: {e}"
+                "Error getting sheet from id after max retries: "
+                f"{id}, sheetName: {sheetName}, error: {e}"
             )
         else:
             print_logger(
-                f"Error getting sheet from id: {id}, sheetName: {sheetName}, retrying in 5 seconds, error: {e}",
+                f"Error getting sheet from id: {id}, sheetName: {sheetName}, "
+                f"retrying in 5 seconds, error: {e}",
                 level="error",
             )
             time.sleep(5)
@@ -570,7 +608,6 @@ def get_book_sheet_values_from_id_name(
     end=None,
     include_tailing_empty=True,
 ):
-    workbook = get_book_from_id(id)
     worksheet = get_book_sheet_from_id_name(id, sheetName)
 
     values = worksheet.get_values(
@@ -591,14 +628,16 @@ def WriteToSheets(
     retries=3,
 ):
     """
-    Writes a dataframe to a Google Sheet, creating the sheet if it does not exist. Optionally sets a note on the sheet.
+    Writes a dataframe to a Google Sheet, creating the sheet if it does not exist.
+    Optionally sets a note on the sheet.
 
     Args:
         bookName (str): The name of the Google spreadsheet.
         sheetName (str): The name of the sheet within the Google spreadsheet.
         df (DataFrame): The dataframe to write to the sheet.
         indexes (bool): Whether to write the index column to the sheet.
-        set_note (str or None): The note to set on the sheet. Use None for no note, "DT" for date/time, or a string for a custom note.
+        set_note (str or None): The note to set on the sheet. Use None for no note, "DT"
+            for date/time, or a string for a custom note.
         retries (int): The number of times to retry if the connection fails.
 
     Returns:
@@ -630,12 +669,12 @@ def WriteToSheets(
                 Workbook.add_worksheet(sheetName)
                 Worksheet = get_book_sheet(bookName, sheetName)
 
-            if indexes == False:
+            if not indexes:
                 Worksheet.set_dataframe(df, (1, 1), fit=True, nan="")
             else:
                 Worksheet.set_dataframe(df, (1, 1), fit=True, nan="", copy_index=True)
             try:
-                if set_note != None:
+                if set_note is not None:
                     if set_note == "DT":
                         Worksheet.cell((1, 1)).note = "Data updated at: " + str(
                             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -644,29 +683,35 @@ def WriteToSheets(
                         Worksheet.cell((1, 1)).note = set_note
             except Exception as e:
                 print_logger(
-                    f"Failed to set note when writing, error: {e}, trying one more time",
+                    f"Failed to set note when writing, error: {e}, trying 1 more time",
                     level="warning",
                 )
                 try:
-                    if set_note != None:
+                    if set_note is not None:
                         if set_note == "DT":
                             Worksheet.cell((1, 1)).note = "Data updated at: " + str(
                                 datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             )
                         else:
                             Worksheet.cell((1, 1)).note = set_note
-                except:
+                except Exception:
                     pass
                 pass
 
             print_logger(
-                f"Finished writing to Google Sheet: {bookName} - {sheetName} with size {df.shape}, after {datetime.datetime.now() - start_time}\nLink: https://docs.google.com/spreadsheets/d/{Workbook.id}"
+                f"Finished writing to Google Sheet: "
+                f"{bookName} - {sheetName} with size {df.shape}, "
+                f"after {datetime.datetime.now() - start_time}\n"
+                f"Link: https://docs.google.com/spreadsheets/d/{Workbook.id}"
             )
 
             return
         except Exception as e:
             print_logger(
-                f"Failed to write to sheets with name {bookName} and sheet name {sheetName} and df of size {df.shape}, error: {e}",
+                (
+                    f"Failed to write to sheets with name {bookName} and "
+                    f"sheet name {sheetName} and df of size {df.shape}, error: {e}"
+                ),
                 level="warning",
             )
             print_logger(
@@ -679,7 +724,10 @@ def WriteToSheets(
 
     print_logger(f"Failed to write to sheet after {retries} retries", level="warning")
     raise Exception(
-        f"Failed to write to sheets with name {bookName} and sheet name {sheetName} and df of size {df.shape}"
+        (
+            f"Failed to write to sheets with name {bookName} "
+            f" and sheet name {sheetName} and df of size {df.shape}"
+        )
     )
 
 
@@ -817,14 +865,17 @@ def write_df_to_range_of_sheet_obj(
             return
         except Exception as e:
             print_logger(
-                f"Failed to write to range with error: {e}, retrying {i+1} of {retries} times",
+                (
+                    f"Failed to write to range with error: {e}, "
+                    f"retrying {i+1} of {retries} times"
+                ),
                 level="warning",
             )
             time.sleep(i * 10)
             pass
 
     print_logger(f"Failed to write to range after {retries} retries", level="warning")
-    raise Exception(f"Failed to write to range with error: {e}")
+    raise Exception("Failed to write to range")
 
 
 # %%
@@ -847,7 +898,7 @@ def copy_sheet_book_to_book(source_book, ls_source_sheets, ls_dest_books):
                 Workbook_dest.del_worksheet(
                     Workbook_dest.worksheet_by_title(source_sheet)
                 )
-            except:
+            except Exception:
                 pass
 
             Workbook_dest.add_worksheet(source_sheet, src_tuple=src_tup)
@@ -908,7 +959,10 @@ def get_file_list_from_folder_id_oauth(folder_id):
 
 def get_book_id_from_parent_folder_id_oauth(parent_folder_id, book_name):
     print_logger(
-        f"Getting sheet ID for book named {book_name} inside parent folder ID {parent_folder_id}"
+        (
+            "Getting sheet ID for book named "
+            f"{book_name} inside parent folder ID {parent_folder_id}"
+        )
     )
 
     parent_folder_files = get_file_list_from_folder_id_oauth(parent_folder_id)
@@ -917,7 +971,8 @@ def get_book_id_from_parent_folder_id_oauth(parent_folder_id, book_name):
         if file["title"] == book_name:
             file_id = file["id"]
             print_logger(
-                f"Found sheet ID {file_id} for book named {book_name} inside parent folder ID {parent_folder_id}"
+                f"Found sheet ID {file_id} for book named {book_name} "
+                f"inside parent folder ID {parent_folder_id}"
             )
             return file_id
 
@@ -971,7 +1026,8 @@ def get_df_from_sheet_id(
     except Exception as e:
         if retry:
             print_logger(
-                f"Failed to get df from sheet id {id}, sheet_name: {sheet_name}, error: {e}, retrying",
+                f"Failed to get df from sheet id {id}, "
+                f"sheet_name: {sheet_name}, error: {e}, retrying",
                 level="warning",
             )
             return get_df_from_sheet_id(
@@ -983,13 +1039,12 @@ def get_df_from_sheet_id(
                 retry=False,
             )
         else:
-            print_logger(
-                f"Failed to get df even after retry from sheet id {id}, sheet_name: {sheet_name}, error: {e}",
-                level="warning",
+            error_message = (
+                f"Failed to get df even after retry from sheet id {id}, "
+                f"sheet_name: {sheet_name}, error: {e}"
             )
-            raise Exception(
-                f"Failed to get df even after retry from sheet id {id}, sheet_name: {sheet_name}, error: {e}"
-            )
+            print_logger(error_message, level="warning")
+            raise Exception(error_message)
 
 
 def get_df_from_file_name(
@@ -1066,7 +1121,7 @@ def copy_formulas_range_to_range(
 
 
 def get_sheet_link(sheet_id):
-    if (sheet_id == "") or (sheet_id == None) or (len(sheet_id) != 44):
+    if (sheet_id == "") or (sheet_id is None) or (len(sheet_id) != 44):
         return ""
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}"
 
@@ -1084,7 +1139,11 @@ def convert_tab_name_to_hyperlink(book_obj, tab_name, link_text):
     ss_id = book_obj.id
     sheet_id = book_obj.worksheet_by_title(tab_name).id
 
-    hyperlink = f'=HYPERLINK("https://docs.google.com/spreadsheets/d/{ss_id}/edit#gid={sheet_id}","{link_text}")'
+    hyperlink = (
+        "=HYPERLINK("
+        f'"https://docs.google.com/spreadsheets/d/{ss_id}/edit#gid={sheet_id}",'
+        f'"{link_text}")'
+    )
     return hyperlink
 
 

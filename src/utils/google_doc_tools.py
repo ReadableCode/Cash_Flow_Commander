@@ -1,40 +1,23 @@
 # %%
 # Imports #
 
-import pygsheets
 import os
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-import pandas as pd
-import datetime
 import sys
-import time
-from google.auth.exceptions import TransportError
 from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-import io
-from googleapiclient.http import MediaIoBaseDownload
 from dotenv import load_dotenv
-import yaml
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
-    file_dir,
-    parent_dir,
     grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
-    drive_download_cache_dir,
 )
 
-from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
+from utils.display_tools import print_logger, pprint_dict
 
 
 # %%
@@ -102,7 +85,7 @@ def print_contents_of_doc_by_id(id):
         id (str): The ID of the Google Doc.
     """
     document = get_google_doc_from_id(id)
-    if document == None:
+    if document is None:
         return
     pprint_dict(document["body"]["content"])
     return document["body"]["content"]

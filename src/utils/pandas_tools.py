@@ -2,7 +2,6 @@
 # Imports #
 
 import os
-import argparse
 import sys
 import pandas as pd
 
@@ -10,13 +9,7 @@ import pandas as pd
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    file_dir,
-    parent_dir,
-    grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
-)
+import config_utils  # noqa: F401
 
 from utils.display_tools import print_logger, pprint_df
 
@@ -57,10 +50,14 @@ def merge_and_return_unmerged(df1, df2, merge_cols, how="left"):
     - df2 (DataFrame): Second DataFrame to merge.
     - merge_cols (list of str): List of columns to merge on.
     - how (str, optional): Type of merge to be performed.
-        - 'left' (default): Use keys from left frame only, similar to a SQL left outer join.
-        - 'right': Use keys from right frame only, similar to a SQL right outer join.
-        - 'outer': Use union of keys from both frames, similar to a SQL full outer join.
-        - 'inner': Use intersection of keys from both frames, similar to a SQL inner join.
+        - 'left' (default): Use keys from left frame only,
+            similar to a SQL left outer join.
+        - 'right': Use keys from right frame only,
+            similar to a SQL right outer join.
+        - 'outer': Use union of keys from both frames,
+            similar to a SQL full outer join.
+        - 'inner': Use intersection of keys from both frames,
+            similar to a SQL inner join.
 
     Returns:
     - merged_df (DataFrame): The merged DataFrame.

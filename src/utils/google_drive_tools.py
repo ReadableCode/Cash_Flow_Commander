@@ -1,42 +1,28 @@
 # %%
 # Imports #
 
-import pygsheets
 import os
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 import pandas as pd
-import datetime
 import sys
 import time
-from google.auth.exceptions import TransportError
-from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import json
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 import io
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from dotenv import load_dotenv
-import yaml
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
-    file_dir,
-    parent_dir,
     grandparent_dir,
-    great_grandparent_dir,
     data_dir,
-    drive_download_cache_dir,
     temp_upload_dir,
 )
 
-from utils.display_tools import print_logger, pprint_dict, pprint_df, pprint_ls
+from utils.display_tools import print_logger
 
 
 # %%
@@ -93,12 +79,16 @@ google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 
 def check_storage_space_serice_account():
     """
-    Retrieves and prints the storage quota information for the Google Drive service account.
+    Retrieves and prints the storage quota information
+    for the Google Drive service account.
 
-    This function uses the Google Drive API to get the storage quota information for the service account
-    and prints the storage quota, used storage, total storage, and the percentage of storage used.
+    This function uses the Google Drive API to get the storage quota
+    information for the service account
+    and prints the storage quota, used storage, total storage,
+    and the percentage of storage used.
 
-    Note: This function assumes that the `drive_service` object has already been initialized.
+    Note: This function assumes that the `drive_service`
+    object has already been initialized.
 
     Example usage:
     check_storage_space_serice_account()
@@ -152,7 +142,10 @@ def get_top_storage_use_files(num_files=20):
             file_size_MB = int(file_size) / 1e6
             # Print files name and size
             print(
-                f"{file_size_MB} MB, Name: {item['name']}, ID: {item['id']}, Parent ID: {parent_id}"
+                (
+                    f"{file_size_MB} MB, Name: {item['name']}, "
+                    f"ID: {item['id']}, Parent ID: {parent_id}"
+                )
             )
 
 
@@ -193,19 +186,22 @@ def get_ls_drive_odls():
 
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
     """
-    Given a folder ID and a list of folder and file names, returns the ID of the file with the specified name that
+    Given a folder ID and a list of folder and file names, returns
+    the ID of the file with the specified name that
     is located within the final folder in the specified path.
 
     Args:
         folder_id (str): The ID of the top-level folder to start the search from.
-        ls_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file. The
+        ls_file_path (List[str] or str): A list of folder and file names
+        that make up the path to the desired file. The
         final item in the list should be the name of the desired file.
 
     Returns:
         str: The ID of the desired file.
 
     Raises:
-        ValueError: If the specified folder or file cannot be found in the specified path.
+        ValueError: If the specified folder or file cannot
+        be found in the specified path.
     """
 
     # if ls_file_path is a string, convert to list
@@ -223,7 +219,13 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
         while not file_found:
             # Retrieve a list of files in the specified folder
             # search for the folder by name and within the current directory
-            query = f"name='{folder_name}' and '{curr_dir_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+            query = (
+                f"name='{folder_name}' and "
+                f"'{curr_dir_id}' in parents and "
+                "trashed=false and "
+                "mimeType='application/vnd.google-apps.folder'"
+            )
+
             results = (
                 drive_service.files().list(q=query, fields="files(id, name)").execute()
             )
@@ -238,7 +240,8 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
             page_token = results.get("nextPageToken", None)
 
             if page_token is None or file_found:
-                break  # Exit the loop if the file is found or if there are no more pages
+                # Exit the loop if the file is found or if there are no more pages
+                break
 
         if not results:
             raise ValueError(f"Folder not found: {folder_name}")
@@ -246,9 +249,15 @@ def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=Fal
     # we've traversed to the final parent dir, now look for folder or file
     filename = ls_file_path[-1]
     if is_folder:
-        query = f"name='{filename}' and '{curr_dir_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+        query = (
+            f"name='{filename}' and '{curr_dir_id}' in parents and "
+            "trashed=false and mimeType='application/vnd.google-apps.folder'"
+        )
     else:
-        query = f"name='{filename}' and '{curr_dir_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'"
+        query = (
+            f"name='{filename}' and '{curr_dir_id}' in parents and trashed=false"
+            "and mimeType!='application/vnd.google-apps.folder'"
+        )
     results = (
         drive_service.files()
         .list(q=query, fields="files(id, name)")
@@ -270,7 +279,8 @@ def get_file_list_from_folder_id(folder_id):
         folder_id (str): The ID of the folder.
 
     Returns:
-        list: A list of files in the folder, each represented as a dictionary with 'id' and 'name' keys.
+        list: A list of files in the folder, each represented as
+            a dictionary with 'id' and 'name' keys.
               Returns None if no files are found.
     """
 
@@ -330,7 +340,8 @@ def download_file_by_id(id, path, max_retries=3):
     Args:
         id (str): The ID of the file to download.
         path (str): The path where the downloaded file will be saved.
-        max_retries (int, optional): The maximum number of download retries in case of failure. Defaults to 3.
+        max_retries (int, optional): The maximum number of download
+            retries in case of failure. Defaults to 3.
 
     Raises:
         TimeoutError: If the download fails after the maximum number of retries.
@@ -362,7 +373,7 @@ def download_file_by_id(id, path, max_retries=3):
             print(f"Download attempt {retries + 1} failed: {e}")
             retries += 1
             if retries < max_retries:
-                print(f"Retrying in 5 seconds...")
+                print("Retrying in 5 seconds...")
                 time.sleep(5)  # Wait for 5 seconds before retrying
             else:
                 print("Max retries reached. Download failed.")
@@ -384,8 +395,10 @@ def download_and_get_drive_file_path(
     Args:
         root_folder_id (str): The ID of the root folder in Google Drive.
         ls_file_path (list): The list of file path components.
-        force_download (bool, optional): Whether to force download the file even if it already exists. Defaults to False.
-        dest_root_dir_override (str, optional): The destination root directory override. Defaults to None.
+        force_download (bool, optional): Whether to force download the
+            file even if it already exists. Defaults to False.
+        dest_root_dir_override (str, optional): The destination root
+            directory override. Defaults to None.
 
     Returns:
         str: The file path of the downloaded file.
@@ -438,8 +451,10 @@ def create_folder_in_drive(drive_service, parent_id, folder_name):
     Creates a new folder in Google Drive.
 
     Args:
-        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
-        parent_id (str): The ID of the parent folder where the new folder will be created.
+        drive_service (googleapiclient.discovery.Resource):
+            The Google Drive service object.
+        parent_id (str): The ID of the parent folder where
+            the new folder will be created.
         folder_name (str): The name of the new folder.
 
     Returns:
@@ -461,9 +476,11 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
     Uploads a file to Google Drive within the specified folder path.
 
     Args:
-        initial_folder_id (str): The ID of the initial folder where the file will be uploaded.
+        initial_folder_id (str): The ID of the initial folder
+            where the file will be uploaded.
         file_path (str): The path of the file to be uploaded.
-        ls_folder_path (list, optional): The list of folder names representing the folder path. Defaults to [].
+        ls_folder_path (list, optional): The list of folder names
+            representing the folder path. Defaults to [].
 
     Returns:
         None
@@ -506,7 +523,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
             print(f"Folder: {folder_name} created with ID: {parent_id}")
         else:
             print_logger(
-                f"Folder: {folder_name} exists, navigating to folder with id {parent_id}",
+                f"Folder: {folder_name} exists, navigating to folder id {parent_id}",
                 level="info",
             )
 
@@ -581,16 +598,21 @@ def upload_report_csv(df, ls_folder_file_path):
 
     Args:
         df (pd.DataFrame): The DataFrame to upload.
-        ls_folder_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file.
-            The final item in the list should be the name of the desired file. If a single string is provided, it will be
+        ls_folder_file_path (List[str] or str): A list of folder and
+            file names that make up the path to the desired file.
+            The final item in the list should be the name of the desired file.
+            If a single string is provided, it will be
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure it in the environment or env file.
+        ValueError: If `google_drive_folder_id_report` is None. Configure
+            it in the environment or env file.
 
     Notes:
-        - If the `ls_folder_file_path` is a string, it will be converted to a list with one element.
-        - If the list `ls_folder_file_path` is longer than just a filename, the necessary folders will be created in the temporary
+        - If the `ls_folder_file_path` is a string, it will be converted
+            to a list with one element.
+        - If the list `ls_folder_file_path` is longer than just a filename,
+            the necessary folders will be created in the temporary
           upload directory.
 
     Example:
@@ -599,7 +621,8 @@ def upload_report_csv(df, ls_folder_file_path):
         >>> df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
         >>> upload_report(df, ['FolderName', 'FileName.csv'])
 
-        This will upload the DataFrame as 'FileName.csv' inside the 'FolderName' folder on Google Drive.
+        This will upload the DataFrame as 'FileName.csv' inside
+            the 'FolderName' folder on Google Drive.
 
     """
     if google_drive_folder_id_report is None:
@@ -637,16 +660,21 @@ def upload_report_html(df, ls_folder_file_path):
 
     Args:
         df (pd.DataFrame): The DataFrame to upload.
-        ls_folder_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file.
-            The final item in the list should be the name of the desired file. If a single string is provided, it will be
+        ls_folder_file_path (List[str] or str): A list of folder and
+            file names that make up the path to the desired file.
+            The final item in the list should be the name of the desired file.
+            If a single string is provided, it will be
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure it in the environment or env file.
+        ValueError: If `google_drive_folder_id_report` is None. Configure
+            it in the environment or env file.
 
     Notes:
-        - If the `ls_folder_file_path` is a string, it will be converted to a list with one element.
-        - If the list `ls_folder_file_path` is longer than just a filename, the necessary folders will be created in the temporary
+        - If the `ls_folder_file_path` is a string, it will be converted
+            to a list with one element.
+        - If the list `ls_folder_file_path` is longer than just a filename,
+            the necessary folders will be created in the temporary
           upload directory.
 
     Example:
@@ -655,7 +683,8 @@ def upload_report_html(df, ls_folder_file_path):
         >>> df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
         >>> upload_report(df, ['FolderName', 'FileName.html'])
 
-        This will upload the DataFrame as 'FileName.html' inside the 'FolderName' folder on Google Drive.
+        This will upload the DataFrame as 'FileName.html' inside the
+            'FolderName' folder on Google Drive.
 
     """
     if google_drive_folder_id_report is None:
@@ -702,7 +731,10 @@ def upload_report_html(df, ls_folder_file_path):
     </style>
     """
     html_table = df.to_html()
-    html = f"<!DOCTYPE html><html><head>{html_style}</head><body>{html_table}</body></html>"
+    html = (
+        f"<!DOCTYPE html><html><head>{html_style}"
+        f"</head><body>{html_table}</body></html>"
+    )
     # write to file path file_path
     with open(file_path, "w") as f:
         f.write(html)
@@ -716,17 +748,23 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
 
     Args:
         ls_dfs (List[pd.DataFrame]): A list of DataFrames to upload.
-        ls_tab_names (List[str]): A list of tab names for the Excel file. Must be the same length as `ls_dfs`.
-        ls_folder_file_path (List[str] or str): A list of folder and file names that make up the path to the desired file.
-            The final item in the list should be the name of the desired file. If a single string is provided, it will be
+        ls_tab_names (List[str]): A list of tab names for the Excel file.
+            Must be the same length as `ls_dfs`.
+        ls_folder_file_path (List[str] or str): A list of folder and file names
+            that make up the path to the desired file.
+            The final item in the list should be the name of the desired file.
+                If a single string is provided, it will be
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure it in the environment or env file.
+        ValueError: If `google_drive_folder_id_report` is None. Configure it
+            in the environment or env file.
 
     Notes:
-        - If the `ls_folder_file_path` is a string, it will be converted to a list with one element.
-        - If the list `ls_folder_file_path` is longer than just a filename, the necessary folders will be created in the temporary
+        - If the `ls_folder_file_path` is a string, it will be converted to
+            a list with one element.
+        - If the list `ls_folder_file_path` is longer than just a filename,
+            the necessary folders will be created in the temporary
           upload directory.
 
     Example:
@@ -735,7 +773,8 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
         >>> df = pd.DataFrame({'Column1': [1, 2, 3], 'Column2': ['A', 'B', 'C']})
         >>> upload_report(df, ['FolderName', 'FileName.xlsx'])
 
-        This will upload the DataFrame as 'FileName.xlsx' inside the 'FolderName' folder on Google Drive.
+        This will upload the DataFrame as 'FileName.xlsx' inside the
+            'FolderName' folder on Google Drive.
 
     """
     if google_drive_folder_id_report is None:
