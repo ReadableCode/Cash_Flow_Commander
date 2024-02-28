@@ -2,22 +2,15 @@
 # Imports #
 
 import os
-import pandas
 import datetime
 import sys
-import json
-import numpy as np
-from tabulate import tabulate
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
-    file_dir,
-    parent_dir,
     grandparent_dir,
-    great_grandparent_dir,
     data_dir,
 )
 
@@ -27,7 +20,6 @@ from utils.display_tools import print_logger
 # %%
 # Variables #
 
-file_dir = os.path.dirname(os.path.realpath(__file__))
 docs_dir = os.path.join(grandparent_dir, "docs")
 
 
@@ -56,7 +48,7 @@ def get_git_link_formula(script_path, repo_owner, repo_name, branch_name):
 
 
 def get_sheet_link(sheet_id):
-    if (sheet_id == "") or (sheet_id == None) or (len(sheet_id) != 44):
+    if (sheet_id == "") or (sheet_id is None) or (len(sheet_id) != 44):
         return ""
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}"
 
@@ -69,13 +61,13 @@ def get_sheet_link_formula(sheet_id):
 
 
 def get_google_drive_folder_link(folder_id):
-    if (folder_id == "") or (folder_id == None) or (len(folder_id) != 33):
+    if (folder_id == "") or (folder_id is None) or (len(folder_id) != 33):
         return ""
     return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
 def get_domo_link(domo_table_id):
-    if (domo_table_id == "") or (domo_table_id == None):
+    if (domo_table_id == "") or (domo_table_id is None):
         return ""
     return f"https://hellofresh.domo.com/datasources/{domo_table_id}/details/data/table"
 
@@ -172,10 +164,13 @@ def log_data_pipeline_unified(
     Logs data pipeline actions to a unified google sheet
     :param action_method: python_script, google_sheet, etc
     :param script_path: GoogleSheet: DC Labor 2.0 if google sheet with apps script
-    :param function_name: name of function in python script or google script if nested in a function
+    :param function_name: name of function in python script or google
+        script if nested in a function
     :param input_output: input or output
-    :param resource_type: google_sheet, domo_table, file, database_table_path, s3_bucket etc
-    :param resource_path: spreadsheet_name, domo_table_name, file_path, database_table, s3_bucket, etc
+    :param resource_type: google_sheet, domo_table, file,
+        database_table_path, s3_bucket etc
+    :param resource_path: spreadsheet_name, domo_table_name, file_path,
+        database_table, s3_bucket, etc
     :param resource_sub_name: sheet_name
     :param resource_id: domo_table_id, spreadsheet_id, etc
     :return None

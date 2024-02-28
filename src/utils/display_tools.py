@@ -5,9 +5,6 @@ import os
 import sys
 from tabulate import tabulate
 import datetime
-import json
-from pprint import pprint
-import numpy as np
 from dotenv import load_dotenv
 
 # append grandparent
@@ -15,11 +12,7 @@ if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import (
-    file_dir,
-    parent_dir,
     grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
 )
 
 # %%
@@ -51,9 +44,12 @@ def pprint_df(dframe, showindex=False, num_cols=None, num_decimals=2):
 
     Args:
         dframe (DataFrame): The pandas DataFrame to be pretty printed.
-        showindex (bool, optional): Whether to show the DataFrame index. Defaults to False.
-        num_cols (int, optional): The maximum number of columns to display. If None, all columns are displayed. Defaults to None.
-        num_decimals (int, optional): The number of decimal places to format float values. Defaults to 2.
+        showindex (bool, optional): Whether to show the DataFrame index.
+            Defaults to False.
+        num_cols (int, optional): The maximum number of columns to display.
+            If None, all columns are displayed. Defaults to None.
+        num_decimals (int, optional): The number of decimal places to
+            format float values. Defaults to 2.
 
     Returns:
         None
@@ -108,7 +104,10 @@ def print_logger(message, level="info", as_break=False):
         "critical": 1,
     }
     if dict_levels[level.lower()] <= dict_levels[LOG_LEVEL]:
-        print_message = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {level.upper()} - {message}"
+        print_message = (
+            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f" - {level.upper()} - {message}"
+        )
         if not as_break:
             print(print_message)
         else:
@@ -132,7 +131,6 @@ def pprint_ls(ls, ls_title="List"):
     Returns:
         None
     """
-    # print a title box and a box that centers the title and left aligns each item of the list on a new line
 
     # if list is empty return
     if len(ls) == 0:
@@ -142,7 +140,7 @@ def pprint_ls(ls, ls_title="List"):
         for item in ls:
             try:
                 this_length = len(str(item))
-            except:
+            except Exception:
                 this_length = 0
             if this_length > item_max_len:
                 item_max_len = this_length
