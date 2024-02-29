@@ -2,22 +2,17 @@
 # Running Imports #
 
 import datetime
-import pandas as pd
-import sys
 import os
+import sys
+
+import pandas as pd
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    file_dir,
-)
-
-from utils.google_tools import (
-    get_book_sheet_df,
-)
-
+from utils.config_utils import file_dir
+from utils.google_tools import get_book_sheet_df
 
 # %%
 # Define Functions #

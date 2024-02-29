@@ -3,16 +3,16 @@
 
 import os
 import sys
+
 import pandas as pd
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config_utils  # noqa: F401
 
-from utils.display_tools import print_logger, pprint_df
-
+import utils.config_utils  # noqa: F401
+from utils.display_tools import pprint_df, print_logger
 
 # %%
 # Functions #

@@ -1,24 +1,21 @@
 # %%
 # Imports #
 
+import json
 import os
 import sys
-from googleapiclient.errors import HttpError
+
+from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import json
-from dotenv import load_dotenv
+from googleapiclient.errors import HttpError
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    grandparent_dir,
-)
-
-from utils.display_tools import print_logger, pprint_dict
-
+from utils.config_utils import grandparent_dir
+from utils.display_tools import pprint_dict, print_logger
 
 # %%
 # Load Environment #

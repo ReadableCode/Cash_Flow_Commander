@@ -1,19 +1,18 @@
 # %%
 # Imports #
 
+import datetime
 import os
 import sys
-from tabulate import tabulate
-import datetime
+
 from dotenv import load_dotenv
+from tabulate import tabulate
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    grandparent_dir,
-)
+from utils.config_utils import grandparent_dir
 
 # %%
 # Variables #

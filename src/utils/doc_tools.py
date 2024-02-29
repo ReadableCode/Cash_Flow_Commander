@@ -1,21 +1,16 @@
 # %%
 # Imports #
 
-import os
 import datetime
+import os
 import sys
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    grandparent_dir,
-    data_dir,
-)
-
+from utils.config_utils import data_dir, grandparent_dir
 from utils.display_tools import print_logger
-
 
 # %%
 # Variables #

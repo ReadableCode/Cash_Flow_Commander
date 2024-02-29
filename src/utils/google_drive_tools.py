@@ -1,29 +1,24 @@
 # %%
 # Imports #
 
+import io
+import json
 import os
-import pandas as pd
 import sys
 import time
+
+import pandas as pd
+from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import json
-import io
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-from dotenv import load_dotenv
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    grandparent_dir,
-    data_dir,
-    temp_upload_dir,
-)
-
+from utils.config_utils import data_dir, grandparent_dir, temp_upload_dir
 from utils.display_tools import print_logger
-
 
 # %%
 # Load Environment #

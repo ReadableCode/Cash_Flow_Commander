@@ -1,33 +1,28 @@
 # %%
 # Imports #
 
-import pygsheets
-import os
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-import pandas as pd
 import datetime
+import json
+import os
 import sys
 import time
+
+import pandas as pd
+import pygsheets
+import yaml
+from dotenv import load_dotenv
 from google.auth.exceptions import TransportError
 from googleapiclient.errors import HttpError
-import json
-from dotenv import load_dotenv
-import yaml
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    file_dir,
-    grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
-)
-
-from utils.display_tools import print_logger, pprint_df, pprint_ls
-
+from utils.config_utils import (data_dir, file_dir, grandparent_dir,
+                                great_grandparent_dir)
+from utils.display_tools import pprint_df, pprint_ls, print_logger
 
 # %%
 # Load Environment #
@@ -619,7 +614,7 @@ def get_book_sheet_values_from_id_name(
     return values
 
 
-def WriteToSheets(
+def WriteToSheets(  # noqa: C901
     bookName,
     sheetName,
     df,
