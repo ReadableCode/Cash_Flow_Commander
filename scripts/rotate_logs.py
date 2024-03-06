@@ -4,58 +4,16 @@
 if __name__ != "__main__":
     print(f"Importing {__name__}")
 
-import os, glob
-import matplotlib.pyplot as plt
-from tabulate import tabulate
-import sys
+import glob
+import os
 import re
-
 import warnings
 
+from config_scripts import log_dir
+
+from src.utils.date_tools import WorkingWeek
+
 warnings.filterwarnings("ignore")
-
-from config_scripts import (
-    home_dir,
-    log_dir,
-    file_dir,
-    parent_dir,
-    grandparent_dir,
-    great_grandparent_dir,
-    data_dir,
-    docs_dir,
-)
-
-sys.path.append(file_dir)
-sys.path.append(parent_dir)
-sys.path.append(grandparent_dir)
-
-
-from src.utils.date_tools import (
-    get_datetime_format_string,
-    get_current_datetime,
-    currentDT,
-    current_date_time_readable,
-    week_span_to_week_list,
-    day_span_to_day_list,
-    getDiffWeek,
-    getDiffDay,
-    get_weeks_out_from_week,
-    floatHourToTime,
-    fix_weeks,
-    convert_week,
-    df_days,
-    all_days_list,
-    dict_slashed_pad_date,
-    dict_slashed_nopad_date,
-    dict_slashed_pad_desc_date,
-    dict_dashed_pad_desc_date,
-    df_weeks,
-    dict_mon_roster_dates,
-    df_week_list,
-    extract_use_weeks,
-    WorkingWeek,
-)
-
 
 # %%
 # Read Logs #

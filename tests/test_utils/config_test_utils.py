@@ -2,8 +2,8 @@
 # Imports #
 
 import os
-from os.path import expanduser
 import sys
+from os.path import expanduser
 
 home_dir = expanduser("~")
 

@@ -1,17 +1,10 @@
 # %%
 # Imports #
 
-import os
-import sys
-import pytest
+import config_test_utils  # noqa F401
 import pandas as pd
-import numpy as np
-
-import config_test_utils
-
+from src.utils.display_tools import pprint_df
 from src.utils.google_tools import get_book_sheet_df
-
-from src.utils.display_tools import pprint_ls, pprint_df, print_logger
 
 # %%
 # Tests #

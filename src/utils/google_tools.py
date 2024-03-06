@@ -20,8 +20,12 @@ from pydrive.drive import GoogleDrive
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (data_dir, file_dir, grandparent_dir,
-                                great_grandparent_dir)
+from utils.config_utils import (
+    data_dir,
+    file_dir,
+    grandparent_dir,
+    great_grandparent_dir,
+)
 from utils.display_tools import pprint_df, pprint_ls, print_logger
 
 # %%
