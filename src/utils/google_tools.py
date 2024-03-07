@@ -41,11 +41,25 @@ if os.path.exists(dotenv_path):
 # Google Credentials #
 
 service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
-service_account_email = json.loads(os.getenv(service_account_env_key))["client_email"]
+
+
+raw_json = os.getenv(service_account_env_key)
+
+try:
+    service_account_email = json.loads(raw_json)["client_email"]
+    fixed_json = raw_json
+except json.JSONDecodeError as e:
+    print_logger(f"Issues: {e} with reading json from environment variable")
+    print_logger("Fixing json from environment variable")
+    fixed_json = raw_json.replace("\n", "\\n")
+    service_account_email = json.loads(fixed_json)["client_email"]
+    # fix environment variable without modifying the .env file
+    os.environ[service_account_env_key] = fixed_json
+
 print_logger(f"google_service_account email: {service_account_email}")
 
 
-if os.getenv(service_account_env_key):
+if fixed_json:
     print_logger("Using service account credentials from environment variable")
     gc = pygsheets.authorize(
         service_account_env_var=service_account_env_key,
