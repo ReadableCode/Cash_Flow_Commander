@@ -1,46 +1,41 @@
 # %%
-## Running Imports ##
+# Running Imports #
 
-import pandas as pd
+import functools
 import glob
 import os
-import functools
-
 import warnings
+
+import pandas as pd
 
 warnings.filterwarnings("ignore")
 
 from config import (
+    data_dir,
     file_dir,
-    parent_dir,
     grandparent_dir,
     great_grandparent_dir,
-    data_dir,
     log_dir,
+    parent_dir,
 )
-
-from utils.google_tools import (
-    WriteToSheets,
-    get_book_sheet_df,
-    get_book_sheet_from_id_name,
-    get_book_from_id,
-    get_book,
-    get_book_sheet,
-)
-
+from utils.date_tools import convert_fix_date_to_pad
+from utils.display_tools import pprint_df, pprint_ls, print_logger
 from utils.google_drive_tools import (
-    get_file_list_from_folder_id,
     download_file_by_id,
+    get_file_list_from_folder_id,
     rename_file,
 )
-
-from utils.date_tools import convert_fix_date_to_pad
-
-from utils.display_tools import print_logger, pprint_df, pprint_ls
-
+from utils.google_tools import (
+    WriteToSheets,
+    get_book,
+    get_book_from_id,
+    get_book_sheet,
+    get_book_sheet_df,
+    get_book_sheet_from_id_name,
+)
 
 # %%
-## Variables ##
+# Variables #
 
 dict_col_renames = {
     "Posting Date": "Post Date",
@@ -90,7 +85,7 @@ accountant_columns = [
 
 
 # %%
-## Category Functions ##
+# Category Functions #
 
 
 def get_transaction_category_details(
@@ -118,7 +113,7 @@ def get_transaction_category_details(
 
 
 # %%
-## Output Generation ##
+# Output Generation #
 
 
 def generate_accountant_export(df_transactions):
@@ -140,7 +135,7 @@ def generate_accountant_export(df_transactions):
 
 
 # %%
-## Transaction Functions ##
+# Transaction Functions #
 
 
 def import_new_files_from_drive():
@@ -249,19 +244,19 @@ def update_and_get_transactions():
     )
 
     # apply get_transaction_category_details
-    df_transactions[["Income/Expense", "Income/Expense_Category", "Client_Name"]] = (
-        df_transactions.apply(
-            lambda row: pd.Series(
-                get_transaction_category_details(
-                    row["Description"],
-                    row["Income/Expense"],
-                    row["Income/Expense_Category"],
-                    row["Client_Name"],
-                    row["Exclude_From_Income_Expenses"],
-                )
-            ),
-            axis=1,
-        )
+    df_transactions[
+        ["Income/Expense", "Income/Expense_Category", "Client_Name"]
+    ] = df_transactions.apply(
+        lambda row: pd.Series(
+            get_transaction_category_details(
+                row["Description"],
+                row["Income/Expense"],
+                row["Income/Expense_Category"],
+                row["Client_Name"],
+                row["Exclude_From_Income_Expenses"],
+            )
+        ),
+        axis=1,
     )
 
     df_transactions.sort_values(by=["Post Date"], ascending=False, inplace=True)
@@ -313,7 +308,7 @@ def update_and_get_transactions():
 
 
 # %%
-## Main ##
+# Main #
 
 if __name__ == "__main__":
     print_logger("Running laura_transaction_parser.py")

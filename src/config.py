@@ -1,13 +1,13 @@
 # %%
-## Imports ##
+# Imports #
 
 if __name__ != "__main__":
     print(f"Importing {__name__}")
 
 
 import os
-from os.path import expanduser
 import sys
+from os.path import expanduser
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -1,13 +1,13 @@
 # %%
-## Imports ##
+# Imports #
 
 if __name__ != "__main__":
     print(f"Importing {__name__}")
 
 
 import os
-from os.path import expanduser
 import sys
+from os.path import expanduser
 
 home_dir = expanduser("~")
 
