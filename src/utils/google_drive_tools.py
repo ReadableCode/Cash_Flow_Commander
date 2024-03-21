@@ -33,39 +33,50 @@ if os.path.exists(dotenv_path):
 # Google Credentials #
 
 service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
-raw_json = os.getenv(service_account_env_key)
+json_file_path = os.path.join(
+    grandparent_dir,
+    "service_account_credentials.json",
+)
 
-try:
-    service_account_email = json.loads(raw_json)["client_email"]
-    fixed_json = raw_json
-except json.JSONDecodeError as e:
-    print_logger(f"Issues: {e} with reading json from environment variable")
-    print_logger("Fixing json from environment variable")
-    fixed_json = raw_json.replace("\n", "\\n")
+if os.getenv(service_account_env_key) is not None:
+    print_logger(
+        f"Found environment variable for service account with key: {service_account_env_key}"
+    )
+    raw_json = os.getenv(service_account_env_key)
+
+    try:
+        service_account_email = json.loads(raw_json)["client_email"]
+        fixed_json = raw_json
+    except json.JSONDecodeError as e:
+        print_logger(
+            f"JSONDecodeError: {e} with reading json from environment variable, trying to repair"
+        )
+        fixed_json = raw_json.replace("\n", "\\n")
+        service_account_email = json.loads(fixed_json)["client_email"]
+
+        # fix environment variable without modifying the .env file
+        os.environ[service_account_env_key] = fixed_json
+
+elif os.path.exists(json_file_path):
+    print_logger(
+        f"No environment varible with key: {service_account_env_key}, Found json credentails at: {json_file_path}"
+    )
+    fixed_json = open(json_file_path).read()
     service_account_email = json.loads(fixed_json)["client_email"]
-    # fix environment variable without modifying the .env file
+
+    # add environment variable without modifying the .env file
     os.environ[service_account_env_key] = fixed_json
 
 print_logger(f"google_service_account email: {service_account_email}")
 
-if os.getenv(service_account_env_key):
-    print_logger("Using service account credentials from environment variable")
-    # create credentials from google service account info
-    google_service_account_credentials = (
-        service_account.Credentials.from_service_account_info(
-            json.loads(os.getenv(service_account_env_key), strict=False),
-            scopes=["https://www.googleapis.com/auth/drive"],
-        )
+print_logger("Using service account credentials from environment variable")
+# create credentials from google service account info
+google_service_account_credentials = (
+    service_account.Credentials.from_service_account_info(
+        json.loads(os.getenv(service_account_env_key), strict=False),
+        scopes=["https://www.googleapis.com/auth/drive"],
     )
-else:
-    print_logger("Using json file for service account credentials")
-    # create credentials from json file
-    google_service_account_credentials = (
-        service_account.Credentials.from_service_account_file(
-            os.path.join(grandparent_dir, "service_account_credentials.json"),
-            scopes=["https://www.googleapis.com/auth/drive"],
-        )
-    )
+)
 
 # Create a Google Drive API client
 drive_service = build("drive", "v3", credentials=google_service_account_credentials)

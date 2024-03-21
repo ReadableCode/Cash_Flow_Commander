@@ -41,37 +41,51 @@ if os.path.exists(dotenv_path):
 # Google Credentials #
 
 service_account_env_key = "GOOGLE_SERVICE_ACCOUNT"
+json_file_path = os.path.join(
+    grandparent_dir,
+    "service_account_credentials.json",
+)
 
+if os.getenv(service_account_env_key) is not None:
+    print_logger(
+        "Found environment variable for service account with key: "
+        + service_account_env_key
+    )
+    raw_json = os.getenv(service_account_env_key)
 
-raw_json = os.getenv(service_account_env_key)
+    try:
+        service_account_email = json.loads(raw_json)["client_email"]
+        fixed_json = raw_json
+    except json.JSONDecodeError as e:
+        print_logger(
+            f"JSONDecodeError: {e} with reading json from environment variable, trying to repair"
+        )
+        fixed_json = raw_json.replace("\n", "\\n")
+        service_account_email = json.loads(fixed_json)["client_email"]
 
-try:
-    service_account_email = json.loads(raw_json)["client_email"]
-    fixed_json = raw_json
-except json.JSONDecodeError as e:
-    print_logger(f"Issues: {e} with reading json from environment variable")
-    print_logger("Fixing json from environment variable")
-    fixed_json = raw_json.replace("\n", "\\n")
+        # fix environment variable without modifying the .env file
+        os.environ[service_account_env_key] = fixed_json
+
+elif os.path.exists(json_file_path):
+    print_logger(
+        f"No environment varible with key: {service_account_env_key}, Found json credentails at: {json_file_path}"
+    )
+    fixed_json = open(json_file_path).read()
     service_account_email = json.loads(fixed_json)["client_email"]
-    # fix environment variable without modifying the .env file
+
+    # add environment variable without modifying the .env file
     os.environ[service_account_env_key] = fixed_json
 
 print_logger(f"google_service_account email: {service_account_email}")
 
+print_logger("Using service account credentials from environment")
+gc = pygsheets.authorize(
+    service_account_env_var=service_account_env_key,
+)
 
-if fixed_json:
-    print_logger("Using service account credentials from environment variable")
-    gc = pygsheets.authorize(
-        service_account_env_var=service_account_env_key,
-    )
-else:
-    print_logger("Using json file for service account credentials")
-    gc = pygsheets.authorize(
-        service_file=os.path.join(
-            grandparent_dir,
-            "service_account_credentials.json",
-        ),
-    )
+
+# %%
+# Google Credentials: OAuth #
 
 # try to load oauth credentials
 try:
@@ -96,8 +110,11 @@ except Exception:
 # Sheet Variables #
 
 # load preconfigured sheet ids
-with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
-    dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)
+if os.path.exists(os.path.join(file_dir, "sheet_ids.yaml")):
+    with open(os.path.join(file_dir, "sheet_ids.yaml"), "r") as outfile:
+        dict_hardcoded_book_ids = yaml.load(outfile, Loader=yaml.FullLoader)
+else:
+    dict_hardcoded_book_ids = {}
 
 
 # %%
