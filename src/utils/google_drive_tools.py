@@ -69,6 +69,8 @@ else:
 
 # Create a Google Drive API client
 drive_service = build("drive", "v3", credentials=google_service_account_credentials)
+# increase timeout
+drive_service._http.timeout = 600
 
 
 # %%
