@@ -10,7 +10,6 @@ import re
 import warnings
 
 from config_scripts import log_dir
-
 from src.utils.date_tools import WorkingWeek
 
 warnings.filterwarnings("ignore")
