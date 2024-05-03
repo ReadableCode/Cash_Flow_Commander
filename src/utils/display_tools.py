@@ -2,6 +2,7 @@
 # Imports #
 
 import datetime
+import json
 import os
 import sys
 
@@ -168,6 +169,13 @@ def pprint_ls(ls, ls_title="List"):
 
 
 def pprint_dict(data, indent=0):
+    try:
+        print(json.dumps(data, indent=indent + 2))
+        return
+    except Exception as e:
+        if e:
+            pass
+
     if isinstance(data, dict):
         for key, value in data.items():
             print(" " * indent + str(key) + ": ", end="")

@@ -1,6 +1,7 @@
 # %%
 # Running Imports #
 
+import calendar
 import datetime
 import os
 import sys
@@ -654,6 +655,32 @@ def convert_fix_date_to_pad(date):
             pass
         print("Date not converted to Pad: ", date)
         raise ValueError
+
+
+def get_initial_accounting_period_due_date(date):
+    """
+    Returns the initial date based on last day of current/prior month.
+
+    Args:
+        Date (str): The date to start from, generally today, in the format "YYYY-MM-DD", e.g., "2024-01-01".
+
+    Returns:
+        Date (dt): The first day of the previous month after adding 12 days to the process date.
+    """
+    date_dt = datetime.datetime.strptime(date, "%Y-%m-%d")
+    date_dt = datetime.timedelta(days=12) + date_dt
+    current_month_number = date_dt.month
+    current_year = date_dt.year
+    if current_month_number == 1:
+        current_year = current_year - 1
+        previous_month_number = 12
+    else:
+        previous_month_number = current_month_number - 1
+    _, last_day_of_month = calendar.monthrange(current_year, previous_month_number)
+    initial_accounting_period_date = datetime.datetime(
+        current_year, previous_month_number, last_day_of_month
+    )
+    return initial_accounting_period_date
 
 
 def get_year_quarter_from_week_string(week_string):
