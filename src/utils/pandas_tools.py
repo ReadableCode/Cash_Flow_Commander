@@ -4,6 +4,7 @@
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 
 # append grandparent
@@ -13,6 +14,7 @@ if __name__ == "__main__":
 
 import utils.config_utils  # noqa: F401
 from utils.display_tools import pprint_df, print_logger
+from utils.number_tools import force_to_number
 
 # %%
 # Functions #
@@ -181,29 +183,124 @@ def apply_configuration(df, config):
 
 
 # %%
-# Main #
+# Upload Preparation Functions #
 
 
-if __name__ == "__main__":
-    # Sample DataFrames
-    data1 = {"A": [1, 2, 3, 4], "B": [5, 6, 7, 8], "key": ["a", "b", "c", "d"]}
+def sanitize_string_column(df, col_name):
+    # Fill NaN with a placeholder
+    df[col_name] = df[col_name].fillna("TempNaNPlaceholder")
 
-    data2 = {"C": [10, 20, 30], "D": [50, 60, 70], "key": ["a", "b", "x"]}
+    # Perform string operations
+    df[col_name] = df[col_name].astype(str)
+    df[col_name] = (
+        df[col_name].str.replace(",", "").str.replace("'", "").str.replace('"', "")
+    )
 
-    df1 = pd.DataFrame(data1)
-    df2 = pd.DataFrame(data2)
+    # Revert placeholder to NaN
+    df[col_name] = df[col_name].replace("TempNaNPlaceholder", np.nan)
 
-    pprint_df(df1)
-    pprint_df(df2)
+    return df
 
-    # Using the function
-    merged_df, unmerged_df = merge_and_return_unmerged(df1, df2, merge_cols=["key"])
 
-    # Displaying results
-    print("Merged DataFrame:")
-    pprint_df(merged_df)
-    print("Unmerged DataFrame:")
-    pprint_df(unmerged_df)
+def sanitize_ls_string_cols(df, ls_cols):
+    for col in ls_cols:
+        df = sanitize_string_column(df, col)
+
+    return df
+
+
+def generate_schema(df):
+    print("{")
+    for col_name in df.columns.tolist():
+        # get column type
+        col_dtype = df[col_name].dtype
+        if col_dtype == "object":
+            col_dtype = "string"
+        col_lowered = col_name.lower()
+        col_lowered = col_lowered.replace(".", "_")
+
+        print(
+            f'"{col_lowered}": {{"ls_rename_cols": ["{col_name}"], "col_type": "{col_dtype}"}},'
+        )
+    print("}")
+
+
+def print_schema_yaml(dict_schema):
+    """
+    Prints out a schema like this:
+    - name: "ch"
+      type: "string"
+      comment: ""
+    - name: "company_name"
+      type: "string"
+      comment: "company"
+    """
+
+    for key, value in dict_schema.items():
+        type_to_print = value["col_type"] if value["col_type"] != "float64" else "float"
+
+        print(f"- name: {key}")
+        print(f"  type: {type_to_print}")
+        print('  comment: ""')
+
+
+def apply_schema(df, dict_schema):
+    """
+    Apply schema to a dataframe.
+
+    Parameters:
+    - df (DataFrame): DataFrame to apply schema to.
+    - dict_schema (dict): Dictionary containing schema information in for formt:
+        {
+            "column_name": {
+                "ls_rename_cols": ["col_name_1", "col_name_2"],
+                "col_type": "int" | "float64" | "string" | "double"
+            }
+        }
+
+    Returns:
+    - df (DataFrame): DataFrame with schema applied.
+    """
+    for col, dict_col in dict_schema.items():
+        # rename cols to this col in schema
+        if "ls_rename_cols" in dict_col:
+            ls_cols_to_rename_to_col = dict_col["ls_rename_cols"]
+            for col_to_rename_orig in ls_cols_to_rename_to_col:
+                if col_to_rename_orig in df.columns:
+                    df.rename(columns={col_to_rename_orig: col}, inplace=True)
+                    break
+        # if col doesnt exist still, init
+        if col not in df.columns:
+            df[col] = ""
+        # set col type
+        col_type = dict_col["col_type"]
+        if col_type in ["int", "float64", "double"]:
+            df[col] = df[col].apply(force_to_number)
+        elif col_type == "string":
+            df = sanitize_string_column(df, col)
+        elif col_type == "double":
+            df[col] = df[col].round(2)
+        df[col] = df[col].astype(col_type)
+    return df[dict_schema.keys()]
+
+
+def get_col_widths_styles(dataframe):
+    # Calculate maximum width needed for each column
+    col_widths = []
+    for col in dataframe.columns:
+        max_length = max(dataframe[col].astype(str).apply(len).max(), len(col))
+        if max_length > 50:
+            max_length = 50
+        col_widths.append(max_length)
+
+    # Define styles for each column
+    styles = [
+        {"selector": "th", "props": [("text-align", "left"), ("padding", "0.5rem")]}
+    ]
+    for i, width in enumerate(col_widths):
+        styles.append({"selector": f".col{i}", "props": [("min-width", f"{width}ch")]})
+
+    return styles
 
 
 # %%

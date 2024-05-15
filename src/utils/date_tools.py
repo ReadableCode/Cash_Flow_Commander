@@ -310,6 +310,13 @@ df_week_list = pd.DataFrame(all_weeks_list, columns=["Week"])
 # Main Functions #
 
 
+def get_start_end_dates_for_week(week):
+    ls_dates_in_week = [
+        date[0] for date in dict_dashed_pad_desc_date.items() if date[1] == week
+    ]
+    return ls_dates_in_week[0], ls_dates_in_week[-1]
+
+
 def week_span_to_week_list(base_week, num_weeks_back, num_weeks_forward):
     """
     Returns a list of weeks from a specified base week, including a specified number of
