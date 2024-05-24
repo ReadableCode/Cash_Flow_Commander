@@ -193,7 +193,12 @@ def sanitize_string_column(df, col_name):
     # Perform string operations
     df[col_name] = df[col_name].astype(str)
     df[col_name] = (
-        df[col_name].str.replace(",", "").str.replace("'", "").str.replace('"', "")
+        df[col_name]
+        .str.replace(",", "")
+        .str.replace("'", "")
+        .str.replace('"', "")
+        .str.replace("\r", "")
+        .str.replace("\n", "")
     )
 
     # Revert placeholder to NaN
