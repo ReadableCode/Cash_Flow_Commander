@@ -781,6 +781,17 @@ def get_start_end_week(week):
     return start_date, end_date
 
 
+def get_start_end_week_exclusive(week):
+    start_date = df_scm_weeks[
+        df_scm_weeks["Week_SCM_Weekday"] == f"{week} - Thursday - 1"
+    ]["dashed_pad_desc"].values[0]
+    end_date = df_scm_weeks[
+        df_scm_weeks["Week_SCM_Weekday"] == f"{week} - Wednesday - 2"
+    ]["dashed_pad_desc"].values[0]
+
+    return start_date, end_date
+
+
 # %%
 # Define Functions #
 
