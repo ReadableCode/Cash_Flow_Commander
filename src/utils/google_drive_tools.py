@@ -563,7 +563,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
         media = MediaFileUpload(file_path, mimetype="application/octet-stream")
         drive_service.files().update(
             fileId=existing_file_id, media_body=media, fields="id"
-        ).execute()
+        ).execute(num_retries=10)
         print(f"Replaced existing file with ID: {existing_file_id}")
 
     else:

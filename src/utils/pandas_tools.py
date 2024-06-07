@@ -1,6 +1,7 @@
 # %%
 # Imports #
 
+import json
 import os
 import sys
 
@@ -230,7 +231,7 @@ def generate_schema(df):
     print("}")
 
 
-def print_schema_yaml(dict_schema):
+def print_schema_yaml_datasets_format(dict_schema):
     """
     Prints out a schema like this:
     - name: "ch"
@@ -247,6 +248,61 @@ def print_schema_yaml(dict_schema):
         print(f"- name: {key}")
         print(f"  type: {type_to_print}")
         print('  comment: ""')
+
+
+def print_schema_yaml_limesync_format(dict_schema, save_path=None):
+    """
+    Prints out a schema like this:
+    - name: "ch"
+      type: "string"
+      comment: ""
+    - name: "company_name"
+      type: "string"
+      comment: "company"
+    """
+    print("schema:")
+    for key, value in dict_schema.items():
+        type_to_print = value["col_type"] if value["col_type"] != "float64" else "float"
+        print(f"    {key}: {type_to_print}")
+
+    if save_path:
+        with open(save_path, "w") as f:
+            f.write("schema:\n")
+            for key, value in dict_schema.items():
+                type_to_print = (
+                    value["col_type"] if value["col_type"] != "float64" else "float"
+                )
+                f.write(f"    {key}: {type_to_print}\n")
+
+
+def generate_schema_from_df(df, save_path=None):
+    df_copy = df.copy()
+    dict_schema = {}
+    for col_name in df_copy.columns.tolist():
+        col_dtype = df_copy[col_name].dtype
+        if col_dtype == "object":
+            col_dtype = "string"
+        else:
+            col_dtype = str(col_dtype)
+        col_lowered = col_name.lower()
+        col_lowered = col_lowered.replace(".", "_")
+
+        dict_schema[col_lowered] = {
+            "ls_rename_cols": [col_name],
+            "col_type": col_dtype,
+        }
+        print(
+            {
+                "ls_rename_cols": [col_name],
+                "col_type": col_dtype,
+            }
+        )
+
+    if save_path:
+        with open(save_path, "w") as f:
+            json.dump(dict_schema, f)
+
+    return dict_schema
 
 
 def apply_schema(df, dict_schema):
