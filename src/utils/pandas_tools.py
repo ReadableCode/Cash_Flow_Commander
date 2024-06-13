@@ -243,7 +243,14 @@ def print_schema_yaml_datasets_format(dict_schema):
     """
 
     for key, value in dict_schema.items():
-        type_to_print = value["col_type"] if value["col_type"] != "float64" else "float"
+        if value["col_type"] == "float64":
+            type_to_print = "float"
+        elif value["col_type"] == "bool":
+            type_to_print = "boolean"
+        elif value["col_type"] == "int64":
+            type_to_print = "int"
+        else:
+            type_to_print = value["col_type"]
 
         print(f"- name: {key}")
         print(f"  type: {type_to_print}")
@@ -262,16 +269,26 @@ def print_schema_yaml_limesync_format(dict_schema, save_path=None):
     """
     print("schema:")
     for key, value in dict_schema.items():
-        type_to_print = value["col_type"] if value["col_type"] != "float64" else "float"
+        if value["col_type"] == "float64":
+            type_to_print = "float"
+        elif value["col_type"] == "bool":
+            type_to_print = "boolean"
+        elif value["col_type"] == "int64":
+            type_to_print = "int"
+        else:
+            type_to_print = value["col_type"]
         print(f"    {key}: {type_to_print}")
 
     if save_path:
         with open(save_path, "w") as f:
             f.write("schema:\n")
             for key, value in dict_schema.items():
-                type_to_print = (
-                    value["col_type"] if value["col_type"] != "float64" else "float"
-                )
+                if value["col_type"] == "float64":
+                    type_to_print = "float"
+                elif value["col_type"] == "bool":
+                    type_to_print = "boolean"
+                else:
+                    type_to_print = value["col_type"]
                 f.write(f"    {key}: {type_to_print}\n")
 
 
