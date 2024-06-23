@@ -96,7 +96,7 @@ google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 # Get Functions #
 
 
-def check_storage_space_serice_account():
+def check_storage_space_service_account():
     """
     Retrieves and prints the storage quota information
     for the Google Drive service account.
@@ -110,7 +110,7 @@ def check_storage_space_serice_account():
     object has already been initialized.
 
     Example usage:
-    check_storage_space_serice_account()
+    check_storage_space_service_account()
     """
     # Get the about resource, which includes storage quota information
     about = drive_service.about().get(fields="storageQuota").execute()

@@ -934,6 +934,17 @@ def copy_sheet_book_to_book(source_book, ls_source_sheets, ls_dest_books):
             Workbook_dest.add_worksheet(source_sheet, src_tuple=src_tup)
 
 
+def remove_sheet_from_book(book_name, sheet_name):
+    Workbook = get_book(book_name)
+    try:
+        Workbook.del_worksheet(Workbook.worksheet_by_title(sheet_name))
+    except Exception as e:
+        print_logger(
+            f"Failed to remove sheet from book {book_name} with sheet name {sheet_name}, error: {e}",
+            level="warning",
+        )
+
+
 # %%
 # Auth and gets #
 
