@@ -13,19 +13,12 @@ import yaml
 from dotenv import load_dotenv
 from google.auth.exceptions import TransportError
 from googleapiclient.errors import HttpError
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 
 # append grandparent
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.config_utils import (
-    data_dir,
-    file_dir,
-    grandparent_dir,
-    great_grandparent_dir,
-)
+from utils.config_utils import data_dir, file_dir, grandparent_dir
 from utils.display_tools import pprint_df, pprint_ls, print_logger
 
 # %%
@@ -82,28 +75,6 @@ print_logger("Using service account credentials from environment")
 gc = pygsheets.authorize(
     service_account_env_var=service_account_env_key,
 )
-
-
-# %%
-# Google Credentials: OAuth #
-
-# try to load oauth credentials
-try:
-    gc_oauth = pygsheets.authorize(
-        client_secret=os.path.join(
-            great_grandparent_dir,
-            "credentials",
-            "personal",
-            "gsheets_auth_oauth",
-            "oauth.json",
-        ),
-        credentials_directory=os.path.join(
-            great_grandparent_dir, "credentials", "personal", "gsheets_auth_oauth"
-        ),
-    )
-except Exception:
-    gc_oauth = None
-    pass
 
 
 # %%
@@ -949,106 +920,6 @@ def remove_sheet_from_book(book_name, sheet_name):
 # Auth and gets #
 
 
-def get_google_authentication():
-    gauth = GoogleAuth()
-    # Try to load saved client credentials
-    gauth.LoadCredentialsFile(
-        os.path.join(
-            great_grandparent_dir,
-            "credentials",
-            "personal",
-            "google_auth",
-            "google_auth_creds.txt",
-        )
-    )
-    if gauth.credentials is None:
-        # Authenticate if they're not there
-        gauth.LocalWebserverAuth()
-    elif gauth.access_token_expired:
-        # Refresh them if expired
-        gauth.Refresh()
-    else:
-        # Initialize the saved creds
-        gauth.Authorize()
-    # Save the current credentials to a file
-    gauth.SaveCredentialsFile(
-        os.path.join(
-            great_grandparent_dir,
-            "credentials",
-            "personal",
-            "google_auth",
-            "google_auth_creds.txt",
-        )
-    )
-    return gauth
-
-
-def get_google_drive_obj():
-    drive = GoogleDrive(get_google_authentication())
-    return drive
-
-
-def get_file_list_from_folder_id_oauth(folder_id):
-    parent_folder_files = (
-        get_google_drive_obj()
-        .ListFile({"q": f"'{folder_id}' in parents and trashed=false"})
-        .GetList()
-    )
-
-    return parent_folder_files
-
-
-def get_book_id_from_parent_folder_id_oauth(parent_folder_id, book_name):
-    print_logger(
-        (
-            "Getting sheet ID for book named "
-            f"{book_name} inside parent folder ID {parent_folder_id}"
-        )
-    )
-
-    parent_folder_files = get_file_list_from_folder_id_oauth(parent_folder_id)
-
-    for file in parent_folder_files:
-        if file["title"] == book_name:
-            file_id = file["id"]
-            print_logger(
-                f"Found sheet ID {file_id} for book named {book_name} "
-                f"inside parent folder ID {parent_folder_id}"
-            )
-            return file_id
-
-
-def list_files_recursively(folder_id, level):
-    file_list = (
-        get_google_drive_obj()
-        .ListFile({"q": f"'{folder_id}' in parents and trashed=false"})
-        .GetList()
-    )
-    for file in file_list:
-        if not (file["mimeType"] == "application/vnd.google-apps.folder") or (
-            file["mimeType"] == "application/vnd.google-apps.shortcut"
-        ):
-            print(
-                "\t" * level
-                + "title: %s" % file["title"]
-                + " - ID: %s" % file["id"]
-                + " - Type: %s" % file["mimeType"]
-            )
-
-    for file in file_list:
-        if (
-            file["mimeType"] == "application/vnd.google-apps.folder"
-            or file["mimeType"] == "application/vnd.google-apps.shortcut"
-        ):
-            print(
-                "\t" * level
-                + "title: %s" % file["title"]
-                + " - ID: %s" % file["id"]
-                + " - Type: %s" % file["mimeType"]
-            )
-            list_files_recursively(file["id"], level + 2)
-
-
 def get_book_from_file_name(file_name):  # need to remove, aliased to new one for now
     book_from_file_name = get_book(file_name)
     return book_from_file_name
@@ -1109,38 +980,6 @@ def get_df_and_id_from_file_name(
         start=start_range, end=end_range, include_tailing_empty=include_tailing_empty
     )
     return data_from_book, sheet_id
-
-
-def get_book_from_id_oauth(id):
-    book_from_id = gc_oauth.open_by_key(id)
-    return book_from_id
-
-
-def get_book_from_file_name_oauth(file_name):
-    book_from_file_name = gc_oauth.open(file_name)
-    return book_from_file_name
-
-
-def get_df_from_sheet_id_oauth(
-    id, sheet_name, start_range, end_range, include_tailing_empty=False
-):
-    book_from_id = get_book_from_id_oauth(id)
-    sheet_from_book = book_from_id.worksheet_by_title(sheet_name)
-    data_from_book = sheet_from_book.get_as_df(
-        start=start_range, end=end_range, include_tailing_empty=include_tailing_empty
-    )
-    return data_from_book
-
-
-def get_df_from_file_name_oauth(
-    file_name, sheet_name, start_range, end_range, include_tailing_empty=False
-):
-    book_from_file_name = get_book_from_file_name_oauth(file_name)
-    sheet_from_book = book_from_file_name.worksheet_by_title(sheet_name)
-    data_from_book = sheet_from_book.get_as_df(
-        start=start_range, end=end_range, include_tailing_empty=include_tailing_empty
-    )
-    return data_from_book
 
 
 def copy_formulas_range_to_range(
