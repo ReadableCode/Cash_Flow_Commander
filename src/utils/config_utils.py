@@ -10,12 +10,8 @@ grandparent_dir = os.path.dirname(parent_dir)
 great_grandparent_dir = os.path.dirname(grandparent_dir)
 
 data_dir = os.path.join(grandparent_dir, "data")
-trigger_dir = os.path.join(grandparent_dir, "triggers")
 log_dir = os.path.join(grandparent_dir, "logs")
 query_dir = os.path.join(grandparent_dir, "queries")
-data_dir_db_mirror = os.path.join(
-    great_grandparent_dir, "Labor_Planning", "data_db_mirror"
-)
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
 s3_download_cache = os.path.join(data_dir, "s3_download_cache")
 temp_upload_dir = os.path.join(data_dir, "temp_upload")
@@ -24,7 +20,6 @@ src_dir = os.path.join(grandparent_dir, "src")
 
 directories = [
     data_dir,
-    trigger_dir,
     log_dir,
     drive_download_cache_dir,
     s3_download_cache,
