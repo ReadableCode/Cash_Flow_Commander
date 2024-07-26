@@ -168,41 +168,6 @@ def get_top_storage_use_files(num_files=20):
             )
 
 
-def get_ls_drive_odls():
-    """
-    Retrieves a list of ODL files from Google Drive.
-
-    Returns:
-        list: A list of file IDs for ODL files.
-    """
-
-    filename_part = "odl_with_supp_columns"
-    # List files
-    results = (
-        drive_service.files()
-        .list(
-            q=f"'me' in owners and name contains '{filename_part}'",
-            pageSize=20,
-            fields="nextPageToken, files(id, name, mimeType)",
-            orderBy="createdTime desc",  # Order by created time, descending
-        )
-        .execute()
-    )
-    items = results.get("files", [])
-
-    if not items:
-        print("No files found.")
-        return None
-    else:
-        print("Files:")
-        ls_files = []
-        for item in items:
-            print(f"{item['name']} ({item['id']})")
-            ls_files.append(item["id"])
-
-    return ls_files
-
-
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
     """
     Given a folder ID and a list of folder and file names, returns
