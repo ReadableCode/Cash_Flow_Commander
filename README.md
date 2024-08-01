@@ -54,7 +54,7 @@ pipenv install
   pyenv which python
   pipenv --python <output of above command>
   # example
-  pipenv --python C:\Users\jason\.pyenv\pyenv-win\versions\3.12.4\python.exe 
+  pipenv --python C:\Users\jason\.pyenv\pyenv-win\versions\3.12.4\python.exe install
   ```
 
 - Activate the pipenv in your powershell
