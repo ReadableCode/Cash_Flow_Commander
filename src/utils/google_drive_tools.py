@@ -29,6 +29,13 @@ if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
 
+GOOGLE_DRIVE_FOLDER_ID_REPORT = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
+if GOOGLE_DRIVE_FOLDER_ID_REPORT is not None:
+    print_logger(
+        f"Found environment variable for google drive folder id with key: {GOOGLE_DRIVE_FOLDER_ID_REPORT}"
+    )
+
+
 # %%
 # Google Credentials #
 
@@ -119,27 +126,32 @@ def check_storage_space_service_account():
     total_storage = int(about["storageQuota"]["limit"])
     used_storage_gb = used_storage / 1e9
     total_storage_gb = total_storage / 1e9
+    percent_used = (used_storage / total_storage) * 100
     print(f"Using {used_storage_gb} of {total_storage_gb} GB")
-    print(f"Percent Used: {(used_storage / total_storage) * 100} %")
+    print(f"Percent Used: {percent_used} %")
+    return percent_used
 
 
-def get_top_storage_use_files(num_files=20):
+def get_top_storage_use_files(num_files=20, parent_folder_id=None):
     """
     Retrieves the top storage usage files from Google Drive.
 
     Args:
         num_files (int): The number of files to retrieve. Default is 20.
+        parent_folder_id (str, optional): The ID of the parent folder to search within. Default is None.
 
     Returns:
-        None
+        list: A list of dictionaries containing file details.
     """
-    # Rest of the code...
+    query = "'me' in owners"
+    if parent_folder_id:
+        query += f" and '{parent_folder_id}' in parents"
 
     # List files
     results = (
         drive_service.files()
         .list(
-            q="'me' in owners",
+            q=query,
             pageSize=num_files,
             fields="nextPageToken, files(id, name, mimeType, size)",
             orderBy="quotaBytesUsed desc",  # Order by size, descending
@@ -156,16 +168,18 @@ def get_top_storage_use_files(num_files=20):
             # get parent folder id
             file_id = item["id"]
             file = drive_service.files().get(fileId=file_id, fields="parents").execute()
-            parent_id = file.get("parents")[0]
-            file_size = item["size"]
-            file_size_MB = int(file_size) / 1e6
+            parent_id = file.get("parents")[0] if "parents" in file else "No parent"
+            file_size = item.get("size", 0)
+            file_size_MB = int(file_size) / 1e6 if file_size else 0
             # Print files name and size
             print(
                 (
-                    f"{file_size_MB} MB, Name: {item['name']}, "
+                    f"{file_size_MB:.2f} MB, Name: {item['name']}, "
                     f"ID: {item['id']}, Parent ID: {parent_id}"
                 )
             )
+
+    return items
 
 
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
@@ -570,6 +584,47 @@ def delete_file_by_id(file_id):
     # Delete the file
     drive_service.files().delete(fileId=file_id).execute()
     print(f"File with ID {file_id} deleted")
+
+
+# %%
+# Ownership Functions #
+
+
+def download_top_used_files_for_reupload_as_user(
+    num_files=30, parent_folder_id=None, actually_delete_files=False
+):
+    initial_percent_used = check_storage_space_service_account()
+    print(f"Initial percent used: {initial_percent_used}")
+
+    dict_items = get_top_storage_use_files(
+        num_files=num_files, parent_folder_id=parent_folder_id
+    )
+    print(dict_items)
+
+    base_path = os.path.join(
+        os.path.dirname(os.path.dirname(grandparent_dir)), "temp_drive_reupload"
+    )
+    os.makedirs(base_path, exist_ok=True)
+    print(base_path)
+
+    for dict_item in dict_items:
+        file_id = dict_item["id"]
+        file_name = dict_item["name"]
+        print(f"File Name: {file_name}")
+        download_file_by_id(file_id, os.path.join(base_path, file_name))
+
+    if actually_delete_files:
+        for dict_item in dict_items:
+            file_id = dict_item["id"]
+            file_name = dict_item["name"]
+            print(f"File Name: {file_name}")
+            delete_file_by_id(file_id)
+
+    final_percent_used = check_storage_space_service_account()
+    print(f"Final percent used: {final_percent_used}")
+    print(
+        f"Do not forget to reupload the donwloaded files as yourself to the same folder from {base_path}"
+    )
 
 
 # %%
