@@ -1,8 +1,11 @@
 # %%
-# Paths #
+# Imports #
 
 import os
 import sys
+
+# %%
+# Paths #
 
 file_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

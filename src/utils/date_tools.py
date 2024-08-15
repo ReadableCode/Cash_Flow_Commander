@@ -1,5 +1,5 @@
 # %%
-# Running Imports #
+# Imports #
 
 import calendar
 import datetime
@@ -16,7 +16,7 @@ from utils.config_utils import file_dir
 from utils.google_tools import get_book_sheet_df
 
 # %%
-# Define Functions #
+# Functions #
 
 
 def get_datetime_format_string(format):
