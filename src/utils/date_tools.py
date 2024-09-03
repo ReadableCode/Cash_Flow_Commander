@@ -792,6 +792,26 @@ def get_start_end_week_exclusive(week):
     return start_date, end_date
 
 
+def get_month_name_from_num(month_num):
+    """
+    Returns the name of the month corresponding to the given month number.
+
+    Args:
+        month_num (int or str): The month number, which can be an integer from 1 to 12
+
+    Returns:
+        str: The name of the month.
+
+    Raises:
+        KeyError: If the given month number is not found in the dictionary.
+
+    """
+    month_num = str(month_num)
+    for month_name in dict_month_numbers:
+        if dict_month_numbers[month_name] == month_num:
+            return month_name
+
+
 # %%
 # Define Functions #
 
