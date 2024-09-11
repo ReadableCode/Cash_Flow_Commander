@@ -18,7 +18,7 @@ if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.config_utils import data_dir, grandparent_dir, temp_upload_dir
-from utils.display_tools import print_logger
+from utils.display_tools import pprint_dict, print_logger
 
 # %%
 # Load Environment #
@@ -28,12 +28,17 @@ dotenv_path = os.path.join(grandparent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
-
 GOOGLE_DRIVE_FOLDER_ID_REPORT = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
 if GOOGLE_DRIVE_FOLDER_ID_REPORT is not None:
     print_logger(
         f"Found environment variable for google drive folder id with key: {GOOGLE_DRIVE_FOLDER_ID_REPORT}"
     )
+
+
+# %%
+# Variables #
+
+ls_files_downloaded_this_run = []
 
 
 # %%
@@ -92,94 +97,7 @@ drive_service._http.timeout = 600
 
 
 # %%
-# Variables #
-
-ls_files_downloaded_this_run = []
-
-google_drive_folder_id_report = os.getenv("GOOGLE_DRIVE_FOLDER_ID_REPORT", None)
-
-
-# %%
 # Get Functions #
-
-
-def check_storage_space_service_account():
-    """
-    Retrieves and prints the storage quota information
-    for the Google Drive service account.
-
-    This function uses the Google Drive API to get the storage quota
-    information for the service account
-    and prints the storage quota, used storage, total storage,
-    and the percentage of storage used.
-
-    Note: This function assumes that the `drive_service`
-    object has already been initialized.
-
-    Example usage:
-    check_storage_space_service_account()
-    """
-    # Get the about resource, which includes storage quota information
-    about = drive_service.about().get(fields="storageQuota").execute()
-    print(f"Storage quota: {about['storageQuota']}")
-    used_storage = int(about["storageQuota"]["usage"])
-    total_storage = int(about["storageQuota"]["limit"])
-    used_storage_gb = used_storage / 1e9
-    total_storage_gb = total_storage / 1e9
-    percent_used = (used_storage / total_storage) * 100
-    print(f"Using {used_storage_gb} of {total_storage_gb} GB")
-    print(f"Percent Used: {percent_used} %")
-    return percent_used
-
-
-def get_top_storage_use_files(num_files=20, parent_folder_id=None):
-    """
-    Retrieves the top storage usage files from Google Drive.
-
-    Args:
-        num_files (int): The number of files to retrieve. Default is 20.
-        parent_folder_id (str, optional): The ID of the parent folder to search within. Default is None.
-
-    Returns:
-        list: A list of dictionaries containing file details.
-    """
-    query = "'me' in owners"
-    if parent_folder_id:
-        query += f" and '{parent_folder_id}' in parents"
-
-    # List files
-    results = (
-        drive_service.files()
-        .list(
-            q=query,
-            pageSize=num_files,
-            fields="nextPageToken, files(id, name, mimeType, size)",
-            orderBy="quotaBytesUsed desc",  # Order by size, descending
-        )
-        .execute()
-    )
-    items = results.get("files", [])
-
-    if not items:
-        print("No files found.")
-    else:
-        print("Highest Storage Files:")
-        for item in items:
-            # get parent folder id
-            file_id = item["id"]
-            file = drive_service.files().get(fileId=file_id, fields="parents").execute()
-            parent_id = file.get("parents")[0] if "parents" in file else "No parent"
-            file_size = item.get("size", 0)
-            file_size_MB = int(file_size) / 1e6 if file_size else 0
-            # Print files name and size
-            print(
-                (
-                    f"{file_size_MB:.2f} MB, Name: {item['name']}, "
-                    f"ID: {item['id']}, Parent ID: {parent_id}"
-                )
-            )
-
-    return items
 
 
 def get_drive_file_id_from_folder_id_path(folder_id, ls_file_path, is_folder=False):
@@ -441,7 +359,156 @@ def download_and_get_drive_file_path(
 
 
 # %%
-# Put Functions #
+# Link Functions #
+
+
+def get_drive_file_link(file_id):
+    if (file_id == "") or (file_id is None):
+        return ""
+    return f"https://drive.google.com/file/d/{file_id}/view?usp=drive_link"
+
+
+# %%
+# Rename Functions #
+
+
+def rename_file(file_id, new_name):
+    drive_service.files().update(fileId=file_id, body={"name": new_name}).execute()
+
+
+# %%
+# Permission Functions #
+
+
+def get_file_name(file_id):
+    """
+    Retrieves the name of a file or folder in Google Drive by its ID.
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
+        file_id (str): The ID of the file or folder.
+
+    Returns:
+        str: The name of the file or folder.
+    """
+
+    # Retrieve file metadata including the name
+    file_metadata = drive_service.files().get(fileId=file_id, fields="name").execute()
+
+    file_name = file_metadata.get("name", "Unknown")
+    print(f"File/Folder Name: {file_name}")
+    return file_name
+
+
+def check_file_capabilities(file_id):
+    """
+    Check the capabilities and restrictions of a file/folder in Google Drive.
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
+        file_id (str): The ID of the file or folder.
+
+    Returns:
+        dict: A dictionary containing file capabilities and restrictions.
+    """
+
+    file_metadata = (
+        drive_service.files()
+        .get(
+            fileId=file_id,
+            fields="capabilities, viewersCanCopyContent, copyRequiresWriterPermission",
+        )
+        .execute()
+    )
+    pprint_dict(file_metadata)
+    return file_metadata
+
+
+def get_file_owner_info(file_id):
+    """
+    Retrieves the owner's information (name, email) of a file or folder.
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
+        file_id (str): The ID of the file or folder.
+
+    Returns:
+        dict: A dictionary containing owner information (email and display name).
+    """
+
+    # Use the files().get() method to retrieve the owner information
+    file_metadata = (
+        drive_service.files()
+        .get(fileId=file_id, fields="owners")  # This limits the response to owner info
+        .execute()
+    )
+
+    # Get the owner's information
+    owners = file_metadata.get("owners", [])
+
+    # Usually, there will be only one owner, but we handle multiple owners just in case
+    owner_info = [
+        {"email": owner.get("emailAddress"), "display_name": owner.get("displayName")}
+        for owner in owners
+    ]
+
+    pprint_dict(owner_info)
+    return owner_info
+
+
+def list_permissions(file_id):
+    """
+    Lists all permissions for a given file or folder in Google Drive.
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource): The Google Drive service object.
+        file_id (str): The ID of the file or folder.
+
+    Returns:
+        list: A list of permission objects.
+    """
+    permissions = drive_service.permissions().list(fileId=file_id).execute()
+    file_permissions = permissions.get("permissions", [])
+
+    pprint_dict(file_permissions)
+    return file_permissions
+
+
+def share_folder_with_email(folder_id, email_address, role="reader"):
+    """
+    Shares a folder in Google Drive with a specific email address without
+    removing existing permissions (e.g., service account ownership).
+
+    Args:
+        drive_service (googleapiclient.discovery.Resource):
+            The Google Drive service object.
+        folder_id (str): The ID of the folder to be shared.
+        email_address (str): The email address of the person
+            with whom the folder will be shared.
+        role (str): The role to grant to the email address.
+            Defaults to "reader". Other options include "writer" and "commenter".
+
+    Returns:
+        dict: The permission resource if the request was successful.
+    """
+
+    # Create the permission metadata
+    permission = {"type": "user", "role": role, "emailAddress": email_address}
+
+    # Add the new permission without altering existing permissions
+    return (
+        drive_service.permissions()
+        .create(
+            fileId=folder_id,  # Treat folder like a file in Google Drive
+            body=permission,
+            fields="id",
+        )
+        .execute()
+    )
+
+
+# %%
+# Upload Functions #
 
 
 def create_folder_in_drive(drive_service, parent_id, folder_name):
@@ -483,6 +550,12 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
     Returns:
         None
     """
+
+    # raise if initial_folder_id is None
+    if initial_folder_id is None:
+        raise ValueError(
+            "initial_folder_id is None, please keep files in a folder so they can be shared correctly"
+        )
 
     # Start with the root folder ID
     parent_id = initial_folder_id
@@ -544,6 +617,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
             fileId=existing_file_id, media_body=media, fields="id"
         ).execute(num_retries=10)
         print(f"Replaced existing file with ID: {existing_file_id}")
+        return existing_file_id
 
     else:
         # Upload the new file to Google Drive within the specified folder
@@ -554,81 +628,10 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
             .create(body=file_metadata, media_body=media, fields="id")
             .execute()
         )
+        file_id = uploaded_file["id"]
 
-        print(f'File uploaded with ID: {uploaded_file["id"]}')
-
-
-# %%
-# Rename Functions #
-
-
-def rename_file(file_id, new_name):
-    drive_service.files().update(fileId=file_id, body={"name": new_name}).execute()
-
-
-# %%
-# Delete Functions #
-
-
-def delete_file_by_id(file_id):
-    """
-    Deletes a file from Google Drive by its ID.
-
-    Args:
-        file_id (str): The ID of the file to be deleted.
-
-    Returns:
-        None
-    """
-
-    # Delete the file
-    drive_service.files().delete(fileId=file_id).execute()
-    print(f"File with ID {file_id} deleted")
-
-
-# %%
-# Ownership Functions #
-
-
-def download_top_used_files_for_reupload_as_user(
-    num_files=30, parent_folder_id=None, actually_delete_files=False
-):
-    initial_percent_used = check_storage_space_service_account()
-    print(f"Initial percent used: {initial_percent_used}")
-
-    dict_items = get_top_storage_use_files(
-        num_files=num_files, parent_folder_id=parent_folder_id
-    )
-    print(dict_items)
-
-    base_path = os.path.join(
-        os.path.dirname(os.path.dirname(grandparent_dir)), "temp_drive_reupload"
-    )
-    os.makedirs(base_path, exist_ok=True)
-    print(base_path)
-
-    for dict_item in dict_items:
-        file_id = dict_item["id"]
-        file_name = dict_item["name"]
-        print(f"File Name: {file_name}")
-        download_file_by_id(file_id, os.path.join(base_path, file_name))
-
-    if actually_delete_files:
-        for dict_item in dict_items:
-            file_id = dict_item["id"]
-            file_name = dict_item["name"]
-            print(f"File Name: {file_name}")
-            delete_file_by_id(file_id)
-
-    final_percent_used = check_storage_space_service_account()
-    print(f"Final percent used: {final_percent_used}")
-    print(
-        f"Do not forget to reupload the donwloaded files as yourself to the same folder from {base_path}"
-    )
-
-
-# %%
-# Upload Functions #
+        print(f"File uploaded with ID: {file_id}")
+        return file_id
 
 
 def upload_report_csv(df, ls_folder_file_path):
@@ -644,7 +647,7 @@ def upload_report_csv(df, ls_folder_file_path):
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure
+        ValueError: If `GOOGLE_DRIVE_FOLDER_ID_REPORT` is None. Configure
             it in the environment or env file.
 
     Notes:
@@ -664,9 +667,9 @@ def upload_report_csv(df, ls_folder_file_path):
             the 'FolderName' folder on Google Drive.
 
     """
-    if google_drive_folder_id_report is None:
+    if GOOGLE_DRIVE_FOLDER_ID_REPORT is None:
         raise ValueError(
-            "google_drive_folder_id_report is None, configure in yaml file"
+            "GOOGLE_DRIVE_FOLDER_ID_REPORT is None, configure in .env file"
         )
 
     # if ls_folder_file_path is a string, convert to list
@@ -690,7 +693,7 @@ def upload_report_csv(df, ls_folder_file_path):
         index=False,
     )
 
-    upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
+    upload_file_to_drive(GOOGLE_DRIVE_FOLDER_ID_REPORT, file_path, drive_file_path)
 
 
 def upload_report_html(df, ls_folder_file_path):
@@ -706,7 +709,7 @@ def upload_report_html(df, ls_folder_file_path):
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure
+        ValueError: If `GOOGLE_DRIVE_FOLDER_ID_REPORT` is None. Configure
             it in the environment or env file.
 
     Notes:
@@ -726,9 +729,9 @@ def upload_report_html(df, ls_folder_file_path):
             'FolderName' folder on Google Drive.
 
     """
-    if google_drive_folder_id_report is None:
+    if GOOGLE_DRIVE_FOLDER_ID_REPORT is None:
         raise ValueError(
-            "google_drive_folder_id_report is None, configure in yaml file"
+            "GOOGLE_DRIVE_FOLDER_ID_REPORT is None, configure in .env file"
         )
 
     # if ls_folder_file_path is a string, convert to list
@@ -778,7 +781,7 @@ def upload_report_html(df, ls_folder_file_path):
     with open(file_path, "w") as f:
         f.write(html)
 
-    upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
+    upload_file_to_drive(GOOGLE_DRIVE_FOLDER_ID_REPORT, file_path, drive_file_path)
 
 
 def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
@@ -796,7 +799,7 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
             treated as the file name. Default is an empty list.
 
     Raises:
-        ValueError: If `google_drive_folder_id_report` is None. Configure it
+        ValueError: If `GOOGLE_DRIVE_FOLDER_ID_REPORT` is None. Configure it
             in the environment or env file.
 
     Notes:
@@ -816,9 +819,9 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
             'FolderName' folder on Google Drive.
 
     """
-    if google_drive_folder_id_report is None:
+    if GOOGLE_DRIVE_FOLDER_ID_REPORT is None:
         raise ValueError(
-            "google_drive_folder_id_report is None, configure in yaml file"
+            "GOOGLE_DRIVE_FOLDER_ID_REPORT is None, configure in .env file"
         )
 
     # if ls_folder_file_path is a string, convert to list
@@ -841,7 +844,217 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
         for df, tab_name in zip(ls_dfs, ls_tab_names):
             df.to_excel(writer, sheet_name=tab_name, index=False)
 
-    upload_file_to_drive(google_drive_folder_id_report, file_path, drive_file_path)
+    upload_file_to_drive(GOOGLE_DRIVE_FOLDER_ID_REPORT, file_path, drive_file_path)
+
+
+# %%
+# Storage Functions #
+
+
+def check_storage_space_service_account():
+    """
+    Retrieves and prints the storage quota information
+    for the Google Drive service account.
+
+    This function uses the Google Drive API to get the storage quota
+    information for the service account
+    and prints the storage quota, used storage, total storage,
+    and the percentage of storage used.
+
+    Note: This function assumes that the `drive_service`
+    object has already been initialized.
+
+    Example usage:
+    check_storage_space_service_account()
+    """
+    # Get the about resource, which includes storage quota information
+    about = drive_service.about().get(fields="storageQuota").execute()
+    print(f"Storage quota: {about['storageQuota']}")
+    used_storage = int(about["storageQuota"]["usage"])
+    total_storage = int(about["storageQuota"]["limit"])
+    used_storage_gb = used_storage / 1e9
+    total_storage_gb = total_storage / 1e9
+    percent_used = (used_storage / total_storage) * 100
+    print(f"Using {used_storage_gb} of {total_storage_gb} GB")
+    print(f"Percent Used: {percent_used} %")
+    return percent_used
+
+
+def get_top_storage_use_files(num_files=20, parent_folder_id=None):
+    """
+    Retrieves the top storage usage files from Google Drive.
+
+    Args:
+        num_files (int): The number of files to retrieve. Default is 20.
+        parent_folder_id (str, optional): The ID of the parent folder to search within. Default is None.
+
+    Returns:
+        list: A list of dictionaries containing file details.
+    """
+    query = "'me' in owners"
+    if parent_folder_id:
+        query += f" and '{parent_folder_id}' in parents"
+
+    # List files
+    results = (
+        drive_service.files()
+        .list(
+            q=query,
+            pageSize=num_files,
+            fields="nextPageToken, files(id, name, mimeType, size)",
+            orderBy="quotaBytesUsed desc",  # Order by size, descending
+        )
+        .execute()
+    )
+    items = results.get("files", [])
+
+    if not items:
+        print("No files found.")
+    else:
+        print("Highest Storage Files:")
+        for item in items:
+            # get parent folder id
+            file_id = item["id"]
+            file = drive_service.files().get(fileId=file_id, fields="parents").execute()
+            parent_id = file.get("parents")[0] if "parents" in file else "No parent"
+            file_size = item.get("size", 0)
+            file_size_MB = int(file_size) / 1e6 if file_size else 0
+            # Print files name and size
+            print(
+                (
+                    f"{file_size_MB:.2f} MB, Name: {item['name']}, "
+                    f"ID: {item['id']}, Parent ID: {parent_id}"
+                )
+            )
+
+    return items
+
+
+def list_files_with_same_name_in_different_locations(file_name):
+    """
+    Lists all files with the same name that are stored in different locations (parent folders).
+
+    Args:
+        file_name (str): The name of the file to search for.
+
+    Returns:
+        list: A list of files with the same name and their locations.
+    """
+
+    # Query to find files with the specific name
+    query = f"name = '{file_name}' and trashed = false"
+
+    results = (
+        drive_service.files()
+        .list(q=query, fields="files(id, name, parents, size)", spaces="drive")
+        .execute()
+    )
+
+    pprint_dict(results)
+
+    files = results.get("files", [])
+
+    if not files:
+        print(f"No files with the name '{file_name}' were found.")
+        return []
+
+    # Dictionary to store files by name and group by location
+    file_dict = {}
+
+    for file in files:
+        # Store file information along with its parent folders
+        file_entry = {
+            "id": file["id"],
+            "parents": file.get("parents", []),
+            "size": file.get("size", "Unknown"),
+        }
+
+        # Group files by name (though we only handle one name in this case)
+        if file_name in file_dict:
+            file_dict[file_name].append(file_entry)
+        else:
+            file_dict[file_name] = [file_entry]
+
+    # Now filter the files that exist in multiple locations (multiple parent IDs)
+    duplicates = {
+        name: file_entries
+        for name, file_entries in file_dict.items()
+        if len(file_entries) > 1
+    }
+
+    if not duplicates:
+        print(
+            f"No duplicate files with the name '{file_name}' found in different locations."
+        )
+    else:
+        print(
+            f"Duplicate files with the name '{file_name}' found in different locations:"
+        )
+        for name, file_entries in duplicates.items():
+            for file in file_entries:
+                print(
+                    f" - ID: {file['id']}, Size: {file['size']} bytes, Parent Folder IDs: {file['parents']}"
+                )
+
+    return duplicates
+
+
+def delete_file_by_id(file_id):
+    """
+    Deletes a file from Google Drive by its ID.
+
+    Args:
+        file_id (str): The ID of the file to be deleted.
+
+    Returns:
+        None
+    """
+
+    # Delete the file
+    drive_service.files().delete(fileId=file_id).execute()
+    print(f"File with ID {file_id} deleted")
+
+
+def download_top_used_files_for_reupload_as_user(
+    num_files=30, parent_folder_id=None, actually_delete_files=False
+):
+    initial_percent_used = check_storage_space_service_account()
+    print(f"Initial percent used: {initial_percent_used}")
+
+    dict_items = get_top_storage_use_files(
+        num_files=num_files, parent_folder_id=parent_folder_id
+    )
+    # remove items that dont end in .csv
+    print("Before filtering out non csvs:")
+    pprint_dict(dict_items)
+    dict_items = [item for item in dict_items if item["name"].endswith(".csv")]
+    print("After filtering out non csvs:")
+    pprint_dict(dict_items)
+
+    base_path = os.path.join(
+        os.path.dirname(os.path.dirname(grandparent_dir)), "temp_drive_reupload"
+    )
+    os.makedirs(base_path, exist_ok=True)
+    print(base_path)
+
+    for dict_item in dict_items:
+        file_id = dict_item["id"]
+        file_name = dict_item["name"]
+        print(f"Downloading filename: {file_name}")
+        download_file_by_id(file_id, os.path.join(base_path, file_name))
+
+    if actually_delete_files:
+        for dict_item in dict_items:
+            file_id = dict_item["id"]
+            file_name = dict_item["name"]
+            print(f"Deleting filename: {file_name}")
+            delete_file_by_id(file_id)
+
+    final_percent_used = check_storage_space_service_account()
+    print(f"Final percent used: {final_percent_used}")
+    print(
+        f"Do not forget to reupload the downloaded files as yourself to the same folder from {base_path}"
+    )
 
 
 # %%
