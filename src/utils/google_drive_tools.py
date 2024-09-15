@@ -286,20 +286,20 @@ def download_file_by_id(id, path, max_retries=3):
             # If the download is successful, break out of the loop
             break
         except TimeoutError as e:
-            print(f"Download attempt {retries + 1} failed: {e}")
+            print_logger(f"Download attempt {retries + 1} failed: {e}")
             retries += 1
             if retries < max_retries:
-                print("Retrying in 5 seconds...")
+                print_logger("Retrying in 5 seconds...")
                 time.sleep(5)  # Wait for 5 seconds before retrying
             else:
-                print("Max retries reached. Download failed.")
+                print_logger("Max retries reached. Download failed.")
                 raise
 
     # Check if the download was successful
     if retries < max_retries:
-        print("Download successful!")
+        print_logger("Download successful!")
     else:
-        print("Max retries reached. Download failed.")
+        print_logger("Max retries reached. Download failed.")
 
 
 def download_and_get_drive_file_path(
@@ -591,7 +591,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
                 f"Folder doesn't exist, creating folder: {folder_name}", level="info"
             )
             parent_id = create_folder_in_drive(drive_service, parent_id, folder_name)
-            print(f"Folder: {folder_name} created with ID: {parent_id}")
+            print_logger(f"Folder: {folder_name} created with ID: {parent_id}")
         else:
             print_logger(
                 f"Folder: {folder_name} exists, navigating to folder id {parent_id}",
@@ -616,7 +616,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
         drive_service.files().update(
             fileId=existing_file_id, media_body=media, fields="id"
         ).execute(num_retries=10)
-        print(f"Replaced existing file with ID: {existing_file_id}")
+        print_logger(f"Replaced existing file with ID: {existing_file_id}")
         return existing_file_id
 
     else:
@@ -630,7 +630,7 @@ def upload_file_to_drive(initial_folder_id, file_path, ls_folder_path=[]):
         )
         file_id = uploaded_file["id"]
 
-        print(f"File uploaded with ID: {file_id}")
+        print_logger(f"File uploaded with ID: {file_id}")
         return file_id
 
 
@@ -686,8 +686,8 @@ def upload_report_csv(df, ls_folder_file_path):
         file_path = os.path.join(temp_upload_dir, *ls_folder_file_path)
         drive_file_path = []
 
-    print(f"temp save file path: {file_path}")
-    print(f"drive file path: {drive_file_path}")
+    print_logger(f"temp save file path: {file_path}")
+    print_logger(f"drive file path: {drive_file_path}")
     df.to_csv(
         file_path,
         index=False,
@@ -748,8 +748,8 @@ def upload_report_html(df, ls_folder_file_path):
         file_path = os.path.join(temp_upload_dir, *ls_folder_file_path)
         drive_file_path = []
 
-    print(f"temp save file path: {file_path}")
-    print(f"drive file path: {drive_file_path}")
+    print_logger(f"temp save file path: {file_path}")
+    print_logger(f"drive file path: {drive_file_path}")
     html_style = """
     <style>
         table {
@@ -838,8 +838,8 @@ def upload_report_excel(ls_dfs, ls_tab_names, ls_folder_file_path):
         file_path = os.path.join(temp_upload_dir, *ls_folder_file_path)
         drive_file_path = []
 
-    print(f"temp save file path: {file_path}")
-    print(f"drive file path: {drive_file_path}")
+    print_logger(f"temp save file path: {file_path}")
+    print_logger(f"drive file path: {drive_file_path}")
     with pd.ExcelWriter(file_path) as writer:
         for df, tab_name in zip(ls_dfs, ls_tab_names):
             df.to_excel(writer, sheet_name=tab_name, index=False)
