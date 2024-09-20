@@ -7,6 +7,7 @@ import os
 import sys
 
 import pandas as pd
+from pytz import timezone
 
 # append grandparent
 if __name__ == "__main__":
@@ -810,6 +811,28 @@ def get_month_name_from_num(month_num):
     for month_name in dict_month_numbers:
         if dict_month_numbers[month_name] == month_num:
             return month_name
+
+
+def get_current_time_in_timezone(timezone_str="US/Central"):
+    return datetime.datetime.now(timezone(timezone_str))
+
+
+def is_thursday_before_5pm_cst():
+    # Get current UTC time
+    now_cst = get_current_time_in_timezone("US/Central")
+
+    # Get current day of the week
+    day_of_week = now_cst.weekday()
+
+    # Check if it is Thursday
+    if day_of_week != 3:
+        return False
+
+    # Check if it is before 5 PM
+    if now_cst.hour < 17:
+        return True
+    else:
+        return False
 
 
 # %%
