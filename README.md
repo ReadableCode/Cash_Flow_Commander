@@ -1,64 +1,63 @@
 # Cash_Flow_Commander
 
+- The goal of this project is to allow anyone to manage their finances with a python application that can be interfaced with using an api, TUI, CLI, or Web Application.
+- The initial project will not have a split frontend and backend since the initial use case will be with a TUI
+- The project as configured will use an existing postgres database, but the goal is to allow for multiple database backends in the future including google sheets, sqlite, and excel files.
+
 ## Setting Up
 
-### Using Pipenv
+## Running with uv
 
-#### Windows Pipenv and Pyenv setup
+- Install uv:
 
-- Use chocolotey to install pyenv-win
+  Linux:
 
-```bash
-choco install pyenv-win
-```
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
-- Install python 3.12
+  Windows:
 
-```bash
-pyenv install 3.12.4
-```
+    In powershell as admin:
 
-- Switch to this version of python globally
+    ```powershell
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
 
-```bash
-pyenv global 3.12.4
-```
+- Run the following command to install the dependencies from the project:
 
-- Switch to this version of python locally
-  
-```bash
-pyenv local 3.12.4
-```
-
-- Activate shell with pyenv
-  
-```bash
-pyenv shell 3.12.4
-```
-
-- Install dependencies into this version of python
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-- Using pipenv instead of installing to the local python version
-
-```bash
-pipenv install
-```
-
-- If this doesnt grab the right version of python from pyenv:
-  
   ```bash
-  pyenv which python
-  pipenv --python <output of above command>
-  # example
-  pipenv --python C:\Users\jason\.pyenv\pyenv-win\versions\3.12.4\python.exe install
+  uv sync
   ```
 
-- Activate the pipenv in your powershell
+- To Activate or Source the environment and not have to prepend each command with `uv run`:
+
+  On Linux:
 
   ```bash
-  & "$(pipenv --venv)\Scripts\activate.ps1"
+  source ./.venv/bin/activate
+  ```
+
+  On Windows (Powershell):
+
+  ```powershell
+  .\.venv\Scripts\Activate.ps1
+  ```
+
+- To Deactivate:
+
+  ```bash
+  deactivate
+  ```
+
+- To add project dependencies:
+
+  ```bash
+  uv add <package name>
+  ```
+
+- To see a tree of dependencies:
+
+  ```bash
+  uv tree
   ```
