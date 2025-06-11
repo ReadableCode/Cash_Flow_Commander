@@ -4,20 +4,12 @@
 import os
 import warnings
 
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
 import pandas as pd
 from dotenv import load_dotenv
 
-from config import data_dir, parent_dir
+from config import parent_dir
 from utils.display_tools import pprint_df, print_logger
-from utils.google_tools import (
-    WriteToSheets,
-    clear_range_of_sheet_obj,
-    get_book_sheet,
-    get_book_sheet_df,
-    write_df_to_range_of_sheet_obj,
-)
+from utils.google_tools import get_book_sheet_df
 
 warnings.filterwarnings("ignore")
 
