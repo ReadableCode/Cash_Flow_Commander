@@ -23,10 +23,8 @@ warnings.filterwarnings("ignore")
 # %%
 # Variables #
 
-# https://docs.google.com/spreadsheets/d/1pvmIGeanVd0mjIO4-y53OY-z-ueLIY1AF7e-KZGAMzI/edit#gid=0
-# 'Our_Cash'
+dict_dataframes: dict[str, pd.DataFrame] = {}
 
-dict_dataframes = {}
 THRESHOLD_FOR_ALERT = 1000
 NUM_DAYS = 365 * 2
 
@@ -40,12 +38,10 @@ def get_income_expense_df(force_update=False):
     if key in dict_dataframes.keys() and not force_update:
         return dict_dataframes[key].copy()
 
-    income_expense_sheet = get_book_sheet(
+    df_income_expense = get_book_sheet_df(
         "Our_Cash",
         "Income_Expense",
     )
-
-    df_income_expense = income_expense_sheet.get_as_df()
 
     df_income_expense["Amount"] = df_income_expense["Amount"].astype(float)
     df_income_expense["Maturity Date"] = pd.to_datetime(
@@ -54,7 +50,14 @@ def get_income_expense_df(force_update=False):
 
     dict_dataframes[key] = df_income_expense.copy()
 
-    return df_income_expense.copy()
+    return df_income_expense
+
+
+df_income_expense = get_income_expense_df()
+pprint_df(df_income_expense.head(10))
+print(df_income_expense.info())
+
+# %%
 
 
 def get_account_balances(force_update=False):
@@ -69,7 +72,7 @@ def get_account_balances(force_update=False):
 
     dict_dataframes[key] = df_account_balances.copy()
 
-    return df_account_balances.copy()
+    return df_account_balances
 
 
 def get_account_details(force_update=False):
@@ -84,7 +87,7 @@ def get_account_details(force_update=False):
 
     dict_dataframes[key] = df_account_details.copy()
 
-    return df_account_details.copy()
+    return df_account_details
 
 
 def get_transactions_report(force_update=False):
@@ -99,7 +102,7 @@ def get_transactions_report(force_update=False):
 
     dict_dataframes[key] = df_transactions_report.copy()
 
-    return df_transactions_report.copy()
+    return df_transactions_report
 
 
 # %%
