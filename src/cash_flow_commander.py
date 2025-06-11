@@ -67,11 +67,6 @@ class OurCashData:
 
         return df_income_expense
 
-    def get_budgets_as_ls_dicts(self):
-        # This is used to get the budgets as a list of dictionaries for the new class
-        df_budgets = self.get_income_expense_df()
-        return df_budgets.to_dict(orient="records")
-
     def get_account_balances(self, force_update=False):
         return self.get_sheet_data(
             key="account_balances",
@@ -113,49 +108,43 @@ class OurCashData:
 
         return df_transactions_report
 
-    def get_account_balances_with_details_filled(self) -> pd.DataFrame:
-        df_account_balances: pd.DataFrame = self.get_account_balances()
+    def get_account_balances_with_details_filled(self):
+        df_pivot: pd.DataFrame = self.get_account_balances()
 
-        # Pivot the DataFrame
-        df_pivot: pd.DataFrame = df_account_balances.copy()
         df_pivot = df_pivot.pivot(
             index="Date", columns="Account_Name", values="Balance"
         )
         df_pivot = df_pivot.sort_index()
 
         # Forward fill missing values for each account
-        df_filled: pd.DataFrame = df_pivot.copy()
-        df_filled = df_filled.fillna(method="ffill")  # type: ignore
-        df_filled["Total"] = df_filled.sum(axis=1)
+        df_pivot = df_pivot.fillna(method="ffill")  # type: ignore
+        df_pivot["Total"] = df_pivot.sum(axis=1)
 
         # Unpivot the DataFrame back to the original format
-        df_unpivot: pd.DataFrame = df_filled.copy()
-        df_unpivot = df_unpivot.reset_index().melt(
+        df_pivot = df_pivot.reset_index().melt(
             id_vars="Date", value_name="Balance", var_name="Account_Name"
         )
 
-        df_unpivot = df_unpivot.sort_values(by=["Date", "Account_Name"])
+        df_pivot = df_pivot.sort_values(by=["Date", "Account_Name"])
 
         # Merge back with the original DataFrame to include the Sub_Category
-        df_unpivot_merged_back: pd.DataFrame = df_unpivot.copy()
         df_account_details: pd.DataFrame = self.get_account_details()
-        df_unpivot_merged_back = df_unpivot_merged_back.merge(
-            df_account_details, on=["Account_Name"], how="left"
-        )
+        df_pivot = df_pivot.merge(df_account_details, on=["Account_Name"], how="left")
 
-        df_unpivot_merged_back.loc[
-            df_unpivot_merged_back["Account_Name"] == "Total", "Sub_Category"
-        ] = "Total"
+        df_pivot.loc[df_pivot["Account_Name"] == "Total", "Sub_Category"] = "Total"
 
-        df_unpivot_merged_back = (
-            df_unpivot_merged_back.groupby(["Date", "Sub_Category"], as_index=False)[
-                "Balance"
-            ]
+        return df_pivot
+
+    def get_account_balances_with_details_filled_grouped(self) -> pd.DataFrame:
+        df_pivot = self.get_account_balances_with_details_filled()
+
+        df_pivot = (
+            df_pivot.groupby(["Date", "Sub_Category"], as_index=False)["Balance"]
             .sum()
             .reset_index()
         )
 
-        return df_unpivot_merged_back
+        return df_pivot
 
     def get_current_balance(self, account_name):
         df_current_balance = self.get_account_balances()
@@ -169,42 +158,6 @@ class OurCashData:
         df_current_balance = df_current_balance[df_current_balance["Date"] == max_date]
 
         return df_current_balance["Balance"].iloc[0]
-
-    def get_current_available_balances(self):
-        df_curr_available_balances = self.get_income_expense_df()
-
-        # filter where Available Credit is not ""
-        df_curr_available_balances = df_curr_available_balances[
-            df_curr_available_balances["Available Credit"] != ""
-        ]
-
-        # calculate monthly interest
-        df_curr_available_balances["Interest Rate (Numeric)"] = (
-            df_curr_available_balances["Interest Rate"]
-            .str.replace("%", "")
-            .astype(float)
-        )
-        df_curr_available_balances["Interest Rate (Numeric)"] = (
-            df_curr_available_balances["Interest Rate (Numeric)"] / 100
-        )
-        df_curr_available_balances["Monthly Interest"] = (
-            df_curr_available_balances["Interest Rate (Numeric)"]
-            * df_curr_available_balances["Balance"]
-            / 12
-        )
-
-        df_curr_available_balances = df_curr_available_balances[
-            [
-                "Account_Name",
-                "Balance",
-                "Limit",
-                "Available Credit",
-                "Interest Rate",
-                "Monthly Interest",
-            ]
-        ]
-
-        return df_curr_available_balances
 
     def get_emergency_fund_amount(self):
         df_income_expense_emergency_fund = self.get_income_expense_df()
@@ -358,7 +311,6 @@ class OurCashData:
         num_days_back = 5
         num_days_forward = self.NUM_DAYS
 
-        # get current balance from chase: https://www.chase.com/
         current_balance = self.get_current_balance("Chase Checking")
         print(f"current_balance of Chase Checking: {current_balance}")
 
@@ -424,7 +376,7 @@ class OurCashData:
 
         return df_updated_transactions
 
-    def get_label_dates_df(self, df_future_cast):
+    def isolate_label_dates(self, df_future_cast):
         df_future_cast_label_dates = df_future_cast.copy()
 
         df_future_cast_label_dates = df_future_cast_label_dates[
@@ -439,7 +391,7 @@ class OurCashData:
 
         return df_future_cast_label_dates
 
-    def get_daily_balances_df(self, df_future_cast):
+    def isolate_ending_daily_balance(self, df_future_cast):
         df_future_cast_end_of_each_day = df_future_cast.copy()
 
         df_future_cast_end_of_each_day = df_future_cast_end_of_each_day[
@@ -454,8 +406,8 @@ class OurCashData:
 
         return df_future_cast_end_of_each_day
 
-    def get_future_cast_alert_dates_df(self, df_future_cast):
-        df_future_cast_alert_dates = self.get_daily_balances_df(df_future_cast)
+    def generate_future_cast_alert_dates_df(self, df_future_cast):
+        df_future_cast_alert_dates = self.isolate_ending_daily_balance(df_future_cast)
 
         df_future_cast_alert_dates = df_future_cast_alert_dates[
             df_future_cast_alert_dates["Running_Balance"] < self.THRESHOLD_FOR_ALERT
@@ -476,10 +428,12 @@ class OurCashData:
 
         return df_future_cast_alert_dates
 
-    def get_daily_balance_report(self, df_future_cast):
-        df_future_cast_end_of_each_day = self.get_daily_balances_df(df_future_cast)
+    def generate_daily_balance_report(self, df_future_cast):
+        df_future_cast_end_of_each_day = self.isolate_ending_daily_balance(
+            df_future_cast
+        )
 
-        df_future_cast_label_dates = self.get_label_dates_df(df_future_cast)
+        df_future_cast_label_dates = self.isolate_label_dates(df_future_cast)
 
         df_future_cast_end_of_each_day = pd.merge(
             df_future_cast_end_of_each_day,
@@ -512,78 +466,7 @@ class OurCashData:
             <= 10
         ]
 
-        WriteToSheets(
-            "Our_Cash",
-            "Daily_Balance_Report",
-            df_future_cast_end_of_each_day,
-        )
-
         return df_future_cast_end_of_each_day
-
-    def chart_future_cast(self, df_future_cast):
-        df_future_cast_end_of_each_day = self.get_daily_balance_report(df_future_cast)
-
-        # Set figure size
-        fig, ax = plt.subplots(figsize=(12, 6))
-
-        # Plot the line chart for columns except Label_Amount
-        columns_to_plot = [
-            "Running_Balance",
-            "Emergency_Fund_Amount",
-            "Alert_Threshold",
-            "Zero",
-        ]
-        df_future_cast_end_of_each_day.plot(
-            x="Date",
-            y=columns_to_plot,
-            kind="line",
-            ax=ax,
-        )
-
-        # Plot dots for Label_Amount where there are values
-        label_amount_data = df_future_cast_end_of_each_day["Label_Amount"]
-        label_amount_mask = ~label_amount_data.isna()
-        ax.plot(
-            df_future_cast_end_of_each_day.loc[label_amount_mask, "Date"],
-            df_future_cast_end_of_each_day.loc[label_amount_mask, "Label_Amount"],
-            marker="o",
-            linestyle="",
-            label="One Time Transactions",
-        )
-
-        # Add in-line labels for Label_Amount with corresponding Label_Item
-        for idx, row in df_future_cast_end_of_each_day.loc[
-            label_amount_mask
-        ].iterrows():
-            ax.annotate(
-                f"{row['Label_Item']}: {row['Label_Amount']}",
-                (row["Date"], row["Label_Amount"]),
-                textcoords="offset points",
-                xytext=(10, 0),  # Adjust x-coordinate to move labels to the right
-                ha="left",  # Align labels to the left of the dots
-                va="center",  # Center the labels vertically
-            )
-
-        # Set labels for the axes
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Running_Balance")
-        ax.set_title("Running_Balance_Over_Time")
-
-        # Customize x-axis tick labels
-        ax.xaxis.set_major_locator(mdates.MonthLocator())
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-        ax.tick_params(axis="x", rotation=90)
-        ax.set_ylim([-10000, 60000])
-
-        # Show only the first day of each month
-        ax.xaxis.set_minor_locator(mdates.MonthLocator(bymonthday=1))
-
-        # Show the chart with legend
-        ax.legend()
-        plt.show()
-
-        print("One Time Transactions:")
-        pprint_df(df_future_cast_end_of_each_day.loc[label_amount_mask])
 
 
 our_cash_data = OurCashData()
@@ -607,6 +490,14 @@ pprint_df(df_account_details.head(10))
 
 print_logger("df_transactions (head):")
 pprint_df(df_transactions.head(10))
+
+
+# %%
+
+df_account_balances_filled = our_cash_data.get_account_balances_with_details_filled()
+
+print_logger("df_account_balances_filled (head):")
+pprint_df(df_account_balances_filled.head(50))
 
 
 # %%
@@ -635,7 +526,14 @@ if __name__ == "__main__":
         ].head(20)
     )
 
-    df_daily_balance_report = our_cash_data.get_daily_balance_report(df_future_cast)
+    df_daily_balance_report = our_cash_data.generate_daily_balance_report(
+        df_future_cast
+    )
+    WriteToSheets(
+        "Our_Cash",
+        "Daily_Balance_Report",
+        df_daily_balance_report,
+    )
     print("df_daily_balance_report (head):")
     pprint_df(
         df_daily_balance_report[
@@ -651,7 +549,7 @@ if __name__ == "__main__":
         .head(20)
     )
 
-    df_future_cast_label_dates = our_cash_data.get_label_dates_df(df_future_cast)
+    df_future_cast_label_dates = our_cash_data.isolate_label_dates(df_future_cast)
     print("df_future_cast_label_dates:")
     pprint_df(
         df_future_cast_label_dates[
@@ -665,7 +563,7 @@ if __name__ == "__main__":
         ]
     )
 
-    df_future_cast_alert_dates = our_cash_data.get_future_cast_alert_dates_df(
+    df_future_cast_alert_dates = our_cash_data.generate_future_cast_alert_dates_df(
         df_future_cast
     )
     print("df_future_cast_alert_dates:")
