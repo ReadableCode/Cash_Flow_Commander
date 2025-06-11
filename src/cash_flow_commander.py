@@ -129,8 +129,12 @@ class OurCashData:
 
         # Merge back with the original DataFrame to include the Sub_Category
         df_account_details: pd.DataFrame = self.get_account_details()
+        df_account_details = df_account_details[
+            ["Account_Name", "Category", "Sub_Category"]
+        ]
         df_pivot = df_pivot.merge(df_account_details, on=["Account_Name"], how="left")
 
+        df_pivot.loc[df_pivot["Account_Name"] == "Total", "Category"] = "Total"
         df_pivot.loc[df_pivot["Account_Name"] == "Total", "Sub_Category"] = "Total"
 
         return df_pivot
@@ -138,11 +142,9 @@ class OurCashData:
     def get_account_balances_with_details_filled_grouped(self) -> pd.DataFrame:
         df_pivot = self.get_account_balances_with_details_filled()
 
-        df_pivot = (
-            df_pivot.groupby(["Date", "Sub_Category"], as_index=False)["Balance"]
-            .sum()
-            .reset_index()
-        )
+        df_pivot = df_pivot.groupby(["Date", "Sub_Category"], as_index=False)[
+            "Balance"
+        ].sum()
 
         return df_pivot
 
@@ -319,6 +321,7 @@ class OurCashData:
         ).fillna(0)
         df_existing_data_from_sheets["Running_Balance"] = 0
 
+        # keep only paid transactions or transactions before today
         df_existing_data_from_sheets = df_existing_data_from_sheets[
             (df_existing_data_from_sheets["Amount_Paid"] != "")  # Paid transactions
             | (
@@ -327,23 +330,26 @@ class OurCashData:
                     - pd.to_datetime(df_existing_data_from_sheets["Date"])
                 ).dt.days
                 > 0
-            )
+            )  # Transactions before today
         ]
 
+        # get transactions expected in the next num_days_forward days since num_days_back
         df_updated_transactions = self.get_expected_transactions_for_date_range(
             num_days_back, num_days_forward
         )
 
+        # add the transactions from the past, paid, and expected to a dataframe
         df_updated_transactions = pd.concat(
             [df_existing_data_from_sheets, df_updated_transactions], ignore_index=True
         )
 
+        # drop duplicates keeping the first occurrence which would be the existing data if not future
         df_updated_transactions = df_updated_transactions.drop_duplicates(
             subset=["Date", "Account_Name"],
             keep="first",
         )
 
-        # sort by date and amount
+        # sort by date and amount so that expenses for a day come first in that day
         df_updated_transactions = df_updated_transactions.sort_values(
             by=["Date", "Amount"], ascending=True
         )
@@ -363,16 +369,6 @@ class OurCashData:
                 previous_balance = df_updated_transactions.at[index, "Running_Balance"]
             else:
                 df_updated_transactions.at[index, "Running_Balance"] = previous_balance
-
-        df_updated_transactions.to_csv(
-            os.path.join(data_dir, "future_cast.csv"), index=False
-        )
-
-        WriteToSheets(
-            "Our_Cash",
-            "Transactions_Report",
-            df_updated_transactions,
-        )
 
         return df_updated_transactions
 
@@ -479,25 +475,121 @@ df_account_balances = our_cash_data.get_account_balances()
 df_account_details = our_cash_data.get_account_details()
 df_transactions = our_cash_data.get_transactions_report()
 
-print_logger("df_income_expense (head):")
-pprint_df(df_income_expense.head(10))
+print_logger("df_income_expense (tail):")
+pprint_df(df_income_expense.tail(10))
 
-print_logger("df_account_balances (head):")
-pprint_df(df_account_balances.head(10))
+print_logger("df_account_balances (tail):")
+pprint_df(df_account_balances.tail(10))
 
-print_logger("df_account_details (head):")
-pprint_df(df_account_details.head(10))
+print_logger("df_account_details (tail):")
+pprint_df(df_account_details.tail(10))
 
-print_logger("df_transactions (head):")
-pprint_df(df_transactions.head(10))
+print_logger("df_transactions (tail):")
+pprint_df(df_transactions.tail(10))
 
 
 # %%
 
 df_account_balances_filled = our_cash_data.get_account_balances_with_details_filled()
 
-print_logger("df_account_balances_filled (head):")
-pprint_df(df_account_balances_filled.head(50))
+print_logger("df_account_balances_filled (tail):")
+pprint_df(df_account_balances_filled.tail(20))
+
+df_account_balances_filled_grouped = (
+    our_cash_data.get_account_balances_with_details_filled_grouped()
+)
+print_logger("df_account_balances_filled_grouped (tail):")
+pprint_df(df_account_balances_filled_grouped.tail(20))
+
+
+# %%
+
+
+df_future_cast = our_cash_data.update_transactions()
+
+
+# %%
+
+
+print_logger("df_future_cast near today (tail):")
+pprint_df(
+    df_future_cast[
+        (
+            abs(
+                (
+                    pd.to_datetime("today") - pd.to_datetime(df_future_cast["Date"])
+                ).dt.days
+            )
+            <= 50
+        )
+    ].tail(100)
+)
+
+# %%
+
+df_label_dates = our_cash_data.isolate_label_dates(df_future_cast)
+print_logger("df_future_cast_label_dates near today (tail):")
+pprint_df(
+    df_label_dates[
+        (
+            abs(
+                (
+                    pd.to_datetime("today") - pd.to_datetime(df_label_dates["Date"])
+                ).dt.days
+            )
+            <= 500
+        )
+    ].tail(100)
+)
+
+df_isolate_ending_daily_balance = our_cash_data.isolate_ending_daily_balance(
+    df_future_cast
+)
+print_logger("df_isolate_ending_daily_balance near today (tail):")
+pprint_df(
+    df_isolate_ending_daily_balance[
+        (
+            abs(
+                (
+                    pd.to_datetime("today")
+                    - pd.to_datetime(df_isolate_ending_daily_balance["Date"])
+                ).dt.days
+            )
+            <= 50
+        )
+    ].tail(100)
+)
+
+df_alert_dates = our_cash_data.generate_future_cast_alert_dates_df(df_future_cast)
+print_logger("df_future_cast_alert_dates near today (tail):")
+pprint_df(
+    df_alert_dates[
+        (
+            abs(
+                (
+                    pd.to_datetime("today") - pd.to_datetime(df_alert_dates["Date"])
+                ).dt.days
+            )
+            <= 50
+        )
+    ].tail(100)
+)
+
+df_daily_balance_report = our_cash_data.generate_daily_balance_report(df_future_cast)
+print_logger("df_daily_balance_report near today (tail):")
+pprint_df(
+    df_daily_balance_report[
+        (
+            abs(
+                (
+                    pd.to_datetime("today")
+                    - pd.to_datetime(df_daily_balance_report["Date"])
+                ).dt.days
+            )
+            <= 50
+        )
+    ].tail(100)
+)
 
 
 # %%
@@ -513,6 +605,12 @@ if __name__ == "__main__":
     our_cash_data.update_transactions_report_from_sheets()
 
     df_future_cast = our_cash_data.update_transactions()
+    # df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
+    # WriteToSheets(
+    #     "Our_Cash",
+    #     "Transactions_Report",
+    #     df_future_cast,
+    # )
     print("df_future_cast (head):")
     pprint_df(
         df_future_cast[
@@ -529,11 +627,11 @@ if __name__ == "__main__":
     df_daily_balance_report = our_cash_data.generate_daily_balance_report(
         df_future_cast
     )
-    WriteToSheets(
-        "Our_Cash",
-        "Daily_Balance_Report",
-        df_daily_balance_report,
-    )
+    # WriteToSheets(
+    #     "Our_Cash",
+    #     "Daily_Balance_Report",
+    #     df_daily_balance_report,
+    # )
     print("df_daily_balance_report (head):")
     pprint_df(
         df_daily_balance_report[
@@ -570,37 +668,35 @@ if __name__ == "__main__":
     pprint_df(df_future_cast_alert_dates)
 
     # get summary sheet
-    sheet_summary = get_book_sheet("Our_Cash", "Summary")
+    # sheet_summary = get_book_sheet("Our_Cash", "Summary")
 
     # alert dates
-    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
-    write_df_to_range_of_sheet_obj(
-        sheet_obj=sheet_summary,
-        df=df_future_cast_alert_dates.head(30),
-        start="A11",
-        fit=False,
-        copy_head=True,
-    )
+    # clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
+    # write_df_to_range_of_sheet_obj(
+    #     sheet_obj=sheet_summary,
+    #     df=df_future_cast_alert_dates.head(30),
+    #     start="A11",
+    #     fit=False,
+    #     copy_head=True,
+    # )
 
     # one time transactions
-    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
-    write_df_to_range_of_sheet_obj(
-        sheet_obj=sheet_summary,
-        df=df_future_cast_label_dates[
-            (
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_future_cast_label_dates["Date"])
-                ).dt.days
-                <= 10
-            )
-        ].head(30),
-        start="A44",
-        fit=False,
-        copy_head=True,
-    )
-
-    our_cash_data.chart_future_cast(df_future_cast)
+    # clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
+    # write_df_to_range_of_sheet_obj(
+    #     sheet_obj=sheet_summary,
+    #     df=df_future_cast_label_dates[
+    #         (
+    #             (
+    #                 pd.to_datetime("today")
+    #                 - pd.to_datetime(df_future_cast_label_dates["Date"])
+    #             ).dt.days
+    #             <= 10
+    #         )
+    #     ].head(30),
+    #     start="A44",
+    #     fit=False,
+    #     copy_head=True,
+    # )
 
     print_logger("Done")
 
