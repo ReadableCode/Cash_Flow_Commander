@@ -1,8 +1,12 @@
 # %%
 # Running Imports #
 
+import datetime
 import os
 import warnings
+from dataclasses import dataclass
+from datetime import date
+from typing import Optional, Union
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -17,6 +21,7 @@ warnings.filterwarnings("ignore")
 # %%
 # Environment #
 
+
 dotenv_path = os.path.join(parent_dir, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
@@ -26,15 +31,55 @@ if os.path.exists(dotenv_path):
 # Class #
 
 
-class OurCashData:
+@dataclass
+class Transaction:
+    id: str
+    txn_date: date
+    amount: float
+    account: str
+    recurrence: str
+    maturity_date: Optional[date]
+
+
+@dataclass
+class AccountBalance:
+    account_name: str
+    date: date
+    balance: float
+
+
+@dataclass
+class IncomeExpense:
+    Category: str
+    Sub_Category: str
+    Type: str
+    When: Union[str, int]
+    Account_Name: str
+    Amount: float
+    Auto_Pay_Account: str
+    Auto_Pay_Amount: str
+    AfterDays: int
+    AverageMonthlyCost: float
+    Balance: float
+    Limit: float
+    Available_Credit: float
+    Interest_Rate: float
+    Monthly_Interest_Incurred: float
+    Payoff_Order: int
+    Maturity_Date: Optional[date]
+    Priority: int
+
+
+# %%
+
+
+class DataSource:
     def __init__(self):
-        self.dict_dfs = {}
-        self.THRESHOLD_FOR_ALERT = 1000
-        self.NUM_DAYS = 365 * 2
         self.sheet_id = os.getenv("OUR_CASH_SHEET_ID")
         self.sheet_link = (
             f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/edit#gid=0"
         )
+        self.dict_dfs = {}
 
     def get_sheet_data(self, key, sheet_name, force_update=False) -> pd.DataFrame:
         if key in self.dict_dfs and not force_update:
@@ -56,15 +101,104 @@ class OurCashData:
         df_income_expense["Maturity Date"] = pd.to_datetime(
             df_income_expense["Maturity Date"]
         )
+        df_income_expense["When"] = pd.to_datetime(
+            df_income_expense["When"], errors="coerce"
+        ).dt.strftime("%d-%b")
+        df_income_expense["AfterDays"] = df_income_expense["AfterDays"].astype(int)
+        df_income_expense["Auto_Pay_Amount"] = df_income_expense[
+            "Auto_Pay_Amount"
+        ].astype(str)
+        df_income_expense["AverageMonthlyCost"] = df_income_expense[
+            "AverageMonthlyCost"
+        ].astype(float)
+        df_income_expense["Balance"] = (
+            df_income_expense["Balance"].replace("", 0).astype(float)
+        )
+        df_income_expense["Limit"] = (
+            df_income_expense["Limit"].replace("", 0).astype(float)
+        )
+        df_income_expense["Available Credit"] = (
+            df_income_expense["Available Credit"].replace("", 0).astype(float)
+        )
+        df_income_expense["Interest Rate"] = (
+            df_income_expense["Interest Rate"]
+            .str.replace("%", "")
+            .replace("", 0)
+            .astype(float)
+        ) / 100  # Convert percentage to decimal
+        df_income_expense["Monthly Interest Incurred"] = (
+            df_income_expense["Monthly Interest Incurred"].replace("", 0).astype(float)
+        )
+        df_income_expense["Payoff Order"] = (
+            df_income_expense["Payoff Order"].replace("", 0).astype(int)
+        )
+        df_income_expense["Priority"] = (
+            df_income_expense["Priority"].replace("", 0).astype(int)
+        )
+        df_income_expense["Account_Name"] = df_income_expense["Account_Name"].astype(
+            str
+        )
+        df_income_expense["Category"] = df_income_expense["Category"].astype(str)
+        df_income_expense["Sub_Category"] = df_income_expense["Sub_Category"].astype(
+            str
+        )
+        df_income_expense["Type"] = df_income_expense["Type"].astype(str)
+        df_income_expense["Auto_Pay_Account"] = df_income_expense[
+            "Auto_Pay_Account"
+        ].astype(str)
 
-        return df_income_expense
+        # convert to list of IncomeExpense dataclass
+        ls_income_expense = (
+            IncomeExpense(
+                Category=row["Category"],
+                Sub_Category=row["Sub_Category"],
+                Type=row["Type"],
+                When=row["When"],
+                Account_Name=row["Account_Name"],
+                Amount=row["Amount"],
+                Auto_Pay_Account=row["Auto_Pay_Account"],
+                Auto_Pay_Amount=row["Auto_Pay_Amount"],
+                AfterDays=row["AfterDays"],
+                AverageMonthlyCost=row["AverageMonthlyCost"],
+                Balance=row["Balance"],
+                Limit=row["Limit"],
+                Available_Credit=row["Available Credit"],
+                Interest_Rate=row["Interest Rate"],
+                Monthly_Interest_Incurred=row["Monthly Interest Incurred"],
+                Payoff_Order=row["Payoff Order"],
+                Maturity_Date=(
+                    row["Maturity Date"] if pd.notna(row["Maturity Date"]) else None
+                ),
+                Priority=row["Priority"],
+            )
+            for _, row in df_income_expense.iterrows()
+        )
+        return ls_income_expense
 
     def get_account_balances(self, force_update=False):
-        return self.get_sheet_data(
+        df_account_balances = self.get_sheet_data(
             key="account_balances",
             sheet_name="Account_Date_Balances",
             force_update=force_update,
         )
+
+        df_account_balances["Date"] = pd.to_datetime(df_account_balances["Date"])
+        df_account_balances["Balance"] = df_account_balances["Balance"].astype(float)
+        df_account_balances["Account_Name"] = df_account_balances[
+            "Account_Name"
+        ].astype(str)
+
+        # convert to list of AccountBalance dataclass
+        ls_account_balances = (
+            AccountBalance(
+                account_name=row["Account_Name"],
+                date=row["Date"],
+                balance=row["Balance"],
+            )
+            for _, row in df_account_balances.iterrows()
+        )
+
+        return ls_account_balances
 
     def get_account_details(self, force_update=False):
         return self.get_sheet_data(
@@ -81,24 +215,57 @@ class OurCashData:
         )
 
     def update_income_expense_from_sheets(self):
-        df_income_expense = self.get_income_expense_df(force_update=True)
+        ls_income_expense = self.get_income_expense_df(force_update=True)
 
-        return df_income_expense
+        return ls_income_expense
 
     def update_account_balances_from_sheets(self):
-        df_account_balances = self.get_account_balances(force_update=True)
+        ls_account_balances = self.get_account_balances(force_update=True)
 
-        return df_account_balances
+        return ls_account_balances
 
     def update_account_details_from_sheets(self):
-        df_account_details = self.get_account_details(force_update=True)
+        ls_account_details = self.get_account_details(force_update=True)
 
-        return df_account_details
+        return ls_account_details
 
     def update_transactions_report_from_sheets(self):
-        df_transactions_report = self.get_transactions_report(force_update=True)
+        ls_transactions_report = self.get_transactions_report(force_update=True)
 
-        return df_transactions_report
+        return ls_transactions_report
+
+
+data_source = DataSource()
+
+print_logger("Account balances", as_break=True)
+ls_account_balances = data_source.get_account_balances()
+print(type(ls_account_balances))
+
+# for account_balance in ls_account_balances:
+#     print(
+#         f"Account: {account_balance.account_name}, Date: {account_balance.date}, Balance: {account_balance.balance}"
+#     )
+#     print(account_balance)
+#     print("-----------------------------")
+
+
+print_logger("df_income_expense")
+ls_income_expenses = data_source.get_income_expense_df()
+for income_expense in ls_income_expenses:
+    print(
+        f"Category: {income_expense.Category}, Sub_Category: {income_expense.Sub_Category}, Type: {income_expense.Type}, When: {income_expense.When}, Account_Name: {income_expense.Account_Name}, Amount: {income_expense.Amount}"
+    )
+    print(income_expense)
+    print("-----------------------------")
+
+
+# %%
+
+
+class OurCashData:
+    def __init__(self):
+        self.THRESHOLD_FOR_ALERT = 1000
+        self.NUM_DAYS = 365 * 2
 
     def get_account_balances_with_details_filled(self):
         df_pivot: pd.DataFrame = self.get_account_balances()

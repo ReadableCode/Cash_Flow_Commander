@@ -61,3 +61,114 @@
   ```bash
   uv tree
   ```
+
+## Design Decisions
+
+### 1️⃣ Layered Components
+
+#### a. Data Layer
+
+**DataSource**
+
+- Knows how to read and parse data (Google Sheets, local files, etc.)
+- Produces native Python objects, not Pandas.
+
+#### b. Domain Models
+
+**Transaction**
+
+- id
+- date
+- amount
+- account
+- recurrence (Monthly, BiWeekly, Once, etc.)
+- maturity_date
+
+**Account**
+
+- name
+- category
+- sub_category
+- current_balance
+
+**Ledger**
+
+- Holds all transactions and accounts.
+- Knows how to apply new transactions.
+- Exposes methods for state updates.
+
+**Projection**
+
+- Simulates future balances.
+- Takes starting balance, transactions, date range.
+- Stateless: pure function that returns daily balances.
+
+#### c. Recurrence System
+
+**Recurrence (interface/protocol)**
+
+- `occurs_on(date: datetime.date) -> bool`
+
+**Concrete Recurrence Implementations:**
+
+- MonthlyRecurrence
+- YearlyRecurrence
+- BiWeeklyRecurrence
+- EveryXDaysRecurrence
+- OnceRecurrence
+
+#### d. Projection Engine
+
+- Stateless.
+- Projects N days into future.
+- Allows branches: pass modified ledger copy into engine.
+- Efficient: does not rebuild entire state on minor changes.
+
+#### e. Branch Manager
+
+- Manages snapshots.
+- Allows user to:
+  - Add transaction.
+  - Rewind state.
+  - Fork state.
+  - Compare scenarios.
+
+---
+
+### 2️⃣ High-Level Flow
+
+- `DataSource` loads external data → list of `Transaction` + `Account`.
+- `Ledger` initialized with accounts + transactions.
+- User modifies `Ledger` (add/delete transactions).
+- `ProjectionEngine` generates daily balances forward.
+- `BranchManager` allows for rapid branching, undo, scenario testing.
+
+---
+
+### 3️⃣ Principles
+
+- No Pandas in core.
+- State lives in memory as native Python objects.
+- Changes affect only relevant parts of the projection.
+- IO boundaries are cleanly isolated.
+- Immutable data for projection, mutable state for ledger.
+- Deterministic output for the same inputs.
+- Full support for CLI, API, and UI clients later.
+
+---
+
+### 4️⃣ Performance Goals
+
+- Modifying one transaction should not rebuild entire dataset.
+- Only recalculate affected dates forward.
+- Fast enough for realtime updates for interactive UI.
+
+---
+
+### 5️⃣ Growth Ready
+
+- Easy to plug in:
+  - Persistence layer (SQLite, JSON, S3)
+  - REST API (FastAPI)
+  - CLI (Typer)
+  - UI (Streamlit, React frontend)
