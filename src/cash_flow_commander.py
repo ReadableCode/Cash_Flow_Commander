@@ -32,16 +32,6 @@ if os.path.exists(dotenv_path):
 
 
 @dataclass
-class Transaction:
-    id: str
-    txn_date: date
-    amount: float
-    account: str
-    recurrence: str
-    maturity_date: Optional[date]
-
-
-@dataclass
 class AccountBalance:
     account_name: str
     date: date
@@ -68,6 +58,30 @@ class IncomeExpense:
     Payoff_Order: int
     Maturity_Date: Optional[date]
     Priority: int
+
+
+@dataclass
+class AccountDetail:
+    Category: str
+    Sub_Category: str
+    Account_Name: str
+    Limit: float
+    Interest_Rate: float
+    Maturity_Date: Optional[date]
+    Link: str
+
+
+@dataclass
+class TransactionReport:
+    Date: date
+    Category: str
+    Type: str
+    Account_Name: str
+    Auto_Pay_Account: str
+    Amount: float
+    Amount_Paid: float
+    Date_Paid: Optional[date]
+    Running_Balance: float
 
 
 # %%
@@ -100,7 +114,7 @@ class DataSource:
         df_income_expense["Amount"] = df_income_expense["Amount"].astype(float)
         df_income_expense["Maturity Date"] = pd.to_datetime(
             df_income_expense["Maturity Date"]
-        )
+        ).dt.date
         df_income_expense["When"] = pd.to_datetime(
             df_income_expense["When"], errors="coerce"
         ).dt.strftime("%d-%b")
@@ -182,7 +196,9 @@ class DataSource:
             force_update=force_update,
         )
 
-        df_account_balances["Date"] = pd.to_datetime(df_account_balances["Date"])
+        df_account_balances["Date"] = pd.to_datetime(
+            df_account_balances["Date"]
+        ).dt.date
         df_account_balances["Balance"] = df_account_balances["Balance"].astype(float)
         df_account_balances["Account_Name"] = df_account_balances[
             "Account_Name"
@@ -201,18 +217,99 @@ class DataSource:
         return ls_account_balances
 
     def get_account_details(self, force_update=False):
-        return self.get_sheet_data(
+        df_account_details = self.get_sheet_data(
             key="account_details",
             sheet_name="Account_Details",
             force_update=force_update,
         )
 
+        df_account_details["Account_Name"] = df_account_details["Account_Name"].astype(
+            str
+        )
+        df_account_details["Category"] = df_account_details["Category"].astype(str)
+        df_account_details["Sub_Category"] = df_account_details["Sub_Category"].astype(
+            str
+        )
+        df_account_details["Limit"] = (
+            df_account_details["Limit"].replace("", 0).astype(float)
+        )
+        df_account_details["Interest Rate"] = (
+            df_account_details["Interest Rate"]
+            .str.replace("%", "")
+            .replace("", 0)
+            .astype(float)
+        ) / 100  # Convert percentage to decimal
+        df_account_details["Maturity Date"] = pd.to_datetime(
+            df_account_details["Maturity Date"], errors="coerce"
+        ).dt.date
+        df_account_details["Link"] = df_account_details["Link"].astype(str)
+
+        # convert to list of AccountDetail dataclass
+        ls_account_details = [
+            AccountDetail(
+                Category=row["Category"],
+                Sub_Category=row["Sub_Category"],
+                Account_Name=row["Account_Name"],
+                Limit=row["Limit"],
+                Interest_Rate=row["Interest Rate"],
+                Maturity_Date=(
+                    row["Maturity Date"] if pd.notna(row["Maturity Date"]) else None
+                ),
+                Link=row["Link"],
+            )
+            for _, row in df_account_details.iterrows()
+        ]
+        return ls_account_details
+
     def get_transactions_report(self, force_update=False):
-        return self.get_sheet_data(
+        df_transactions_report = self.get_sheet_data(
             key="transactions_report",
             sheet_name="Transactions_Report",
             force_update=force_update,
         )
+
+        df_transactions_report["Date"] = pd.to_datetime(
+            df_transactions_report["Date"]
+        ).dt.date
+        df_transactions_report["Amount"] = df_transactions_report["Amount"].astype(
+            float
+        )
+        df_transactions_report["Amount_Paid"] = (
+            df_transactions_report["Amount_Paid"].replace("", 0).astype(float)
+        )
+        df_transactions_report["Date_Paid"] = pd.to_datetime(
+            df_transactions_report["Date_Paid"], errors="coerce"
+        ).dt.date
+        df_transactions_report["Running_Balance"] = (
+            df_transactions_report["Running_Balance"].replace("", 0).astype(float)
+        )
+        df_transactions_report["Account_Name"] = df_transactions_report[
+            "Account_Name"
+        ].astype(str)
+        df_transactions_report["Category"] = df_transactions_report["Category"].astype(
+            str
+        )
+        df_transactions_report["Type"] = df_transactions_report["Type"].astype(str)
+        df_transactions_report["Auto_Pay_Account"] = df_transactions_report[
+            "Auto_Pay_Account"
+        ].astype(str)
+
+        # convert to list of TransactionReport dataclass
+        ls_transactions_report = [
+            TransactionReport(
+                Date=row["Date"],
+                Category=row["Category"],
+                Type=row["Type"],
+                Account_Name=row["Account_Name"],
+                Auto_Pay_Account=row["Auto_Pay_Account"],
+                Amount=row["Amount"],
+                Amount_Paid=row["Amount_Paid"],
+                Date_Paid=(row["Date_Paid"] if pd.notna(row["Date_Paid"]) else None),
+                Running_Balance=row["Running_Balance"],
+            )
+            for _, row in df_transactions_report.iterrows()
+        ]
+        return ls_transactions_report
 
     def update_income_expense_from_sheets(self):
         ls_income_expense = self.get_income_expense_df(force_update=True)
@@ -266,6 +363,33 @@ for income_expense in ls_income_expenses:
         f"Category: {income_expense.Category}, Sub_Category: {income_expense.Sub_Category}, Type: {income_expense.Type}, When: {income_expense.When}, Account_Name: {income_expense.Account_Name}, Amount: {income_expense.Amount}"
     )
     print(income_expense)
+    print("-----------------------------")
+
+
+# %%
+
+print_logger("df_account_details", as_break=True)
+ls_account_details = data_source.get_account_details()
+for account_detail in ls_account_details:
+    print(
+        f"Category: {account_detail.Category}, Sub_Category: {account_detail.Sub_Category}, Account_Name: {account_detail.Account_Name}, Limit: {account_detail.Limit}, Interest_Rate: {account_detail.Interest_Rate}, Maturity_Date: {account_detail.Maturity_Date}, Link: {account_detail.Link}"
+    )
+    print(account_detail)
+    print("-----------------------------")
+
+
+# %%
+
+print_logger("df_transactions_report", as_break=True)
+ls_transactions_report = data_source.get_transactions_report()
+for transaction_report in ls_transactions_report:
+    if transaction_report.Date is None:
+        continue
+    if transaction_report.Date < datetime.date(2025, 6, 1):
+        continue
+    if transaction_report.Date > datetime.date(2025, 6, 10):
+        continue
+    print(transaction_report)
     print("-----------------------------")
 
 
