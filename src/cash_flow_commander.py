@@ -148,7 +148,7 @@ class DataSource:
         ].astype(str)
 
         # convert to list of IncomeExpense dataclass
-        ls_income_expense = (
+        ls_income_expense = [
             IncomeExpense(
                 Category=row["Category"],
                 Sub_Category=row["Sub_Category"],
@@ -172,7 +172,7 @@ class DataSource:
                 Priority=row["Priority"],
             )
             for _, row in df_income_expense.iterrows()
-        )
+        ]
         return ls_income_expense
 
     def get_account_balances(self, force_update=False):
@@ -189,14 +189,14 @@ class DataSource:
         ].astype(str)
 
         # convert to list of AccountBalance dataclass
-        ls_account_balances = (
+        ls_account_balances = [
             AccountBalance(
                 account_name=row["Account_Name"],
                 date=row["Date"],
                 balance=row["Balance"],
             )
             for _, row in df_account_balances.iterrows()
-        )
+        ]
 
         return ls_account_balances
 
@@ -237,19 +237,29 @@ class DataSource:
 
 data_source = DataSource()
 
+# %%
+
+
 print_logger("Account balances", as_break=True)
 ls_account_balances = data_source.get_account_balances()
 print(type(ls_account_balances))
+max_date_of_balances = max(
+    [account_balance.date for account_balance in ls_account_balances]
+)
+print(f"Max date of account balances: {max_date_of_balances}")
 
-# for account_balance in ls_account_balances:
-#     print(
-#         f"Account: {account_balance.account_name}, Date: {account_balance.date}, Balance: {account_balance.balance}"
-#     )
-#     print(account_balance)
-#     print("-----------------------------")
+for account_balance in ls_account_balances:
+    if account_balance.date != max_date_of_balances:
+        continue
+    print(
+        f"Account: {account_balance.account_name}, Date: {account_balance.date}, Balance: {account_balance.balance}"
+    )
+    print(account_balance)
+    print("-----------------------------")
 
+# %%
 
-print_logger("df_income_expense")
+print_logger("df_income_expense", as_break=True)
 ls_income_expenses = data_source.get_income_expense_df()
 for income_expense in ls_income_expenses:
     print(
