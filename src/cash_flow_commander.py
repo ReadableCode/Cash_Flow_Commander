@@ -28,14 +28,40 @@ if os.path.exists(dotenv_path):
 
 
 # %%
+# Functions #
+
+
+def print_objects_list(objects_list, title="Objects", max_items=None):
+    """Print a list of objects with a clean format."""
+    print_logger(title, as_break=True)
+
+    items_to_show = objects_list[:max_items] if max_items else objects_list
+
+    for i, obj in enumerate(items_to_show, 1):
+        print(f"--- Item {i} ---")
+        print(obj)
+        print()
+
+    if max_items and len(objects_list) > max_items:
+        print(f"... and {len(objects_list) - max_items} more items")
+
+
+# %%
 # Class #
-
-
 @dataclass
 class AccountBalance:
     account_name: str
     date: date
     balance: float
+
+    def __str__(self) -> str:
+        return (
+            f"AccountBalance(account_name='{self.account_name}', "
+            f"date={self.date}, balance=${self.balance:,.2f})"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 @dataclass
@@ -59,6 +85,26 @@ class IncomeExpense:
     Maturity_Date: Optional[date]
     Priority: int
 
+    def __str__(self) -> str:
+        return (
+            f"IncomeExpense(\n"
+            f"  Category='{self.Category}',\n"
+            f"  Sub_Category='{self.Sub_Category}',\n"
+            f"  Type='{self.Type}',\n"
+            f"  When='{self.When}',\n"
+            f"  Account_Name='{self.Account_Name}',\n"
+            f"  Amount=${self.Amount:,.2f},\n"
+            f"  Auto_Pay_Account='{self.Auto_Pay_Account}',\n"
+            f"  Balance=${self.Balance:,.2f},\n"
+            f"  Limit=${self.Limit:,.2f},\n"
+            f"  Interest_Rate={self.Interest_Rate:.2%},\n"
+            f"  Priority={self.Priority}\n"
+            f")"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 @dataclass
 class AccountDetail:
@@ -69,6 +115,21 @@ class AccountDetail:
     Interest_Rate: float
     Maturity_Date: Optional[date]
     Link: str
+
+    def __str__(self) -> str:
+        return (
+            f"AccountDetail(\n"
+            f"  Category='{self.Category}',\n"
+            f"  Sub_Category='{self.Sub_Category}',\n"
+            f"  Account_Name='{self.Account_Name}',\n"
+            f"  Limit=${self.Limit:,.2f},\n"
+            f"  Interest_Rate={self.Interest_Rate:.2%},\n"
+            f"  Maturity_Date={self.Maturity_Date}\n"
+            f")"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 @dataclass
@@ -82,6 +143,24 @@ class TransactionReport:
     Amount_Paid: float
     Date_Paid: Optional[date]
     Running_Balance: float
+
+    def __str__(self) -> str:
+        return (
+            f"TransactionReport(\n"
+            f"  Date={self.Date},\n"
+            f"  Category='{self.Category}',\n"
+            f"  Type='{self.Type}',\n"
+            f"  Account_Name='{self.Account_Name}',\n"
+            f"  Auto_Pay_Account='{self.Auto_Pay_Account}',\n"
+            f"  Amount=${self.Amount:,.2f},\n"
+            f"  Amount_Paid=${self.Amount_Paid:,.2f},\n"
+            f"  Date_Paid={self.Date_Paid},\n"
+            f"  Running_Balance=${self.Running_Balance:,.2f}\n"
+            f")"
+        )
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 # %%
@@ -334,6 +413,7 @@ class DataSource:
 
 data_source = DataSource()
 
+
 # %%
 
 
@@ -345,37 +425,26 @@ max_date_of_balances = max(
 )
 print(f"Max date of account balances: {max_date_of_balances}")
 
-for account_balance in ls_account_balances:
-    if account_balance.date != max_date_of_balances:
-        continue
-    print(
-        f"Account: {account_balance.account_name}, Date: {account_balance.date}, Balance: {account_balance.balance}"
-    )
-    print(account_balance)
-    print("-----------------------------")
+print_objects_list(
+    [
+        account_balance
+        for account_balance in ls_account_balances
+        if account_balance.date == max_date_of_balances
+    ],
+    title="Account Balances (Latest)",
+    max_items=10,
+)
 
 # %%
 
-print_logger("df_income_expense", as_break=True)
 ls_income_expenses = data_source.get_income_expense_df()
-for income_expense in ls_income_expenses:
-    print(
-        f"Category: {income_expense.Category}, Sub_Category: {income_expense.Sub_Category}, Type: {income_expense.Type}, When: {income_expense.When}, Account_Name: {income_expense.Account_Name}, Amount: {income_expense.Amount}"
-    )
-    print(income_expense)
-    print("-----------------------------")
+print_objects_list(ls_income_expenses, title="Income/Expenses", max_items=5)
 
 
 # %%
 
-print_logger("df_account_details", as_break=True)
 ls_account_details = data_source.get_account_details()
-for account_detail in ls_account_details:
-    print(
-        f"Category: {account_detail.Category}, Sub_Category: {account_detail.Sub_Category}, Account_Name: {account_detail.Account_Name}, Limit: {account_detail.Limit}, Interest_Rate: {account_detail.Interest_Rate}, Maturity_Date: {account_detail.Maturity_Date}, Link: {account_detail.Link}"
-    )
-    print(account_detail)
-    print("-----------------------------")
+print_objects_list(ls_account_details, title="Account Details", max_items=5)
 
 
 # %%
