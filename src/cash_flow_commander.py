@@ -448,18 +448,19 @@ print_objects_list(ls_account_details, title="Account Details", max_items=5)
 
 
 # %%
-
-print_logger("df_transactions_report", as_break=True)
+print_logger("df_transactions_report (filtered)", as_break=True)
 ls_transactions_report = data_source.get_transactions_report()
-for transaction_report in ls_transactions_report:
-    if transaction_report.Date is None:
-        continue
-    if transaction_report.Date < datetime.date(2025, 6, 1):
-        continue
-    if transaction_report.Date > datetime.date(2025, 6, 10):
-        continue
-    print(transaction_report)
-    print("-----------------------------")
+filtered_transactions = [
+    transaction_report
+    for transaction_report in ls_transactions_report
+    if transaction_report.Date is not None
+    and datetime.date(2025, 6, 1)
+    <= transaction_report.Date
+    <= datetime.date(2025, 6, 10)
+]
+print_objects_list(
+    filtered_transactions, title="Transactions (2025-06-01 to 2025-06-10)"
+)
 
 
 # %%
