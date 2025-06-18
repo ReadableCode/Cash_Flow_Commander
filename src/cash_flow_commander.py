@@ -712,9 +712,13 @@ pprint_df(
 
 
 if __name__ == "__main__":
-    our_cash_data = OurCashData()
+    sheets_storage = SheetsStorage()
+    our_cash_data = OurCashData(sheets_storage)
 
-    our_cash_data.update_all_sheets_data()
+    sheets_storage.update_income_expense_from_sheets()
+    sheets_storage.update_account_balances_from_sheets()
+    sheets_storage.update_account_details_from_sheets()
+    sheets_storage.update_transactions_report_from_sheets()
 
     df_future_cast = our_cash_data.update_transactions()
     # df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
