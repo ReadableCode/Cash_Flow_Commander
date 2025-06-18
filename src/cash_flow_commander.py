@@ -3,6 +3,7 @@
 
 import os
 import warnings
+from typing import Optional
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -26,26 +27,27 @@ if os.path.exists(dotenv_path):
 # Class #
 
 
-class OurCashData:
+class SheetsStorage:
+    """Handles all Google Sheets data access and caching"""
+
     def __init__(self):
         self.dict_dfs = {}
-        self.THRESHOLD_FOR_ALERT = 1000
-        self.NUM_DAYS = 365 * 2
         self.sheet_id = os.getenv("OUR_CASH_SHEET_ID")
         self.sheet_link = (
             f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/edit#gid=0"
         )
 
     def get_sheet_data(self, key, sheet_name, force_update=False) -> pd.DataFrame:
+        """Generic method to fetch and cache sheet data"""
         if key in self.dict_dfs and not force_update:
             return self.dict_dfs[key].copy()
 
         df = get_book_sheet_df("Our_Cash", sheet_name)
-
         self.dict_dfs[key] = df.copy()
         return df.copy()
 
     def get_income_expense_df(self, force_update=False):
+        """Get income/expense data with proper data type conversion"""
         df_income_expense = self.get_sheet_data(
             key="income_expense_df",
             sheet_name="Income_Expense",
@@ -55,30 +57,139 @@ class OurCashData:
         df_income_expense["Amount"] = df_income_expense["Amount"].astype(float)
         df_income_expense["Maturity Date"] = pd.to_datetime(
             df_income_expense["Maturity Date"]
+        ).dt.date
+        df_income_expense["When"] = pd.to_datetime(
+            df_income_expense["When"], errors="coerce"
+        ).dt.strftime("%d-%b")
+        df_income_expense["AfterDays"] = df_income_expense["AfterDays"].astype(int)
+        df_income_expense["Auto_Pay_Amount"] = df_income_expense[
+            "Auto_Pay_Amount"
+        ].astype(str)
+        df_income_expense["AverageMonthlyCost"] = df_income_expense[
+            "AverageMonthlyCost"
+        ].astype(float)
+        df_income_expense["Balance"] = (
+            df_income_expense["Balance"].replace("", 0).astype(float)
         )
+        df_income_expense["Limit"] = (
+            df_income_expense["Limit"].replace("", 0).astype(float)
+        )
+        df_income_expense["Available Credit"] = (
+            df_income_expense["Available Credit"].replace("", 0).astype(float)
+        )
+        df_income_expense["Interest Rate"] = (
+            df_income_expense["Interest Rate"]
+            .str.replace("%", "")
+            .replace("", 0)
+            .astype(float)
+        ) / 100  # Convert percentage to decimal
+        df_income_expense["Monthly Interest Incurred"] = (
+            df_income_expense["Monthly Interest Incurred"].replace("", 0).astype(float)
+        )
+        df_income_expense["Payoff Order"] = (
+            df_income_expense["Payoff Order"].replace("", 0).astype(int)
+        )
+        df_income_expense["Priority"] = (
+            df_income_expense["Priority"].replace("", 0).astype(int)
+        )
+        df_income_expense["Account_Name"] = df_income_expense["Account_Name"].astype(
+            str
+        )
+        df_income_expense["Category"] = df_income_expense["Category"].astype(str)
+        df_income_expense["Sub_Category"] = df_income_expense["Sub_Category"].astype(
+            str
+        )
+        df_income_expense["Type"] = df_income_expense["Type"].astype(str)
+        df_income_expense["Auto_Pay_Account"] = df_income_expense[
+            "Auto_Pay_Account"
+        ].astype(str)
 
         return df_income_expense
 
     def get_account_balances(self, force_update=False):
-        return self.get_sheet_data(
+        """Get account balances data"""
+        df_account_balances = self.get_sheet_data(
             key="account_balances",
             sheet_name="Account_Date_Balances",
             force_update=force_update,
         )
 
+        df_account_balances["Date"] = pd.to_datetime(
+            df_account_balances["Date"]
+        ).dt.date
+        df_account_balances["Balance"] = df_account_balances["Balance"].astype(float)
+        df_account_balances["Account_Name"] = df_account_balances[
+            "Account_Name"
+        ].astype(str)
+
+        return df_account_balances
+
     def get_account_details(self, force_update=False):
-        return self.get_sheet_data(
+        """Get account details data"""
+        df_account_details = self.get_sheet_data(
             key="account_details",
             sheet_name="Account_Details",
             force_update=force_update,
         )
 
+        df_account_details["Account_Name"] = df_account_details["Account_Name"].astype(
+            str
+        )
+        df_account_details["Category"] = df_account_details["Category"].astype(str)
+        df_account_details["Sub_Category"] = df_account_details["Sub_Category"].astype(
+            str
+        )
+        df_account_details["Limit"] = (
+            df_account_details["Limit"].replace("", 0).astype(float)
+        )
+        df_account_details["Interest Rate"] = (
+            df_account_details["Interest Rate"]
+            .str.replace("%", "")
+            .replace("", 0)
+            .astype(float)
+        ) / 100  # Convert percentage to decimal
+        df_account_details["Maturity Date"] = pd.to_datetime(
+            df_account_details["Maturity Date"], errors="coerce"
+        ).dt.date
+        df_account_details["Link"] = df_account_details["Link"].astype(str)
+
+        return df_account_details
+
     def get_transactions_report(self, force_update=False):
-        return self.get_sheet_data(
+        """Get transactions report data"""
+        df_transactions_report = self.get_sheet_data(
             key="transactions_report",
             sheet_name="Transactions_Report",
             force_update=force_update,
         )
+
+        df_transactions_report["Date"] = pd.to_datetime(
+            df_transactions_report["Date"]
+        ).dt.date
+        df_transactions_report["Amount"] = df_transactions_report["Amount"].astype(
+            float
+        )
+        df_transactions_report["Amount_Paid"] = (
+            df_transactions_report["Amount_Paid"].replace("", 0).astype(float)
+        )
+        df_transactions_report["Date_Paid"] = pd.to_datetime(
+            df_transactions_report["Date_Paid"], errors="coerce"
+        ).dt.date
+        df_transactions_report["Running_Balance"] = (
+            df_transactions_report["Running_Balance"].replace("", 0).astype(float)
+        )
+        df_transactions_report["Account_Name"] = df_transactions_report[
+            "Account_Name"
+        ].astype(str)
+        df_transactions_report["Category"] = df_transactions_report["Category"].astype(
+            str
+        )
+        df_transactions_report["Type"] = df_transactions_report["Type"].astype(str)
+        df_transactions_report["Auto_Pay_Account"] = df_transactions_report[
+            "Auto_Pay_Account"
+        ].astype(str)
+
+        return df_transactions_report
 
     def update_income_expense_from_sheets(self):
         df_income_expense = self.get_income_expense_df(force_update=True)
@@ -100,8 +211,17 @@ class OurCashData:
 
         return df_transactions_report
 
+
+class OurCashData:
+    """Handles cash flow analysis and business logic"""
+
+    def __init__(self, sheets_storage: Optional[SheetsStorage] = None):
+        self.sheets_storage = sheets_storage or SheetsStorage()
+        self.THRESHOLD_FOR_ALERT = 1000
+        self.NUM_DAYS = 365 * 2
+
     def get_account_balances_with_details_filled(self):
-        df_pivot: pd.DataFrame = self.get_account_balances()
+        df_pivot: pd.DataFrame = self.sheets_storage.get_account_balances()
 
         df_pivot = df_pivot.pivot(
             index="Date", columns="Account_Name", values="Balance"
@@ -109,7 +229,7 @@ class OurCashData:
         df_pivot = df_pivot.sort_index()
 
         # Forward fill missing values for each account
-        df_pivot = df_pivot.fillna(method="ffill")  # type: ignore
+        df_pivot = df_pivot.ffill()
         df_pivot["Total"] = df_pivot.sum(axis=1)
 
         # Unpivot the DataFrame back to the original format
@@ -120,7 +240,7 @@ class OurCashData:
         df_pivot = df_pivot.sort_values(by=["Date", "Account_Name"])
 
         # Merge back with the original DataFrame to include the Sub_Category
-        df_account_details: pd.DataFrame = self.get_account_details()
+        df_account_details: pd.DataFrame = self.sheets_storage.get_account_details()
         df_account_details = df_account_details[
             ["Account_Name", "Category", "Sub_Category"]
         ]
@@ -134,14 +254,16 @@ class OurCashData:
     def get_account_balances_with_details_filled_grouped(self) -> pd.DataFrame:
         df_pivot = self.get_account_balances_with_details_filled()
 
-        df_pivot = df_pivot.groupby(["Date", "Sub_Category"], as_index=False)[
-            "Balance"
-        ].sum()
+        df_grouped = (
+            df_pivot.groupby(["Date", "Sub_Category"], as_index=False)
+            .agg({"Balance": "sum"})
+            .reset_index(drop=True)
+        )
 
-        return df_pivot
+        return df_grouped
 
     def get_current_balance(self, account_name):
-        df_current_balance = self.get_account_balances()
+        df_current_balance = self.sheets_storage.get_account_balances()
 
         df_current_balance = df_current_balance[
             df_current_balance["Account_Name"] == account_name
@@ -154,7 +276,7 @@ class OurCashData:
         return df_current_balance["Balance"].iloc[0]
 
     def get_emergency_fund_amount(self):
-        df_income_expense_emergency_fund = self.get_income_expense_df()
+        df_income_expense_emergency_fund = self.sheets_storage.get_income_expense_df()
 
         df_income_expense_emergency_fund = df_income_expense_emergency_fund[
             (df_income_expense_emergency_fund["Priority"] == 1)
@@ -163,7 +285,7 @@ class OurCashData:
 
     def get_monthly_transactions_for_date(self, date):
         day_of_month = pd.to_datetime(date).day
-        df_monthly_transactions = self.get_income_expense_df()
+        df_monthly_transactions = self.sheets_storage.get_income_expense_df()
 
         # make sure all the values can be converted to expected format by filtering to this type
         df_monthly_transactions = df_monthly_transactions[
@@ -179,7 +301,7 @@ class OurCashData:
     def get_yearly_transactions_for_date(self, date):
         day_of_month = pd.to_datetime(date).day
         month_of_year = pd.to_datetime(date).month
-        df_yearly_transactions = self.get_income_expense_df()
+        df_yearly_transactions = self.sheets_storage.get_income_expense_df()
 
         # make sure all the values can be converted to expected format by filtering to this type
         df_yearly_transactions = df_yearly_transactions[
@@ -200,7 +322,7 @@ class OurCashData:
         return df_yearly_transactions
 
     def get_bi_weekly_transactions_for_date(self, date):
-        df_bi_weekly_transactions = self.get_income_expense_df()
+        df_bi_weekly_transactions = self.sheets_storage.get_income_expense_df()
 
         # make sure all the values can be converted to expected format by filtering to this type
         df_bi_weekly_transactions = df_bi_weekly_transactions[
@@ -222,7 +344,7 @@ class OurCashData:
         return df_bi_weekly_transactions
 
     def get_oncely_transactions_for_date(self, date):
-        df_oncely_transactions = self.get_income_expense_df()
+        df_oncely_transactions = self.sheets_storage.get_income_expense_df()
 
         df_oncely_transactions = df_oncely_transactions[
             (df_oncely_transactions["Type"] == "oncely")
@@ -237,7 +359,7 @@ class OurCashData:
         return df_oncely_transactions
 
     def get_every_x_days_transactions_for_date(self, date):
-        df_every_x_days_transactions = self.get_income_expense_df()
+        df_every_x_days_transactions = self.sheets_storage.get_income_expense_df()
 
         df_every_x_days_transactions = df_every_x_days_transactions[
             (df_every_x_days_transactions["Type"] == "everyXDays")
@@ -308,7 +430,7 @@ class OurCashData:
         current_balance = self.get_current_balance("Chase Checking")
         print(f"current_balance of Chase Checking: {current_balance}")
 
-        df_existing_data_from_sheets = self.get_transactions_report(
+        df_existing_data_from_sheets = self.sheets_storage.get_transactions_report(
             force_update=True
         ).fillna(0)
         df_existing_data_from_sheets["Running_Balance"] = 0
@@ -457,15 +579,16 @@ class OurCashData:
         return df_future_cast_end_of_each_day
 
 
-our_cash_data = OurCashData()
+sheets_storage = SheetsStorage()
+our_cash_data = OurCashData(sheets_storage)
 
 # %%
 
 
-df_income_expense = our_cash_data.get_income_expense_df()
-df_account_balances = our_cash_data.get_account_balances()
-df_account_details = our_cash_data.get_account_details()
-df_transactions = our_cash_data.get_transactions_report()
+df_income_expense = sheets_storage.get_income_expense_df()
+df_account_balances = sheets_storage.get_account_balances()
+df_account_details = sheets_storage.get_account_details()
+df_transactions = sheets_storage.get_transactions_report()
 
 print_logger("df_income_expense (tail):")
 pprint_df(df_income_expense.tail(10))
@@ -591,10 +714,7 @@ pprint_df(
 if __name__ == "__main__":
     our_cash_data = OurCashData()
 
-    our_cash_data.update_income_expense_from_sheets()
-    our_cash_data.update_account_balances_from_sheets()
-    our_cash_data.update_account_details_from_sheets()
-    our_cash_data.update_transactions_report_from_sheets()
+    our_cash_data.update_all_sheets_data()
 
     df_future_cast = our_cash_data.update_transactions()
     # df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
