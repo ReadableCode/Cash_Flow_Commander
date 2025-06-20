@@ -58,9 +58,6 @@ class SheetsStorage:
         df_income_expense["Maturity Date"] = pd.to_datetime(
             df_income_expense["Maturity Date"]
         ).dt.date
-        df_income_expense["When"] = pd.to_datetime(
-            df_income_expense["When"], errors="coerce"
-        ).dt.strftime("%d-%b")
         df_income_expense["AfterDays"] = df_income_expense["AfterDays"].astype(int)
         df_income_expense["Auto_Pay_Amount"] = df_income_expense[
             "Auto_Pay_Amount"
@@ -105,6 +102,86 @@ class SheetsStorage:
         ].astype(str)
 
         return df_income_expense
+
+    def get_oncely_transactions_for_date(self):
+        df_oncely_transactions = self.get_income_expense_df()
+
+        df_oncely_transactions = df_oncely_transactions[
+            (df_oncely_transactions["Type"] == "oncely")
+        ]
+
+        # convert from format 2/29/2024
+        df_oncely_transactions["Date"] = pd.to_datetime(
+            df_oncely_transactions["When"], format="%m/%d/%Y"
+        )
+        df_oncely_transactions = df_oncely_transactions.drop(columns=["When"])
+
+        return df_oncely_transactions
+
+    def get_yearly_transactions(self):
+        df_yearly_transactions = self.get_income_expense_df()
+
+        df_yearly_transactions = df_yearly_transactions[
+            (df_yearly_transactions["Type"] == "yearly")
+        ]
+
+        # convert from format 13-Jul
+        df_yearly_transactions["Month_Number"] = pd.to_datetime(
+            df_yearly_transactions["When"], format="%d-%b"
+        ).dt.month
+        df_yearly_transactions["Day_Of_Month"] = pd.to_datetime(
+            df_yearly_transactions["When"], format="%d-%b"
+        ).dt.day
+        df_yearly_transactions = df_yearly_transactions.drop(columns=["When"])
+
+        return df_yearly_transactions
+
+    def get_monthly_transactions(self):
+        df_monthly_transactions = self.get_income_expense_df()
+
+        df_monthly_transactions = df_monthly_transactions[
+            (df_monthly_transactions["Type"] == "monthly")
+        ]
+
+        # convert from format 25
+        df_monthly_transactions["Day_Of_Month"] = df_monthly_transactions[
+            "When"
+        ].astype(int)
+        df_monthly_transactions = df_monthly_transactions.drop(columns=["When"])
+
+        return df_monthly_transactions
+
+    def get_bi_weekly_transactions(self):
+        df_bi_weekly_transactions = self.get_income_expense_df()
+
+        df_bi_weekly_transactions = df_bi_weekly_transactions[
+            (df_bi_weekly_transactions["Type"] == "biweekly")
+        ]
+
+        # convert from format 2/29/2024
+        df_bi_weekly_transactions["An_Occur_Date"] = pd.to_datetime(
+            df_bi_weekly_transactions["When"], format="%m/%d/%Y"
+        )
+        df_bi_weekly_transactions = df_bi_weekly_transactions.drop(columns=["When"])
+
+        return df_bi_weekly_transactions
+
+    def get_every_x_days_transactions(self):
+        df_every_x_days_transactions = self.get_income_expense_df()
+
+        df_every_x_days_transactions = df_every_x_days_transactions[
+            (df_every_x_days_transactions["Type"] == "everyXDays")
+        ]
+
+        # convert from format 2/29/2024
+        df_every_x_days_transactions["An_Occur_Date"] = pd.to_datetime(
+            df_every_x_days_transactions["When"], format="%m/%d/%Y"
+        )
+        df_every_x_days_transactions = df_every_x_days_transactions.drop(
+            columns=["When"]
+        )
+
+        return df_every_x_days_transactions
 
     def get_account_balances(self, force_update=False):
         """Get account balances data"""
@@ -172,9 +249,6 @@ class SheetsStorage:
         df_transactions_report["Amount_Paid"] = (
             df_transactions_report["Amount_Paid"].replace("", 0).astype(float)
         )
-        df_transactions_report["Date_Paid"] = pd.to_datetime(
-            df_transactions_report["Date_Paid"], errors="coerce"
-        ).dt.date
         df_transactions_report["Running_Balance"] = (
             df_transactions_report["Running_Balance"].replace("", 0).astype(float)
         )
@@ -210,6 +284,12 @@ class SheetsStorage:
         df_transactions_report = self.get_transactions_report(force_update=True)
 
         return df_transactions_report
+
+
+sheets_storage = SheetsStorage()
+
+
+# %%
 
 
 class OurCashData:
@@ -283,99 +363,69 @@ class OurCashData:
         ]
         return df_income_expense_emergency_fund["AverageMonthlyCost"].sum() * 6
 
-    def get_monthly_transactions_for_date(self, date):
-        day_of_month = pd.to_datetime(date).day
-        df_monthly_transactions = self.sheets_storage.get_income_expense_df()
-
-        # make sure all the values can be converted to expected format by filtering to this type
-        df_monthly_transactions = df_monthly_transactions[
-            (df_monthly_transactions["Type"] == "monthly")
-        ]
-
-        df_monthly_transactions = df_monthly_transactions[
-            (df_monthly_transactions["When"] == day_of_month)
-            & (df_monthly_transactions["Maturity Date"] > date)
-        ]
-        return df_monthly_transactions
-
-    def get_yearly_transactions_for_date(self, date):
-        day_of_month = pd.to_datetime(date).day
-        month_of_year = pd.to_datetime(date).month
-        df_yearly_transactions = self.sheets_storage.get_income_expense_df()
-
-        # make sure all the values can be converted to expected format by filtering to this type
-        df_yearly_transactions = df_yearly_transactions[
-            (df_yearly_transactions["Type"] == "yearly")
-            & (df_yearly_transactions["Maturity Date"] > date)
-        ]
-
-        df_yearly_transactions["When"] = pd.to_datetime(
-            df_yearly_transactions["When"], format="%d-%b"
-        )
-
-        df_yearly_transactions = df_yearly_transactions[
-            (df_yearly_transactions["Type"] == "yearly")
-            & (df_yearly_transactions["When"].dt.month == month_of_year)
-            & (df_yearly_transactions["When"].dt.day == day_of_month)
-        ]
-
-        return df_yearly_transactions
-
-    def get_bi_weekly_transactions_for_date(self, date):
-        df_bi_weekly_transactions = self.sheets_storage.get_income_expense_df()
-
-        # make sure all the values can be converted to expected format by filtering to this type
-        df_bi_weekly_transactions = df_bi_weekly_transactions[
-            (df_bi_weekly_transactions["Type"] == "biweekly")
-        ]
-
-        df_bi_weekly_transactions["When"] = pd.to_datetime(
-            df_bi_weekly_transactions["When"]
-        )
-
-        df_bi_weekly_transactions = df_bi_weekly_transactions[
-            (
-                (pd.to_datetime(date) - df_bi_weekly_transactions["When"]).dt.days % 14
-                == 0
-            )
-            & (df_bi_weekly_transactions["Maturity Date"] > date)
-        ]
-
-        return df_bi_weekly_transactions
-
     def get_oncely_transactions_for_date(self, date):
-        df_oncely_transactions = self.sheets_storage.get_income_expense_df()
+        df_oncely_transactions = self.sheets_storage.get_oncely_transactions_for_date()
 
         df_oncely_transactions = df_oncely_transactions[
-            (df_oncely_transactions["Type"] == "oncely")
-        ]
-
-        df_oncely_transactions["When"] = pd.to_datetime(df_oncely_transactions["When"])
-
-        df_oncely_transactions = df_oncely_transactions[
-            df_oncely_transactions["When"] == pd.to_datetime(date)
+            (df_oncely_transactions["Maturity Date"] > date)
+            & (df_oncely_transactions["Date"] == pd.to_datetime(date))
         ]
 
         return df_oncely_transactions
 
-    def get_every_x_days_transactions_for_date(self, date):
-        df_every_x_days_transactions = self.sheets_storage.get_income_expense_df()
+    def get_yearly_transactions_for_date(self, date):
+        day_of_month = pd.to_datetime(date).day
+        month_of_year = pd.to_datetime(date).month
+        df_yearly_transactions = self.sheets_storage.get_yearly_transactions()
 
-        df_every_x_days_transactions = df_every_x_days_transactions[
-            (df_every_x_days_transactions["Type"] == "everyXDays")
+        df_yearly_transactions = df_yearly_transactions[
+            (df_yearly_transactions["Maturity Date"] > date)
+            & (df_yearly_transactions["Month_Number"] == month_of_year)
+            & (df_yearly_transactions["Day_Of_Month"] == day_of_month)
         ]
 
-        df_every_x_days_transactions["When"] = pd.to_datetime(
-            df_every_x_days_transactions["When"]
+        return df_yearly_transactions
+
+    def get_monthly_transactions_for_date(self, date):
+        day_of_month = pd.to_datetime(date).day
+        df_monthly_transactions = self.sheets_storage.get_monthly_transactions()
+
+        df_monthly_transactions = df_monthly_transactions[
+            (df_monthly_transactions["Maturity Date"] > date)
+            & (df_monthly_transactions["Day_Of_Month"] == day_of_month)
+        ]
+        return df_monthly_transactions
+
+    def get_bi_weekly_transactions_for_date(self, date):
+        df_bi_weekly_transactions = self.sheets_storage.get_bi_weekly_transactions()
+
+        df_bi_weekly_transactions = df_bi_weekly_transactions[
+            (df_bi_weekly_transactions["Maturity Date"] > date)
+            & (
+                (
+                    pd.to_datetime(date) - df_bi_weekly_transactions["An_Occur_Date"]
+                ).dt.days
+                % 14
+                == 0
+            )
+        ]
+
+        return df_bi_weekly_transactions
+
+    def get_every_x_days_transactions_for_date(self, date):
+        df_every_x_days_transactions = (
+            self.sheets_storage.get_every_x_days_transactions()
         )
 
         df_every_x_days_transactions = df_every_x_days_transactions[
-            (
-                (pd.to_datetime(date) - df_every_x_days_transactions["When"]).dt.days
+            (df_every_x_days_transactions["Maturity Date"] > date)
+            & (
+                (
+                    pd.to_datetime(date) - df_every_x_days_transactions["An_Occur_Date"]
+                ).dt.days
                 % df_every_x_days_transactions["AfterDays"]
                 == 0
             )
-            & (df_every_x_days_transactions["Maturity Date"] > date)
         ]
 
         return df_every_x_days_transactions
@@ -383,10 +433,10 @@ class OurCashData:
     def get_all_transactions_for_date(self, date):
         df_all_transactions = pd.concat(
             [
-                self.get_monthly_transactions_for_date(date),
-                self.get_yearly_transactions_for_date(date),
-                self.get_bi_weekly_transactions_for_date(date),
                 self.get_oncely_transactions_for_date(date),
+                self.get_yearly_transactions_for_date(date),
+                self.get_monthly_transactions_for_date(date),
+                self.get_bi_weekly_transactions_for_date(date),
                 self.get_every_x_days_transactions_for_date(date),
             ]
         )
@@ -410,7 +460,7 @@ class OurCashData:
             # start num_days ago
             date = (
                 pd.to_datetime("today") - pd.Timedelta(days=num_days_back - i)
-            ).strftime("%Y-%m-%d")
+            ).date()
             df_all_transactions_for_date = self.get_all_transactions_for_date(date)
             df_all_transactions_for_date["Date"] = date
 
@@ -470,6 +520,7 @@ class OurCashData:
 
         # for each row after today, add the previous row's Running_Balance to the current row's amount,
         # only for days less than 10 days ago and only if the "Paid" column is ""
+        # TODO URGENT this is missing calculating old days still needing to be paid
         previous_balance = current_balance
         for index, row in df_updated_transactions.iterrows():
             num_days_ago = (pd.to_datetime("today") - pd.to_datetime(row["Date"])).days
@@ -711,7 +762,7 @@ pprint_df(
 # Run #
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and False:
     sheets_storage = SheetsStorage()
     our_cash_data = OurCashData(sheets_storage)
 
