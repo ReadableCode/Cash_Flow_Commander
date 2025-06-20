@@ -7,6 +7,7 @@ from typing import Optional
 
 import pandas as pd
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 from config import parent_dir
 from utils.display_tools import pprint_df, print_logger
@@ -456,7 +457,13 @@ class OurCashData:
 
         df_recent_transactions = pd.DataFrame(columns=ls_columns)
 
-        for i in range(0, num_days_back + 1 + num_days_forward):
+        iterator = tqdm(
+            range(0, num_days_back + 1 + num_days_forward),
+            desc="Fetching transactions for date range",
+            total=num_days_back + 1 + num_days_forward,
+        )
+
+        for i in iterator:
             # start num_days ago
             date = (
                 pd.to_datetime("today") - pd.Timedelta(days=num_days_back - i)
@@ -668,11 +675,6 @@ pprint_df(df_account_balances_filled_grouped.tail(20))
 
 
 df_future_cast = our_cash_data.update_transactions()
-
-
-# %%
-
-
 print_logger("df_future_cast near today (tail):")
 pprint_df(
     df_future_cast[
@@ -686,8 +688,6 @@ pprint_df(
         )
     ].tail(100)
 )
-
-# %%
 
 df_label_dates = our_cash_data.isolate_label_dates(df_future_cast)
 print_logger("df_future_cast_label_dates near today (tail):")
