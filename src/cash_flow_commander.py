@@ -32,24 +32,24 @@ class SheetsStorage:
     """Handles all Google Sheets data access and caching"""
 
     def __init__(self):
-        self.dict_dfs = {}
-        self.sheet_id = os.getenv("OUR_CASH_SHEET_ID")
-        self.sheet_link = (
-            f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/edit#gid=0"
+        self._dict_sheets_dfs = {}
+        self._sheet_id = os.getenv("OUR_CASH_SHEET_ID")
+        self._sheet_link = (
+            f"https://docs.google.com/spreadsheets/d/{self._sheet_id}/edit#gid=0"
         )
 
-    def get_sheet_data(self, key, sheet_name, force_update=False) -> pd.DataFrame:
+    def _get_sheet_data(self, key, sheet_name, force_update=False) -> pd.DataFrame:
         """Generic method to fetch and cache sheet data"""
-        if key in self.dict_dfs and not force_update:
-            return self.dict_dfs[key].copy()
+        if key in self._dict_sheets_dfs and not force_update:
+            return self._dict_sheets_dfs[key].copy()
 
         df = get_book_sheet_df("Our_Cash", sheet_name)
-        self.dict_dfs[key] = df.copy()
+        self._dict_sheets_dfs[key] = df.copy()
         return df.copy()
 
     def get_income_expense_df(self, force_update=False):
         """Get income/expense data with proper data type conversion"""
-        df_income_expense = self.get_sheet_data(
+        df_income_expense = self._get_sheet_data(
             key="income_expense_df",
             sheet_name="Income_Expense",
             force_update=force_update,
@@ -104,7 +104,7 @@ class SheetsStorage:
 
         return df_income_expense
 
-    def get_oncely_transactions_for_date(self):
+    def get_oncely_transactions(self):
         df_oncely_transactions = self.get_income_expense_df()
 
         df_oncely_transactions = df_oncely_transactions[
@@ -186,7 +186,7 @@ class SheetsStorage:
 
     def get_account_balances(self, force_update=False):
         """Get account balances data"""
-        df_account_balances = self.get_sheet_data(
+        df_account_balances = self._get_sheet_data(
             key="account_balances",
             sheet_name="Account_Date_Balances",
             force_update=force_update,
@@ -204,7 +204,7 @@ class SheetsStorage:
 
     def get_account_details(self, force_update=False):
         """Get account details data"""
-        df_account_details = self.get_sheet_data(
+        df_account_details = self._get_sheet_data(
             key="account_details",
             sheet_name="Account_Details",
             force_update=force_update,
@@ -235,7 +235,7 @@ class SheetsStorage:
 
     def get_transactions_report(self, force_update=False):
         """Get transactions report data"""
-        df_transactions_report = self.get_sheet_data(
+        df_transactions_report = self._get_sheet_data(
             key="transactions_report",
             sheet_name="Transactions_Report",
             force_update=force_update,
@@ -288,6 +288,23 @@ class SheetsStorage:
 
 
 sheets_storage = SheetsStorage()
+
+df_income_expense = sheets_storage.get_income_expense_df()
+df_account_balances = sheets_storage.get_account_balances()
+df_account_details = sheets_storage.get_account_details()
+df_transactions = sheets_storage.get_transactions_report()
+
+print_logger("df_income_expense (tail):")
+pprint_df(df_income_expense.tail(10))
+
+print_logger("df_account_balances (tail):")
+pprint_df(df_account_balances.tail(10))
+
+print_logger("df_account_details (tail):")
+pprint_df(df_account_details.tail(10))
+
+print_logger("df_transactions (tail):")
+pprint_df(df_transactions.tail(10))
 
 
 # %%
@@ -365,7 +382,7 @@ class OurCashData:
         return df_income_expense_emergency_fund["AverageMonthlyCost"].sum() * 6
 
     def get_oncely_transactions_for_date(self, date):
-        df_oncely_transactions = self.sheets_storage.get_oncely_transactions_for_date()
+        df_oncely_transactions = self.sheets_storage.get_oncely_transactions()
 
         df_oncely_transactions = df_oncely_transactions[
             (df_oncely_transactions["Maturity Date"] > date)
@@ -633,28 +650,9 @@ class OurCashData:
         return df_future_cast_end_of_each_day
 
 
-sheets_storage = SheetsStorage()
-our_cash_data = OurCashData(sheets_storage)
-
 # %%
 
-
-df_income_expense = sheets_storage.get_income_expense_df()
-df_account_balances = sheets_storage.get_account_balances()
-df_account_details = sheets_storage.get_account_details()
-df_transactions = sheets_storage.get_transactions_report()
-
-print_logger("df_income_expense (tail):")
-pprint_df(df_income_expense.tail(10))
-
-print_logger("df_account_balances (tail):")
-pprint_df(df_account_balances.tail(10))
-
-print_logger("df_account_details (tail):")
-pprint_df(df_account_details.tail(10))
-
-print_logger("df_transactions (tail):")
-pprint_df(df_transactions.tail(10))
+our_cash_data = OurCashData(sheets_storage)
 
 
 # %%
