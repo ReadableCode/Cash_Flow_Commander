@@ -520,14 +520,10 @@ class OurCashData:
 
         # for each row after today, add the previous row's Running_Balance to the current row's amount,
         # only for days less than 10 days ago and only if the "Paid" column is ""
-        # TODO URGENT this is missing calculating old days still needing to be paid
         previous_balance = current_balance
         for index, row in df_updated_transactions.iterrows():
-            num_days_ago = (pd.to_datetime("today") - pd.to_datetime(row["Date"])).days
             # if not paid and after 10 days ago
-            if (row["Date_Paid"] == "" or pd.isna(row["Date_Paid"])) and (
-                num_days_ago <= 10
-            ):
+            if row["Date_Paid"] == "" or pd.isna(row["Date_Paid"]):
                 df_updated_transactions.at[index, "Running_Balance"] = (
                     previous_balance + row["Amount"]
                 )
