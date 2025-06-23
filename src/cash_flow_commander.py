@@ -9,9 +9,15 @@ import pandas as pd
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from config import parent_dir
+from config import data_dir, parent_dir
 from utils.display_tools import pprint_df, print_logger
-from utils.google_tools import get_book_sheet_df
+from utils.google_tools import (
+    WriteToSheets,
+    clear_range_of_sheet_obj,
+    get_book_sheet,
+    get_book_sheet_df,
+    write_df_to_range_of_sheet_obj,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -285,26 +291,6 @@ class SheetsStorage:
         df_transactions_report = self.get_transactions_report(force_update=True)
 
         return df_transactions_report
-
-
-sheets_storage = SheetsStorage()
-
-df_income_expense = sheets_storage.get_income_expense_df()
-df_account_balances = sheets_storage.get_account_balances()
-df_account_details = sheets_storage.get_account_details()
-df_transactions = sheets_storage.get_transactions_report()
-
-print_logger("df_income_expense (tail):")
-pprint_df(df_income_expense.tail(10))
-
-print_logger("df_account_balances (tail):")
-pprint_df(df_account_balances.tail(10))
-
-print_logger("df_account_details (tail):")
-pprint_df(df_account_details.tail(10))
-
-print_logger("df_transactions (tail):")
-pprint_df(df_transactions.tail(10))
 
 
 # %%
@@ -651,114 +637,46 @@ class OurCashData:
 
 
 # %%
-
-our_cash_data = OurCashData(sheets_storage)
-
-
-# %%
-
-df_account_balances_filled = our_cash_data.get_account_balances_with_details_filled()
-
-print_logger("df_account_balances_filled (tail):")
-pprint_df(df_account_balances_filled.tail(20))
-
-df_account_balances_filled_grouped = (
-    our_cash_data.get_account_balances_with_details_filled_grouped()
-)
-print_logger("df_account_balances_filled_grouped (tail):")
-pprint_df(df_account_balances_filled_grouped.tail(20))
-
-
-# %%
-
-
-df_future_cast = our_cash_data.update_transactions()
-print_logger("df_future_cast near today (tail):")
-pprint_df(
-    df_future_cast[
-        (
-            abs(
-                (
-                    pd.to_datetime("today") - pd.to_datetime(df_future_cast["Date"])
-                ).dt.days
-            )
-            <= 50
-        )
-    ].tail(100)
-)
-
-df_label_dates = our_cash_data.isolate_label_dates(df_future_cast)
-print_logger("df_future_cast_label_dates near today (tail):")
-pprint_df(
-    df_label_dates[
-        (
-            abs(
-                (
-                    pd.to_datetime("today") - pd.to_datetime(df_label_dates["Date"])
-                ).dt.days
-            )
-            <= 500
-        )
-    ].tail(100)
-)
-
-df_isolate_ending_daily_balance = our_cash_data.isolate_ending_daily_balance(
-    df_future_cast
-)
-print_logger("df_isolate_ending_daily_balance near today (tail):")
-pprint_df(
-    df_isolate_ending_daily_balance[
-        (
-            abs(
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_isolate_ending_daily_balance["Date"])
-                ).dt.days
-            )
-            <= 50
-        )
-    ].tail(100)
-)
-
-df_alert_dates = our_cash_data.generate_future_cast_alert_dates_df(df_future_cast)
-print_logger("df_future_cast_alert_dates near today (tail):")
-pprint_df(
-    df_alert_dates[
-        (
-            abs(
-                (
-                    pd.to_datetime("today") - pd.to_datetime(df_alert_dates["Date"])
-                ).dt.days
-            )
-            <= 50
-        )
-    ].tail(100)
-)
-
-df_daily_balance_report = our_cash_data.generate_daily_balance_report(df_future_cast)
-print_logger("df_daily_balance_report near today (tail):")
-pprint_df(
-    df_daily_balance_report[
-        (
-            abs(
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_daily_balance_report["Date"])
-                ).dt.days
-            )
-            <= 50
-        )
-    ].tail(100)
-)
-
-
-# %%
 # Run #
 
 
-if __name__ == "__main__" and False:
+if __name__ == "__main__":
     sheets_storage = SheetsStorage()
     our_cash_data = OurCashData(sheets_storage)
+
+    TEST_SHEETS_STORAGE = False
+    if TEST_SHEETS_STORAGE:
+        df_income_expense = sheets_storage.get_income_expense_df()
+        df_account_balances = sheets_storage.get_account_balances()
+        df_account_details = sheets_storage.get_account_details()
+        df_transactions = sheets_storage.get_transactions_report()
+
+        print_logger("df_income_expense (tail):")
+        pprint_df(df_income_expense.tail(10))
+
+        print_logger("df_account_balances (tail):")
+        pprint_df(df_account_balances.tail(10))
+
+        print_logger("df_account_details (tail):")
+        pprint_df(df_account_details.tail(10))
+
+        print_logger("df_transactions (tail):")
+        pprint_df(df_transactions.tail(10))
+
+    TEST_OUR_CASH = False
+    if TEST_OUR_CASH:
+        df_account_balances_filled = (
+            our_cash_data.get_account_balances_with_details_filled()
+        )
+
+        print_logger("df_account_balances_filled (tail):")
+        pprint_df(df_account_balances_filled.tail(20))
+
+        df_account_balances_filled_grouped = (
+            our_cash_data.get_account_balances_with_details_filled_grouped()
+        )
+        print_logger("df_account_balances_filled_grouped (tail):")
+        pprint_df(df_account_balances_filled_grouped.tail(20))
 
     sheets_storage.update_income_expense_from_sheets()
     sheets_storage.update_account_balances_from_sheets()
@@ -766,12 +684,12 @@ if __name__ == "__main__" and False:
     sheets_storage.update_transactions_report_from_sheets()
 
     df_future_cast = our_cash_data.update_transactions()
-    # df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
-    # WriteToSheets(
-    #     "Our_Cash",
-    #     "Transactions_Report",
-    #     df_future_cast,
-    # )
+    df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
+    WriteToSheets(
+        "Our_Cash",
+        "Transactions_Report",
+        df_future_cast,
+    )
     print("df_future_cast (head):")
     pprint_df(
         df_future_cast[
@@ -788,11 +706,11 @@ if __name__ == "__main__" and False:
     df_daily_balance_report = our_cash_data.generate_daily_balance_report(
         df_future_cast
     )
-    # WriteToSheets(
-    #     "Our_Cash",
-    #     "Daily_Balance_Report",
-    #     df_daily_balance_report,
-    # )
+    WriteToSheets(
+        "Our_Cash",
+        "Daily_Balance_Report",
+        df_daily_balance_report,
+    )
     print("df_daily_balance_report (head):")
     pprint_df(
         df_daily_balance_report[
@@ -829,35 +747,35 @@ if __name__ == "__main__" and False:
     pprint_df(df_future_cast_alert_dates)
 
     # get summary sheet
-    # sheet_summary = get_book_sheet("Our_Cash", "Summary")
+    sheet_summary = get_book_sheet("Our_Cash", "Summary")
 
     # alert dates
-    # clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
-    # write_df_to_range_of_sheet_obj(
-    #     sheet_obj=sheet_summary,
-    #     df=df_future_cast_alert_dates.head(30),
-    #     start="A11",
-    #     fit=False,
-    #     copy_head=True,
-    # )
+    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
+    write_df_to_range_of_sheet_obj(
+        sheet_obj=sheet_summary,
+        df=df_future_cast_alert_dates.head(30),
+        start="A11",
+        fit=False,
+        copy_head=True,
+    )
 
     # one time transactions
-    # clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
-    # write_df_to_range_of_sheet_obj(
-    #     sheet_obj=sheet_summary,
-    #     df=df_future_cast_label_dates[
-    #         (
-    #             (
-    #                 pd.to_datetime("today")
-    #                 - pd.to_datetime(df_future_cast_label_dates["Date"])
-    #             ).dt.days
-    #             <= 10
-    #         )
-    #     ].head(30),
-    #     start="A44",
-    #     fit=False,
-    #     copy_head=True,
-    # )
+    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
+    write_df_to_range_of_sheet_obj(
+        sheet_obj=sheet_summary,
+        df=df_future_cast_label_dates[
+            (
+                (
+                    pd.to_datetime("today")
+                    - pd.to_datetime(df_future_cast_label_dates["Date"])
+                ).dt.days
+                <= 10
+            )
+        ].head(30),
+        start="A44",
+        fit=False,
+        copy_head=True,
+    )
 
     print_logger("Done")
 
