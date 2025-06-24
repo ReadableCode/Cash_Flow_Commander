@@ -689,110 +689,34 @@ class OurCashData:
 
 
 if __name__ == "__main__":
+    # define instances of classes
     sheets_storage = SheetsStorage()
     our_cash_data = OurCashData(sheets_storage)
 
+    # update all data from sheets
     sheets_storage.update_income_expense_from_sheets()
     sheets_storage.update_account_balances_from_sheets()
     sheets_storage.update_account_details_from_sheets()
     sheets_storage.update_transactions_report_from_sheets()
 
-    TEST_SHEETS_STORAGE = False
-    if TEST_SHEETS_STORAGE:
-        df_income_expense = sheets_storage.get_income_expense_df()
-        df_account_balances = sheets_storage.get_account_balances()
-        df_account_details = sheets_storage.get_account_details()
-        df_transactions = sheets_storage.get_transactions_report()
-
-        print_logger("df_income_expense (tail):")
-        pprint_df(df_income_expense.tail(10))
-
-        print_logger("df_account_balances (tail):")
-        pprint_df(df_account_balances.tail(10))
-
-        print_logger("df_account_details (tail):")
-        pprint_df(df_account_details.tail(10))
-
-        print_logger("df_transactions (tail):")
-        pprint_df(df_transactions.tail(10))
-
-    TEST_OUR_CASH = False
-    if TEST_OUR_CASH:
-        df_account_balances_filled = (
-            our_cash_data.get_account_balances_with_details_filled()
-        )
-
-        print_logger("df_account_balances_filled (tail):")
-        pprint_df(df_account_balances_filled.tail(20))
-
-        df_account_balances_filled_grouped = (
-            our_cash_data.get_account_balances_with_details_filled_grouped()
-        )
-        print_logger("df_account_balances_filled_grouped (tail):")
-        pprint_df(df_account_balances_filled_grouped.tail(20))
-
+    # run future forecast
     df_future_cast = our_cash_data.update_transactions()
 
+    # write outputs
     sheets_storage.write_transaction_report(df_future_cast)
-
-    print("df_future_cast (head):")
-    pprint_df(
-        df_future_cast[
-            (
-                (
-                    pd.to_datetime("today") - pd.to_datetime(df_future_cast["Date"])
-                ).dt.days
-                <= 1
-            )
-            | (df_future_cast["Amount_Paid"] == "")
-        ].head(20)
-    )
-
     df_daily_balance_report = our_cash_data.generate_daily_balance_report(
         df_future_cast
     )
-
     sheets_storage.write_daily_balance_report(df_daily_balance_report)
-
-    print("df_daily_balance_report (head):")
-    pprint_df(
-        df_daily_balance_report[
-            (
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_daily_balance_report["Date"])
-                ).dt.days
-                <= 1
-            )
-        ]
-        .fillna("")
-        .head(20)
-    )
-
     df_future_cast_label_dates = our_cash_data.isolate_label_dates(df_future_cast)
-    print("df_future_cast_label_dates:")
-    pprint_df(
-        df_future_cast_label_dates[
-            (
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_future_cast_label_dates["Date"])
-                ).dt.days
-                <= 1
-            )
-        ]
-    )
-
     df_future_cast_alert_dates = our_cash_data.generate_future_cast_alert_dates_df(
         df_future_cast
     )
-    print("df_future_cast_alert_dates:")
-    pprint_df(df_future_cast_alert_dates)
-
     sheets_storage.write_sheets_summary_page(
         df_future_cast_alert_dates, df_future_cast_label_dates
     )
 
+    # log done message
     print_logger("Done")
 
 
