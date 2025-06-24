@@ -292,6 +292,54 @@ class SheetsStorage:
 
         return df_transactions_report
 
+    def write_transaction_report(self, df_future_cast):
+        """Write the transactions report to Google Sheets"""
+        WriteToSheets(
+            "Our_Cash",
+            "Transactions_Report",
+            df_future_cast,
+        )
+        print_logger("Transactions report updated successfully.")
+
+    def write_daily_balance_report(self, df_daily_balance_report):
+        """Write the daily balance report to Google Sheets"""
+        WriteToSheets(
+            "Our_Cash",
+            "Daily_Balance_Report",
+            df_daily_balance_report,
+        )
+        print_logger("Daily balance report updated successfully.")
+
+    def write_sheets_summary_page(
+        self, df_future_cast_alert_dates, df_future_cast_label_dates
+    ):
+        """Write the summary page to Google Sheets"""
+        sheet_summary = get_book_sheet("Our_Cash", "Summary")
+
+        # Clear existing data
+        clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
+        clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
+
+        # Write alert dates
+        write_df_to_range_of_sheet_obj(
+            sheet_obj=sheet_summary,
+            df=df_future_cast_alert_dates.head(30),
+            start="A11",
+            fit=False,
+            copy_head=True,
+        )
+
+        # Write one-time transactions
+        write_df_to_range_of_sheet_obj(
+            sheet_obj=sheet_summary,
+            df=df_future_cast_label_dates.head(30),
+            start="A44",
+            fit=False,
+            copy_head=True,
+        )
+
+        print_logger("Summary page updated successfully.")
+
 
 # %%
 
@@ -644,6 +692,11 @@ if __name__ == "__main__":
     sheets_storage = SheetsStorage()
     our_cash_data = OurCashData(sheets_storage)
 
+    sheets_storage.update_income_expense_from_sheets()
+    sheets_storage.update_account_balances_from_sheets()
+    sheets_storage.update_account_details_from_sheets()
+    sheets_storage.update_transactions_report_from_sheets()
+
     TEST_SHEETS_STORAGE = False
     if TEST_SHEETS_STORAGE:
         df_income_expense = sheets_storage.get_income_expense_df()
@@ -678,18 +731,10 @@ if __name__ == "__main__":
         print_logger("df_account_balances_filled_grouped (tail):")
         pprint_df(df_account_balances_filled_grouped.tail(20))
 
-    sheets_storage.update_income_expense_from_sheets()
-    sheets_storage.update_account_balances_from_sheets()
-    sheets_storage.update_account_details_from_sheets()
-    sheets_storage.update_transactions_report_from_sheets()
-
     df_future_cast = our_cash_data.update_transactions()
-    df_future_cast.to_csv(os.path.join(data_dir, "future_cast.csv"), index=False)
-    WriteToSheets(
-        "Our_Cash",
-        "Transactions_Report",
-        df_future_cast,
-    )
+
+    sheets_storage.write_transaction_report(df_future_cast)
+
     print("df_future_cast (head):")
     pprint_df(
         df_future_cast[
@@ -706,11 +751,9 @@ if __name__ == "__main__":
     df_daily_balance_report = our_cash_data.generate_daily_balance_report(
         df_future_cast
     )
-    WriteToSheets(
-        "Our_Cash",
-        "Daily_Balance_Report",
-        df_daily_balance_report,
-    )
+
+    sheets_storage.write_daily_balance_report(df_daily_balance_report)
+
     print("df_daily_balance_report (head):")
     pprint_df(
         df_daily_balance_report[
@@ -746,35 +789,8 @@ if __name__ == "__main__":
     print("df_future_cast_alert_dates:")
     pprint_df(df_future_cast_alert_dates)
 
-    # get summary sheet
-    sheet_summary = get_book_sheet("Our_Cash", "Summary")
-
-    # alert dates
-    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A11", end="B41")
-    write_df_to_range_of_sheet_obj(
-        sheet_obj=sheet_summary,
-        df=df_future_cast_alert_dates.head(30),
-        start="A11",
-        fit=False,
-        copy_head=True,
-    )
-
-    # one time transactions
-    clear_range_of_sheet_obj(sheet_obj=sheet_summary, start="A44", end="C74")
-    write_df_to_range_of_sheet_obj(
-        sheet_obj=sheet_summary,
-        df=df_future_cast_label_dates[
-            (
-                (
-                    pd.to_datetime("today")
-                    - pd.to_datetime(df_future_cast_label_dates["Date"])
-                ).dt.days
-                <= 10
-            )
-        ].head(30),
-        start="A44",
-        fit=False,
-        copy_head=True,
+    sheets_storage.write_sheets_summary_page(
+        df_future_cast_alert_dates, df_future_cast_label_dates
     )
 
     print_logger("Done")
