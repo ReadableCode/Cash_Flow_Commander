@@ -545,7 +545,11 @@ class OurCashData:
 
         # keep only paid transactions or transactions before today
         df_existing_data_from_sheets = df_existing_data_from_sheets[
-            (df_existing_data_from_sheets["Amount_Paid"] != "")  # Paid transactions
+            (
+                (df_existing_data_from_sheets["Amount_Paid"] != "")
+                & (df_existing_data_from_sheets["Amount_Paid"] != 0)
+                & (df_existing_data_from_sheets["Amount_Paid"] != "0")
+            )  # Paid transactions
             | (
                 (
                     pd.to_datetime("today")
