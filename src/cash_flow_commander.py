@@ -383,6 +383,63 @@ class OurCashData:
 
         return df_pivot
 
+    def generate_account_balances_report(self):
+        df_pivot: pd.DataFrame = self.sheets_storage.get_account_balances()
+
+        # Merge back with the original DataFrame to include the Sub_Category
+        df_account_details: pd.DataFrame = self.sheets_storage.get_account_details()
+        df_account_details = df_account_details[
+            ["Account_Name", "Category", "Sub_Category"]
+        ]
+
+        df_pivot = df_pivot.pivot(
+            index="Date", columns="Account_Name", values="Balance"
+        )
+        df_pivot = df_pivot.reset_index()
+
+        # Forward fill missing values for each account
+        df_pivot = df_pivot.ffill()
+        # fillna with 0
+        df_pivot = df_pivot.fillna(0)
+
+        # for each category, add a column with sum of columns that are in that category
+        for category in df_account_details["Category"].unique():
+            accounts_in_category = df_account_details[
+                df_account_details["Category"] == category
+            ]["Account_Name"].tolist()
+            # check if accounts_in_category are in df_pivot columns
+            accounts_in_category = [
+                account
+                for account in accounts_in_category
+                if account in df_pivot.columns
+            ]
+            if len(accounts_in_category) > 0:
+                df_pivot[f"Total_{category}"] = df_pivot[accounts_in_category].sum(
+                    axis=1
+                )
+
+        # Forward fill missing values for each account
+        df_pivot = df_pivot.ffill()
+        # fillna with 0
+        df_pivot = df_pivot.fillna(0)
+        ls_non_sum_cols = ["Date"]
+        df_pivot["Total"] = df_pivot[
+            [col for col in df_pivot.columns if col not in ls_non_sum_cols]
+        ].sum(axis=1)
+
+        df_pivot = df_pivot.sort_values(by=["Date"])
+
+        return df_pivot
+
+    def write_account_balances_report(self, df_pivot):
+        """Write the account balances report to Google Sheets"""
+        WriteToSheets(
+            "Our_Cash",
+            "Account_Balances_Report",
+            df_pivot,
+        )
+        print_logger("Account balances report updated successfully.")
+
     def get_account_balances_with_details_filled_grouped(self) -> pd.DataFrame:
         df_pivot = self.get_account_balances_with_details_filled()
 
@@ -702,6 +759,7 @@ if __name__ == "__main__":
     sheets_storage.update_account_balances_from_sheets()
     sheets_storage.update_account_details_from_sheets()
     sheets_storage.update_transactions_report_from_sheets()
+    df_pivot = our_cash_data.generate_account_balances_report()
 
     # run future forecast
     df_future_cast = our_cash_data.update_transactions()
@@ -716,6 +774,7 @@ if __name__ == "__main__":
     df_future_cast_alert_dates = our_cash_data.generate_future_cast_alert_dates_df(
         df_future_cast
     )
+    our_cash_data.write_account_balances_report(df_pivot)
     sheets_storage.write_sheets_summary_page(
         df_future_cast_alert_dates, df_future_cast_label_dates
     )
