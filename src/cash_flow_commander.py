@@ -9,8 +9,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from config import data_dir, parent_dir
-from utils.display_tools import pprint_df, print_logger
+from config import parent_dir
+from utils.display_tools import pprint_df, print_logger  # noqa F401
 from utils.google_tools import (
     WriteToSheets,
     clear_range_of_sheet_obj,
