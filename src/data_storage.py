@@ -254,6 +254,11 @@ class SheetsStorage:
             ]
         ]
 
+        return df
+
+    def get_bi_weekly_budgets_occurances(self, force_update=False):
+        df = self.get_bi_weekly_budgets(force_update=force_update)
+
         # populate date for range starting from start_date to end_date with bi-weekly frequency
         list_rows = []
         for _, row in df.iterrows():
@@ -281,6 +286,34 @@ class SheetsStorage:
         df = df.sort_values(by=["Date"])
 
         return df
+
+    def load_tran_types_to_sheets(self):
+        df_monthly = self.get_monthly_budgets(force_update=True)
+        df_yearly = self.get_yearly_budgets(force_update=True)
+        df_one_time = self.get_one_time_budgets(force_update=True)
+        df_bi_weekly = self.get_bi_weekly_budgets(force_update=True)
+
+        # write to sheets
+        WriteToSheets(
+            "Our_Cash",
+            "Monthly_Budgets",
+            df_monthly,
+        )
+        WriteToSheets(
+            "Our_Cash",
+            "Yearly_Budgets",
+            df_yearly,
+        )
+        WriteToSheets(
+            "Our_Cash",
+            "One_Time_Budgets",
+            df_one_time,
+        )
+        WriteToSheets(
+            "Our_Cash",
+            "Bi_Weekly_Budgets",
+            df_bi_weekly,
+        )
 
     def get_full_calendar(self):
         # create a calendar that is mergable from 2000 to 2100
@@ -317,7 +350,7 @@ class SheetsStorage:
         df_one_time = self.get_one_time_budgets(force_update=force_update)
         print_logger("One Time Budgets Retrieved")
 
-        df_bi_weekly = self.get_bi_weekly_budgets(force_update=force_update)
+        df_bi_weekly = self.get_bi_weekly_budgets_occurances(force_update=force_update)
         print_logger("Bi-Weekly Budgets Retrieved")
 
         df_calendar = self.get_full_calendar()
@@ -377,6 +410,9 @@ if __name__ == "__main__":
     ss = SheetsStorage()
     df = ss.get_income_expense_df(force_update=True)
     pprint_df(df)
+
+    # load to sheets
+    ss.load_tran_types_to_sheets()
 
 
 # %%
