@@ -18,6 +18,7 @@ src_dir = os.path.join(grandparent_dir, "src")
 src_utils_dir = os.path.join(src_dir, "utils")
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
 s3_download_cache = os.path.join(data_dir, "s3_download_cache")
+temp_upload_dir = os.path.join(data_dir, "temp_upload")
 
 directories = [
     data_dir,
@@ -27,6 +28,7 @@ directories = [
     src_utils_dir,
     drive_download_cache_dir,
     s3_download_cache,
+    temp_upload_dir,
 ]
 for directory in directories:
     if not os.path.exists(directory):
