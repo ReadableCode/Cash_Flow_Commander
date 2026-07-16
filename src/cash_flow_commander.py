@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from config import parent_dir
-from utils.display_tools import pprint_df, print_logger  # noqa F401
-from utils.google_tools import (
+from readable_utils.display_tools import pprint_df, print_logger  # noqa F401
+from readable_utils.google_tools import (
     WriteToSheets,
     clear_range_of_sheet_obj,
     get_book_sheet,

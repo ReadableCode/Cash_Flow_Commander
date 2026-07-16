@@ -15,7 +15,6 @@ data_dir = os.path.join(parent_dir, "data")
 templates_dir = os.path.join(parent_dir, "templates")
 log_dir = os.path.join(parent_dir, "logs")
 src_dir = os.path.join(parent_dir, "src")
-src_utils_dir = os.path.join(src_dir, "utils")
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
 s3_download_cache = os.path.join(data_dir, "s3_download_cache")
 
@@ -24,7 +23,6 @@ directories = [
     templates_dir,
     log_dir,
     src_dir,
-    src_utils_dir,
     drive_download_cache_dir,
     s3_download_cache,
 ]
@@ -37,7 +35,6 @@ sys.path.append(file_dir)
 sys.path.append(parent_dir)
 sys.path.append(grandparent_dir)
 sys.path.append(src_dir)
-sys.path.append(src_utils_dir)
 
 if __name__ == "__main__":
     print(f"home_dir: {home_dir}")

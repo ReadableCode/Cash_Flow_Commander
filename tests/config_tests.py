@@ -17,7 +17,6 @@ report_dir = os.path.join(parent_dir, "reports")
 trigger_dir = os.path.join(parent_dir, "triggers")
 log_dir = os.path.join(parent_dir, "logs")
 src_dir = os.path.join(parent_dir, "src")
-src_utils_dir = os.path.join(src_dir, "utils")
 drive_download_cache_dir = os.path.join(data_dir, "drive_download_cache")
 email_attachment_dir = os.path.join(data_dir, "email_attachments")
 
@@ -26,7 +25,6 @@ directories = [
     trigger_dir,
     log_dir,
     src_dir,
-    src_utils_dir,
     drive_download_cache_dir,
     report_dir,
     email_attachment_dir,
@@ -40,7 +38,6 @@ sys.path.append(file_dir)
 sys.path.append(parent_dir)
 sys.path.append(grandparent_dir)
 sys.path.append(src_dir)
-sys.path.append(src_utils_dir)
 
 if __name__ == "__main__":
     print(f"home_dir: {home_dir}")

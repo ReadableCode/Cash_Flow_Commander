@@ -8,8 +8,8 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from config import parent_dir
-from utils.display_tools import pprint_df, print_logger  # noqa F401
-from utils.google_tools import WriteToSheets, get_book_sheet_df
+from readable_utils.display_tools import pprint_df, print_logger  # noqa F401
+from readable_utils.google_tools import WriteToSheets, get_book_sheet_df
 
 warnings.filterwarnings("ignore")
 

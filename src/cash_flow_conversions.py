@@ -4,7 +4,7 @@
 import pandas as pd
 
 from data_storage import SheetsStorage
-from utils.display_tools import pprint_df, print_logger  # noqa F401
+from readable_utils.display_tools import pprint_df, print_logger  # noqa F401
 
 # %%
 # Main #

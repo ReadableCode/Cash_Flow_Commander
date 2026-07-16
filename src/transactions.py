@@ -3,12 +3,12 @@
 
 import pandas as pd
 
-from utils.display_tools import pprint_df, print_logger  # noqa F401
-from utils.google_drive_tools import (
+from readable_utils.display_tools import pprint_df, print_logger  # noqa F401
+from readable_utils.google_drive_tools import (
     download_and_get_drive_file_path,
     get_file_list_from_folder_id_file_path,
 )
-from utils.google_tools import WriteToSheets
+from readable_utils.google_tools import WriteToSheets
 
 # %%
 # Vars #
