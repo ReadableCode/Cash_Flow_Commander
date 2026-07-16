@@ -73,7 +73,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "readable-utils", extras = ["google"], git = "https://github.com/ReadableCode/readable_utils.git?tag=v0.1.2" },
+    { name = "readable-utils", extras = ["google"], git = "https://github.com/ReadableCode/readable_utils.git?tag=v0.2.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
@@ -800,8 +800,8 @@ wheels = [
 
 [[package]]
 name = "readable-utils"
-version = "0.1.2"
-source = { git = "https://github.com/ReadableCode/readable_utils.git?tag=v0.1.2#098ba81e328bdd161f934aa9892b6cd463c3c9a3" }
+version = "0.2.0"
+source = { git = "https://github.com/ReadableCode/readable_utils.git?tag=v0.2.0#79be5e84e66230df890bd67fb3d3747fe7847417" }
 dependencies = [
     { name = "pandas" },
     { name = "python-dotenv" },
