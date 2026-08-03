@@ -19,6 +19,30 @@ pre-commit hygiene checklist at the bottom before committing. Personal values
 - **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
   run `/bills-add-company` first, then re-run this command.
 
+This command runs the full pipeline — **coverage → acquire → ingest → parse →
+dashboards** — and is safe to re-run at any time. Stopping at `raw_documents`
+leaves the data invisible to Grafana; stopping before the dashboard re-export
+leaves new series unseen.
+
+## 0.1 Coverage — decide what to fetch
+
+```sh
+uv run python src/coverage.py --provider {{slug}}
+```
+
+Use the reported `FETCH:` window. Do not invent one, do not re-pull everything
+by default, and do not assume "since last run" — that misses interior gaps a
+provider backfilled late.
+
+- Overlap is free (sha256 dedup at ingest, natural-key upsert at parse), so
+  **err wide**. A window that overlaps held data is correct; one that misses a
+  day may become a permanent gap.
+- Gaps reported as *persistent* are older than the lookback bound and are not
+  fetched — often they are permanent facts about the source (provider outage,
+  data that never existed). Retry them deliberately with `--full`, and only
+  when there is reason to think they are fillable.
+- On a first run the series is empty and the answer is "fetch full history".
+
 ## 1. Portal and auth
 
 - Login URL: `{{https://portal.example.com/login}}`
@@ -92,20 +116,60 @@ uv run python src/ingest_raw.py --provider {{slug}} <archive_dir> <raw_dir> <dat
 
 ## 7. Normalize
 
-<!-- Transitional: keep inline parse notes here until repo parsers exist for
-     {{slug}}. Once parsers land, replace this whole section with:
-     "Run the parsers. On failure, fix parser code, bump parser_version, and
-     reprocess — never hand-edit data." -->
+```sh
+uv run python src/parse_raw.py --provider {{slug}}
+```
 
-- `{{Inline notes: which fields to extract from each doc_type, where they live
-  in the PDF/JSON, units, sign conventions, known layout changes by date.}}`
-- Derived data is always reproducible from raw documents — never hand-edit
-  parsed output; fix the extraction and re-run instead.
+Report parsed / errored / no_parser counts and rows upserted per sink.
 
-## 8. Report and verify
+- `no_parser > 0` means a document type has no parser registered in
+  `src/providers/__init__.py::_REGISTRY` — write one (with tests), do not
+  hand-load the data.
+- On a parse failure, **fix parser code, bump `PARSER_VERSION`, and reprocess**
+  — never hand-edit parsed output. Upserts are keyed naturally, so
+  mass-reprocessing is idempotent.
 
-Summarize the run: date range covered, documents pulled per doc_type,
-ingested/deduped counts, anything filed to `_to_delete/`, anomalies.
+<!-- Transitional: while no parser exists for {{slug}}, keep inline extraction
+     notes here — which fields live where, units, sign conventions, layout
+     changes by date — and delete them once the parser lands. -->
+
+## 8. Dashboards
+
+New or changed series must reach Grafana in the same run, or the work is
+invisible. Dashboards are committed repo artifacts, never Grafana-only state.
+
+- Dashboards live in `deploy/grafana/<name>.json`.
+- If this run added a metric, granularity, or account that no committed
+  dashboard shows, add or update a panel.
+- Move dashboards only with `deploy/grafana_sync.py` — never by hand, never by
+  copying JSON out of the UI panel editor:
+
+  ```sh
+  uv run python deploy/grafana_sync.py export <uid> deploy/grafana/<name>.json
+  uv run python deploy/grafana_sync.py import deploy/grafana/<name>.json
+  uv run python deploy/grafana_sync.py verify <uid>
+  ```
+
+- Commit the exported file alongside the code change.
+- **Always finish with `verify`.** It runs every panel through Grafana using
+  each panel's own datasource reference. A dashboard can import "successfully"
+  and still render "No data" on every panel if its `${DS_CASH_FLOW_COMMANDER}`
+  placeholder went unresolved — `verify` is what catches that.
+- Schema-qualify every table (`cash_flow_commander.<table>`) and use a literal
+  timezone in date bucketing, not a dashboard variable.
+
+## 9. Report and verify
+
+Summarize the run: coverage window requested vs actually filled, documents
+pulled per doc_type, ingested/deduped counts, rows upserted, anything filed to
+`_to_delete/`, dashboards touched, anomalies.
+
+Standard checks (every provider):
+
+- [ ] `coverage.py` re-run shows the intended days now covered, no new thin days
+- [ ] re-run ingest → 100% dedup, zero new rows
+- [ ] `parse_raw.py` reports zero errored and zero no_parser
+- [ ] any new series appears on a committed dashboard
 
 Provider-specific verification checklist:
 

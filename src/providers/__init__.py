@@ -3,7 +3,7 @@
 
 from typing import Any, Callable
 
-from . import rhythm, smt
+from . import enphase_enlighten, rhythm, smt
 
 
 # %%
@@ -36,6 +36,16 @@ def _is_payments_csv(name: str) -> bool:
     return name == "payments.csv"
 
 
+def _is_enphase_daily_energy(name: str) -> bool:
+    """Match Enlighten daily_energy captures (the 15-minute interval series)."""
+    return "daily_energy" in name
+
+
+def _is_enphase_lifetime_energy(name: str) -> bool:
+    """Match Enlighten lifetime_energy captures (daily rollups)."""
+    return "lifetime_energy" in name
+
+
 # (provider, doc_type, name predicate, parse fn, parser version) — data-driven
 # so step-2 parsers slot in by appending tuples.
 _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
@@ -45,6 +55,20 @@ _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
     ("rhythm", "api_invoice_json", _any_name, rhythm.parse_api_invoice_json, rhythm.BILL_PARSER_VERSION),
     ("rhythm", "bill_pdf", _any_name, rhythm.parse_bill_pdf, rhythm.BILL_PARSER_VERSION),
     ("rhythm", "csv_export", _is_payments_csv, rhythm.parse_payments_csv, rhythm.BILL_PARSER_VERSION),
+    (
+        "enphase_enlighten",
+        "api_usage_json",
+        _is_enphase_daily_energy,
+        enphase_enlighten.parse_daily_energy_json,
+        enphase_enlighten.PARSER_VERSION,
+    ),
+    (
+        "enphase_enlighten",
+        "api_usage_json",
+        _is_enphase_lifetime_energy,
+        enphase_enlighten.parse_lifetime_energy_json,
+        enphase_enlighten.PARSER_VERSION,
+    ),
 ]
 
 

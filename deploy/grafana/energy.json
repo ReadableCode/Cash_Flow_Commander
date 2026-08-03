@@ -1,0 +1,377 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource for the apps database, connecting as grafana_ro.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Smart Meter Texas interval data, Aug 2024 onward",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 1,
+            "spanNulls": false
+          },
+          "unit": "kwatth"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", value AS \"consumption kWh\" FROM cash_flow_commander.usage_intervals WHERE granularity = '15min' AND metric = 'consumption' AND $__timeFilter(ts) ORDER BY ts",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", value AS \"generation kWh\" FROM cash_flow_commander.usage_intervals WHERE granularity = '15min' AND metric = 'generation' AND $__timeFilter(ts) ORDER BY ts",
+          "refId": "B"
+        }
+      ],
+      "title": "15-minute usage vs solar export (SMT)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Rhythm portal hourly data back to Feb 2022",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 1,
+            "spanNulls": false
+          },
+          "unit": "kwatth"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", value AS \"consumption kWh\" FROM cash_flow_commander.usage_intervals WHERE granularity = 'hour' AND metric = 'consumption' AND $__timeFilter(ts) ORDER BY ts",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", value AS \"generation kWh\" FROM cash_flow_commander.usage_intervals WHERE granularity = 'hour' AND metric = 'generation' AND $__timeFilter(ts) ORDER BY ts",
+          "refId": "B"
+        }
+      ],
+      "title": "Hourly usage vs solar export (Rhythm, full history)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "From Rhythm hourly data: consumption x contract rate and solar buyback credits. Energy-only \u2014 excludes TDU delivery, base charge, and taxes (those come from parsed bills, step 2).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "net $"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(ts, '1d') AS \"time\", sum(CASE WHEN metric = 'consumption' THEN cost ELSE 0 END) AS \"energy cost $\", -sum(CASE WHEN metric = 'generation' THEN cost ELSE 0 END) AS \"solar credit $\", sum(CASE WHEN metric = 'consumption' THEN cost ELSE -cost END) AS \"net $\" FROM cash_flow_commander.usage_intervals WHERE granularity = 'hour' AND cost IS NOT NULL AND $__timeFilter(ts) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Daily energy cost vs solar credit (contract rates)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Total Current Charges per invoice, parsed from the bill PDFs \u2014 the real number including TDU, base, and taxes.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT invoice_date AS \"time\", total_current_charges AS \"billed $\" FROM cash_flow_commander.bills WHERE $__timeFilter(invoice_date) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Monthly billed total (actual bills)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Line items by category: energy vs delivery (Oncor) vs base vs taxes; credits are negative (solar buyback).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 65,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT b.invoice_date AS \"time\", li.category AS metric, sum(li.amount) AS amount FROM cash_flow_commander.bill_line_items li JOIN cash_flow_commander.bills b ON b.account_id = li.account_id AND b.invoice_number = li.invoice_number WHERE $__timeFilter(b.invoice_date) GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Monthly cost by category (stacked)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Total bill divided by kWh \u2014 the true cost per kWh including everything.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT invoice_date AS \"time\", round((total_current_charges / nullif(total_kwh, 0) * 100)::numeric, 2) AS \"effective \u00a2/kWh\" FROM cash_flow_commander.bills WHERE $__timeFilter(invoice_date) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Effective all-in rate",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-2y",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Cash Flow Commander \u2014 Energy",
+  "uid": "cfc-energy",
+  "version": 4
+}

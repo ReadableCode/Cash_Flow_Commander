@@ -146,6 +146,66 @@ WHERE account_id = '$account' AND granularity = '15min' AND metric = 'consumptio
 ORDER BY ts;
 ```
 
+### Dashboards are committed artifacts
+
+Dashboard JSON lives in `deploy/grafana/` and is version-controlled. Grafana's
+own database is not backed up by this repo, and a hand-built panel is
+unreviewable and unreproducible — so the repo, not the Grafana instance, is the
+source of truth.
+
+Use `deploy/grafana_sync.py` for both directions. It reads `GRAFANA_URL`,
+`GRAFANA_ADMIN_USER`, and `GRAFANA_ADMIN_PASSWORD` from the private `.env`.
+
+```bash
+uv run python deploy/grafana_sync.py list
+uv run python deploy/grafana_sync.py export <uid> deploy/grafana/<name>.json
+uv run python deploy/grafana_sync.py import deploy/grafana/<name>.json
+uv run python deploy/grafana_sync.py verify <uid>
+```
+
+- **export** replaces the instance's concrete datasource uid with
+  `${DS_CASH_FLOW_COMMANDER}` and re-adds the `__inputs` block, so the
+  committed file imports into any instance.
+- **import** resolves that placeholder back to this instance's postgres
+  datasource (auto-detected), then re-reads the dashboard and fails loudly if
+  any placeholder survived.
+- **verify** runs every panel query through Grafana using each panel's **own**
+  datasource reference.
+
+The UI equivalent of import is Dashboards → New → Import → *Upload JSON file*,
+which prompts for the datasource.
+
+**Two traps, both of which have already bitten this repo:**
+
+1. `/api/dashboards/import` resolves `__inputs` placeholders only when the
+   posted dashboard **still contains its `__inputs` block**. Stripping it looks
+   harmless — it reads as export-only metadata — but the import then succeeds
+   while leaving every panel pointed at the literal string
+   `"${DS_CASH_FLOW_COMMANDER}"`. The dashboard renders **"No data" on every
+   panel**. Always import with the script.
+2. When testing panel queries, do **not** substitute a known-good datasource
+   uid into the query. That is what hides trap 1 and makes a completely broken
+   dashboard report healthy. `verify` deliberately uses the panel's own
+   reference.
+
+**Rules for panel SQL in this repo:**
+
+- Schema-qualify every table (`cash_flow_commander.usage_intervals`) — nothing
+  lives in `public`.
+- Bucket by local time (`timezone('America/Chicago', ts)`), not UTC, or every
+  local day splits across two buckets. Use a **literal** timezone, not a
+  dashboard constant: `$tz`-style variables are not interpolated on the
+  `/api/ds/query` path and fail there while appearing fine in the UI.
+- Validate with `grafana_sync.py verify` before committing. Grafana renders a
+  failing query as an empty panel without explaining why.
+
+Committed dashboards:
+
+| File | uid | Shows |
+| --- | --- | --- |
+| `grafana/solar_net_metering.json` | `cfc-solar-net-metering` | Gross solar production vs metered import/export; the self-consumed energy net metering hides, per month and per billing period. |
+| `grafana/energy.json` | `cfc-energy` | Usage vs solar export at 15-minute and hourly resolution, energy cost vs solar credit, monthly billed totals and category breakdown, effective all-in rate. |
+
 ### Verification checklist (connect as `grafana_ro`)
 
 - `SELECT count(*) FROM cash_flow_commander.usage_intervals;` — works.

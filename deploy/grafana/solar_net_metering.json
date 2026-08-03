@@ -1,0 +1,930 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource pointed at the apps database, connecting as grafana_ro. Set the datasource's default schema to cash_flow_commander, or leave it \u2014 every query here is schema-qualified.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "What the solar panels are worth each billing period, and what net metering hides. With no battery, solar consumed on site never crosses the meter, so the bill understates both gross generation and true household consumption by that amount.",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "What the panels were worth, per billing period",
+      "description": "Avoided cost = solar you consumed on site, priced at that bill's marginal retail rate (contract energy rate + per-kWh TDU delivery, grossed up by the bill's effective tax rate). Fixed charges are excluded \u2014 solar does not avoid them. Buyback credit is the actual credit line on the bill, not a model. Bars are plotted at the start of each billing period.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "id": 20,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 85,
+            "lineWidth": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avoided cost (self-consumed)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Buyback credit (exported)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bill actually paid"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none",
+                  "group": "B"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH bill_rates AS (\n  SELECT b.invoice_number, b.service_start, b.service_end, b.total_kwh,\n         b.total_current_charges,\n         MAX(li.rate_cents_kwh) FILTER (WHERE li.category = 'energy') AS energy_rate_cents,\n         COALESCE(SUM(li.amount) FILTER (\n           WHERE li.category = 'delivery'\n             AND (li.description ILIKE '%per kWh%' OR li.description ILIKE '%- Energy%')\n         ), 0) AS delivery_variable,\n         COALESCE(SUM(li.amount) FILTER (WHERE li.category = 'tax'), 0) AS taxes,\n         COALESCE(-SUM(li.amount) FILTER (WHERE li.category = 'credit'), 0) AS buyback_credit\n  FROM cash_flow_commander.bills b\n  JOIN cash_flow_commander.bill_line_items li USING (invoice_number)\n  WHERE b.service_start IS NOT NULL AND b.total_kwh > 0\n  GROUP BY 1, 2, 3, 4, 5\n),\nmarginal AS (\n  SELECT *,\n         (COALESCE(energy_rate_cents, 0) + 100.0 * delivery_variable / total_kwh)\n           * (1 + taxes / NULLIF(total_current_charges - taxes, 0)) / 100.0\n           AS marginal_rate\n  FROM bill_rates\n  WHERE energy_rate_cents IS NOT NULL\n),\nusage AS (\n  SELECT m.invoice_number,\n         SUM(u.value) FILTER (WHERE u.metric = 'production')  AS production,\n         SUM(u.value) FILTER (WHERE u.metric = 'generation')  AS exported,\n         SUM(u.value) FILTER (WHERE u.metric = 'consumption') AS imported\n  FROM marginal m\n  JOIN cash_flow_commander.usage_intervals u\n    ON u.granularity = '15min'\n   AND timezone('America/Chicago', u.ts)::date BETWEEN m.service_start AND m.service_end\n  GROUP BY 1\n),\nvalue AS (\n  SELECT m.service_start, m.service_end, m.marginal_rate, m.buyback_credit,\n         m.total_current_charges,\n         u.production, u.exported, u.imported,\n         u.production - u.exported AS self_consumed,\n         (u.production - u.exported) * m.marginal_rate AS avoided_cost\n  FROM marginal m\n  JOIN usage u USING (invoice_number)\n  WHERE u.production IS NOT NULL AND u.exported IS NOT NULL AND u.imported IS NOT NULL\n)\nSELECT service_start::timestamptz AS time,\n       avoided_cost   AS \"Avoided cost (self-consumed)\",\n       buyback_credit AS \"Buyback credit (exported)\",\n       total_current_charges AS \"Bill actually paid\"\nFROM value\nWHERE true AND $__timeFilter(service_start::timestamptz)\nORDER BY service_start",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Solar value in selected range",
+      "description": "Avoided cost plus buyback credit, summed over every billing period in range.",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 21,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Per month (avg)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bill_rates AS (\n  SELECT b.invoice_number, b.service_start, b.service_end, b.total_kwh,\n         b.total_current_charges,\n         MAX(li.rate_cents_kwh) FILTER (WHERE li.category = 'energy') AS energy_rate_cents,\n         COALESCE(SUM(li.amount) FILTER (\n           WHERE li.category = 'delivery'\n             AND (li.description ILIKE '%per kWh%' OR li.description ILIKE '%- Energy%')\n         ), 0) AS delivery_variable,\n         COALESCE(SUM(li.amount) FILTER (WHERE li.category = 'tax'), 0) AS taxes,\n         COALESCE(-SUM(li.amount) FILTER (WHERE li.category = 'credit'), 0) AS buyback_credit\n  FROM cash_flow_commander.bills b\n  JOIN cash_flow_commander.bill_line_items li USING (invoice_number)\n  WHERE b.service_start IS NOT NULL AND b.total_kwh > 0\n  GROUP BY 1, 2, 3, 4, 5\n),\nmarginal AS (\n  SELECT *,\n         (COALESCE(energy_rate_cents, 0) + 100.0 * delivery_variable / total_kwh)\n           * (1 + taxes / NULLIF(total_current_charges - taxes, 0)) / 100.0\n           AS marginal_rate\n  FROM bill_rates\n  WHERE energy_rate_cents IS NOT NULL\n),\nusage AS (\n  SELECT m.invoice_number,\n         SUM(u.value) FILTER (WHERE u.metric = 'production')  AS production,\n         SUM(u.value) FILTER (WHERE u.metric = 'generation')  AS exported,\n         SUM(u.value) FILTER (WHERE u.metric = 'consumption') AS imported\n  FROM marginal m\n  JOIN cash_flow_commander.usage_intervals u\n    ON u.granularity = '15min'\n   AND timezone('America/Chicago', u.ts)::date BETWEEN m.service_start AND m.service_end\n  GROUP BY 1\n),\nvalue AS (\n  SELECT m.service_start, m.service_end, m.marginal_rate, m.buyback_credit,\n         m.total_current_charges,\n         u.production, u.exported, u.imported,\n         u.production - u.exported AS self_consumed,\n         (u.production - u.exported) * m.marginal_rate AS avoided_cost\n  FROM marginal m\n  JOIN usage u USING (invoice_number)\n  WHERE u.production IS NOT NULL AND u.exported IS NOT NULL AND u.imported IS NOT NULL\n)\nSELECT SUM(avoided_cost + buyback_credit) AS \"Total solar value\",\n       SUM(avoided_cost + buyback_credit) / NULLIF(COUNT(*), 0) AS \"Per month (avg)\"\nFROM value\nWHERE true AND $__timeFilter(service_start::timestamptz)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Where the value comes from",
+      "description": "Self-consumption is worth far more per kWh than export: you avoid the full retail rate including delivery and tax, while exported kWh earn only the buyback rate.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 22,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avoided cost"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Buyback credit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bill_rates AS (\n  SELECT b.invoice_number, b.service_start, b.service_end, b.total_kwh,\n         b.total_current_charges,\n         MAX(li.rate_cents_kwh) FILTER (WHERE li.category = 'energy') AS energy_rate_cents,\n         COALESCE(SUM(li.amount) FILTER (\n           WHERE li.category = 'delivery'\n             AND (li.description ILIKE '%per kWh%' OR li.description ILIKE '%- Energy%')\n         ), 0) AS delivery_variable,\n         COALESCE(SUM(li.amount) FILTER (WHERE li.category = 'tax'), 0) AS taxes,\n         COALESCE(-SUM(li.amount) FILTER (WHERE li.category = 'credit'), 0) AS buyback_credit\n  FROM cash_flow_commander.bills b\n  JOIN cash_flow_commander.bill_line_items li USING (invoice_number)\n  WHERE b.service_start IS NOT NULL AND b.total_kwh > 0\n  GROUP BY 1, 2, 3, 4, 5\n),\nmarginal AS (\n  SELECT *,\n         (COALESCE(energy_rate_cents, 0) + 100.0 * delivery_variable / total_kwh)\n           * (1 + taxes / NULLIF(total_current_charges - taxes, 0)) / 100.0\n           AS marginal_rate\n  FROM bill_rates\n  WHERE energy_rate_cents IS NOT NULL\n),\nusage AS (\n  SELECT m.invoice_number,\n         SUM(u.value) FILTER (WHERE u.metric = 'production')  AS production,\n         SUM(u.value) FILTER (WHERE u.metric = 'generation')  AS exported,\n         SUM(u.value) FILTER (WHERE u.metric = 'consumption') AS imported\n  FROM marginal m\n  JOIN cash_flow_commander.usage_intervals u\n    ON u.granularity = '15min'\n   AND timezone('America/Chicago', u.ts)::date BETWEEN m.service_start AND m.service_end\n  GROUP BY 1\n),\nvalue AS (\n  SELECT m.service_start, m.service_end, m.marginal_rate, m.buyback_credit,\n         m.total_current_charges,\n         u.production, u.exported, u.imported,\n         u.production - u.exported AS self_consumed,\n         (u.production - u.exported) * m.marginal_rate AS avoided_cost\n  FROM marginal m\n  JOIN usage u USING (invoice_number)\n  WHERE u.production IS NOT NULL AND u.exported IS NOT NULL AND u.imported IS NOT NULL\n)\nSELECT SUM(avoided_cost)   AS \"Avoided cost\",\n       SUM(buyback_credit) AS \"Buyback credit\"\nFROM value\nWHERE true AND $__timeFilter(service_start::timestamptz)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Solar % of consumption \u2014 monthly",
+      "description": "Total solar production divided by total household consumption for the month. Consumption = metered import + self-consumed solar. Above 100% means the panels produced more than the house used that month. Months missing metered import/export are omitted rather than scored.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 30,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 75,
+            "showPoints": "never",
+            "axisSoftMax": 100
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH bucketed AS (\n  SELECT date_trunc('month', timezone('America/Chicago', ts)) AS bucket,\n         SUM(value) FILTER (WHERE metric = 'production')  AS production,\n         SUM(value) FILTER (WHERE metric = 'generation')  AS exported,\n         SUM(value) FILTER (WHERE metric = 'consumption') AS imported\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min'\n    AND metric IN ('production', 'generation', 'consumption')\n    AND $__timeFilter(ts)\n  GROUP BY 1\n),\nscored AS (\n  SELECT bucket,\n         production,\n         imported + (production - exported) AS consumption\n  FROM bucketed\n  WHERE production IS NOT NULL AND exported IS NOT NULL AND imported IS NOT NULL\n)\nSELECT bucket AS time,\n       100.0 * production / NULLIF(consumption, 0) AS \"Solar % of consumption\"\nFROM scored\nORDER BY bucket",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Solar % of consumption \u2014 daily",
+      "description": "Same ratio per local day. Daily values swing hard with weather and load, so a 7-day trailing average is overlaid. Days above 100% are days the panels out-produced the house.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "id": 31,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "axisSoftMax": 100
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Solar % of consumption"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-yellow"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "7-day average"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH bucketed AS (\n  SELECT date_trunc('day', timezone('America/Chicago', ts)) AS bucket,\n         SUM(value) FILTER (WHERE metric = 'production')  AS production,\n         SUM(value) FILTER (WHERE metric = 'generation')  AS exported,\n         SUM(value) FILTER (WHERE metric = 'consumption') AS imported\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min'\n    AND metric IN ('production', 'generation', 'consumption')\n    AND $__timeFilter(ts)\n  GROUP BY 1\n),\nscored AS (\n  SELECT bucket,\n         production,\n         imported + (production - exported) AS consumption\n  FROM bucketed\n  WHERE production IS NOT NULL AND exported IS NOT NULL AND imported IS NOT NULL\n)\nSELECT bucket AS time,\n       100.0 * production / NULLIF(consumption, 0) AS \"Solar % of consumption\",\n       AVG(100.0 * production / NULLIF(consumption, 0))\n         OVER (ORDER BY bucket ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)\n         AS \"7-day average\"\nFROM scored\nORDER BY bucket",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "How to read this",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 10,
+      "options": {
+        "mode": "markdown",
+        "content": "**Solar % of consumption** = total production \u00f7 total consumption, per bucket. Consumption is what the house actually used: metered grid import **plus** the solar that never crossed the meter. It can exceed 100% when the panels out-produce the house \u2014 that surplus is exported.\n\n**What the panels are worth** = *avoided cost* (solar consumed on site, priced at the marginal retail rate you would otherwise have paid) + *buyback credit* (the actual credit line on the bill for exported kWh).\n\n**self_consumption = gross_production \u2212 exported** &nbsp;\u00b7&nbsp; **true_consumption = imported + self_consumption**\n\n`production` is gross AC output at the inverters (Enphase). `consumption` is metered grid import \u2014 what you were billed for. `generation` is metered export. Solar used the instant it was made crosses no meter and appears in neither, which is why total consumption has to be reconstructed rather than read off the bill.\n\nMarginal rate = contract energy rate + per-kWh TDU delivery, grossed up by the bill's effective tax rate; fixed charges excluded. Buckets use a literal `America/Chicago`; buckets missing metered import/export are omitted, never scored as zero."
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Monthly energy: billed vs hidden vs exported",
+      "description": "Stacked bars. 'Billed' is what the retailer charged you for. 'Self-consumed' is solar that never crossed the meter \u2014 invisible on the bill. Together they are what the house actually used.",
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 21
+      },
+      "id": 1,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 85,
+            "lineWidth": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Exported (buyback)"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none",
+                  "group": "B"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Billed (grid import)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Self-consumed solar (hidden from bill)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH monthly AS (\n  SELECT date_trunc('month', timezone('America/Chicago', ts)) AS month,\n         metric,\n         SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min'\n    AND metric IN ('production', 'consumption', 'generation')\n    AND $__timeFilter(ts)\n  GROUP BY 1, 2\n)\nSELECT month AS time,\n       SUM(kwh) FILTER (WHERE metric = 'consumption') AS \"Billed (grid import)\",\n       SUM(kwh) FILTER (WHERE metric = 'production')\n         - SUM(kwh) FILTER (WHERE metric = 'generation') AS \"Self-consumed solar (hidden from bill)\",\n       SUM(kwh) FILTER (WHERE metric = 'generation') AS \"Exported (buyback)\"\nFROM monthly\nGROUP BY month\nHAVING SUM(kwh) FILTER (WHERE metric = 'production') IS NOT NULL\n   AND SUM(kwh) FILTER (WHERE metric = 'generation') IS NOT NULL\nORDER BY month",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Solar % of consumption (range)",
+      "description": "Total production divided by total consumption across the whole selected range.",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "id": 2,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH totals AS (\n  SELECT metric, SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min'\n    AND metric IN ('production', 'consumption', 'generation')\n    AND $__timeFilter(ts)\n  GROUP BY metric\n),\nd AS (\n  SELECT (SELECT kwh FROM totals WHERE metric = 'production')  AS production,\n         (SELECT kwh FROM totals WHERE metric = 'consumption') AS imported,\n         (SELECT kwh FROM totals WHERE metric = 'generation')  AS exported\n)\nSELECT 100.0 * production / NULLIF(imported + (production - exported), 0)\n         AS \"Solar % of consumption\"\nFROM d",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "True consumption vs billed",
+      "description": "Left: what the house actually used. Right: what the retailer billed. The difference is self-consumed solar.",
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "id": 3,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Billed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "True consumption"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH totals AS (\n  SELECT metric, SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min'\n    AND metric IN ('production', 'consumption', 'generation')\n    AND $__timeFilter(ts)\n  GROUP BY metric\n)\nSELECT\n  (SELECT kwh FROM totals WHERE metric = 'consumption') AS \"Billed\",\n  (SELECT kwh FROM totals WHERE metric = 'consumption')\n    + ((SELECT kwh FROM totals WHERE metric = 'production')\n       - (SELECT kwh FROM totals WHERE metric = 'generation')) AS \"True consumption\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily flows: production, export, import",
+      "description": "Daily totals from the 15-minute series. Production above export is the self-consumed wedge.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 4,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gross production"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Exported"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Imported (billed)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', timezone('America/Chicago', ts)) AS time,\n       SUM(value) FILTER (WHERE metric = 'production')  AS \"Gross production\",\n       SUM(value) FILTER (WHERE metric = 'generation')  AS \"Exported\",\n       SUM(value) FILTER (WHERE metric = 'consumption') AS \"Imported (billed)\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min'\n  AND metric IN ('production', 'consumption', 'generation')\n  AND $__timeFilter(ts)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Reconciliation by billing period",
+      "description": "Joins each bill's service period to the interval data. 'Billed kWh' is the figure on the bill; 'Metered import' is the summed interval data over the same period \u2014 they should agree closely. A large divergence means a coverage gap, not a billing error: check /coverage before trusting the row.",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 5,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "right"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Period"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "left"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Solar share %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 25
+                    },
+                    {
+                      "color": "orange",
+                      "value": 40
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH periods AS (\n  SELECT service_start, service_end, total_kwh\n  FROM cash_flow_commander.bills\n  WHERE service_start IS NOT NULL AND service_end IS NOT NULL\n),\nper_period AS (\n  SELECT p.service_start,\n         p.service_end,\n         p.total_kwh,\n         SUM(u.value) FILTER (WHERE u.metric = 'production')  AS production,\n         SUM(u.value) FILTER (WHERE u.metric = 'generation')  AS exported,\n         SUM(u.value) FILTER (WHERE u.metric = 'consumption') AS imported\n  FROM periods p\n  JOIN cash_flow_commander.usage_intervals u\n    ON u.granularity = '15min'\n   AND timezone('America/Chicago', u.ts)::date BETWEEN p.service_start AND p.service_end\n  GROUP BY 1, 2, 3\n)\nSELECT to_char(service_start, 'YYYY-MM-DD') || ' .. ' || to_char(service_end, 'YYYY-MM-DD') AS \"Period\",\n       ROUND(total_kwh) AS \"Billed kWh\",\n       ROUND(imported) AS \"Metered import\",\n       ROUND(production) AS \"Gross production\",\n       ROUND(exported) AS \"Exported\",\n       ROUND(production - exported) AS \"Self-consumed\",\n       ROUND(imported + (production - exported)) AS \"True consumption\",\n       ROUND(100.0 * (production - exported) / NULLIF(imported + (production - exported), 0)) AS \"Solar share %\"\nFROM per_period\nWHERE production IS NOT NULL AND exported IS NOT NULL AND imported IS NOT NULL\nORDER BY service_start DESC",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "cash-flow-commander",
+    "energy",
+    "solar"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-2y",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Energy \u2014 Solar Value & Net Metering",
+  "uid": "cfc-solar-net-metering",
+  "version": 1,
+  "weekStart": ""
+}

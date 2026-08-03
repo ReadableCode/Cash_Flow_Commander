@@ -21,6 +21,31 @@ source of truth; tables and CSVs are disposable projections that can be rebuilt.
   `service_type`, `account_number`, `external_ids` (`premise_id`, `esi_id`), `archive_dir`,
   `raw_dir`, `data_dir`, and any `notes` (download quirks, TDU, contract status, cadence).
 
+This command runs the full pipeline — **coverage → acquire → ingest → parse → dashboards** —
+and is safe to re-run at any time.
+
+## 0.1 Coverage — decide what to fetch
+
+```sh
+uv run python src/coverage.py --provider rhythm
+```
+
+Reports four series: `consumption` and `generation` at both `15min` (Smart Meter Texas) and
+`hour` (Rhythm portal). Use the reported `FETCH:` windows; overlap is free (sha256 dedup at
+ingest, natural-key upsert at parse), so err wide.
+
+**Unlike the solar provider, this one is time-critical** — the portal keeps only ~12 months of
+hourly interval data and Smart Meter Texas ~24 months of 15-minute data. A gap that ages out of
+both windows is permanent. When coverage reports a recent gap, fill it this run.
+
+Read the persistent-gap list carefully here, because for this provider the two kinds are mixed:
+
+- Old `hour` gaps (pre-2025 stretches outside the portal's retention) are **permanently
+  unfillable from the portal** — do not burn a run chasing them. Smart Meter Texas can still
+  cover the trailing ~24 months at finer granularity; beyond that the data is gone.
+- Any gap inside the current retention windows **is** fillable and should be treated as a
+  missed run, not a fact of life.
+
 ## 1. Portal session
 
 - Portal: `https://app.gotrhythm.com` · API: `https://api.gotrhythm.com`.
@@ -43,9 +68,9 @@ inline — JS tool results truncate):
 - Per invoice id:
   - Plan snapshot: `GET /api/portal/invoices/{id}/orders` → `rhythm_api_orders_{invoice_number}.json`
   - Hourly interval data: `GET /api/portal/invoices/{id}/bill-explanation/usage` → `rhythm_api_usage_{invoice_number}.json`
-- Scope: new invoices, plus re-pull the trailing ~13 months to catch restatements. If
-  "$ARGUMENTS" says `full`, re-pull everything. Over-capturing is free — the raw store dedups
-  by sha256, and restatements are preserved as distinct documents.
+- Scope: whatever step 0.1 reported, plus any new invoices. Default to the trailing ~13 months
+  to catch restatements. If "$ARGUMENTS" says `full`, re-pull everything. Over-capturing is
+  free — the raw store dedups by sha256, and restatements are preserved as distinct documents.
 - ⚠️ The portal retains only ~12 months of hourly interval data. Run this monthly after the
   bill posts (~29th–31st) or gaps in the hourly series become permanent.
 
@@ -83,11 +108,53 @@ uv run python src/ingest_raw.py --provider rhythm <archive_dir> <raw_dir> <data_
 Classification (bill_pdf, api_*_json, *_email, csv_export) is the CLI's job. Report ingested
 vs deduped counts per doc_type. Re-runs are safe — sha256 dedup makes ingestion idempotent.
 
-## 7. Normalize (transitional until repo parsers land)
+## 7. Normalize
 
-Until this repo's parsers exist, extract from new PDFs with `pdftotext -layout` + regex.
-There are **two PDF layout generations**: labels-above (pre-2025-ish) and labels-below
-(after). Key line patterns:
+```sh
+uv run python src/parse_raw.py --provider rhythm
+```
+
+`src/providers/rhythm.py` handles api_usage_json, hourly_usage.csv, api_invoice_json, bill_pdf,
+and payments.csv; `src/providers/smt.py` handles smt_export. Report parsed / errored /
+no_parser counts and rows upserted per sink.
+
+On failure: **fix parser code, bump `PARSER_VERSION`, and reprocess** — never hand-edit parsed
+output. Upserts are keyed naturally, so mass-reprocessing is idempotent.
+
+`no_parser > 0` means a document type has no parser registered in
+`src/providers/__init__.py::_REGISTRY`. Write one with tests; do not hand-load.
+
+## 7.1 Dashboards
+
+This provider feeds two committed dashboards: `deploy/grafana/energy.json` (uid `cfc-energy`)
+for usage/cost/rate, and `deploy/grafana/solar_net_metering.json` (uid `cfc-solar-net-metering`),
+where this provider's `consumption`/`generation` series pair with Enphase `production`. A change
+to either side moves that reconciliation, so verify both after a run:
+
+```sh
+uv run python deploy/grafana_sync.py verify cfc-energy
+uv run python deploy/grafana_sync.py verify cfc-solar-net-metering
+```
+
+To change a dashboard, edit it in the UI then round-trip it through the script — never copy JSON
+out of the panel editor, and never hand-roll the import:
+
+```sh
+uv run python deploy/grafana_sync.py export cfc-energy deploy/grafana/energy.json
+uv run python deploy/grafana_sync.py import deploy/grafana/energy.json
+uv run python deploy/grafana_sync.py verify cfc-energy
+```
+
+Dashboards are committed repo artifacts, never Grafana-only state — Grafana's database is not
+backed up here and a hand-built panel is unreviewable. An import whose
+`${DS_CASH_FLOW_COMMANDER}` placeholder goes unresolved reports success and then renders
+**"No data" on every panel**; `verify` is what catches it.
+
+## 7.2 PDF layout reference
+
+Extraction notes for new PDF layouts, kept for when the parser needs extending. There are
+**two PDF layout generations**: labels-above (pre-2025-ish) and labels-below (after). Key line
+patterns:
 
 - Agreement: `Contract Term/Contract Valid`, plan name, contract rate ¢/kWh
 - Energy: `Rhythm Energy Charge  N kWh x R ¢/kWh  $C` (sum multiple lines),
@@ -99,19 +166,22 @@ There are **two PDF layout generations**: labels-above (pre-2025-ish) and labels
 - Solar summary: `Solar Buyback Credit  N kWh x R ¢/kWh`, `Credits Earned/Applied/Balance`
 - Meter: `CURRENT/PREVIOUS METER READ`
 
-**Once repo parsers exist:** run them instead. If a parse fails on a new layout, do NOT
-hand-massage the data — fix the parser code, bump `parser_version`, and reprocess. That is
-the whole point of raw-first.
+If a parse fails on a new layout, do NOT hand-massage the data — fix the parser code, bump
+`PARSER_VERSION`, and reprocess. That is the whole point of raw-first.
 
 ## 8. Report + verification
 
-Report new months added, hourly coverage range, raw docs ingested/deduped, parse failures,
-reconciliation mismatches, and unpaid bills. Verify:
+Report the coverage window requested vs actually filled, new months added, raw docs
+ingested/deduped, rows upserted, parse failures, reconciliation mismatches, dashboards touched,
+and unpaid bills. Verify:
 
 - [ ] every API call made this run has a matching verbatim .json in raw_dir
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
+- [ ] `parse_raw.py` reports zero errored and zero no_parser
+- [ ] `coverage.py` re-run shows the fetched window now covered, and no new thin days
 - [ ] PDF totals reconcile with API `amount` to the cent
-- [ ] hourly series has no gap against last run's max datetime
+- [ ] billed kWh on the latest bill matches the summed 15-minute `consumption` over the same
+      service period (the reconciliation table in `solar_net_metering.json` shows this directly)
 - [ ] new PDFs named `Rythm YYYY-MM.pdf` and filed in archive_dir
 
 Note: for interval data older than the portal's ~12-month window, Smart Meter Texas
