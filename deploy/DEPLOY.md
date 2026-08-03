@@ -95,3 +95,61 @@ that list.
 - **Additive-only DDL** — no drops or rewrites of existing objects.
 - **Schema-scoped everything** — every table, grant, and query stays inside
   the `cash_flow_commander` schema; `public` and `load_log` are off-limits.
+
+## Grafana read-only role (step 3+)
+
+Grafana dashboards read Cash Flow Commander data through a native Postgres
+datasource. Rather than reusing `cash_flow_commander_user` (which can write),
+`create_grafana_ro.sql` creates a dedicated **`grafana_ro`** login role with
+least privilege: `SELECT`-only, scoped to the `cash_flow_commander` schema,
+with default privileges set so future tables created by the app role stay
+readable. No grants on `public`, `load_log`, or any other schema; no
+INSERT/UPDATE/DELETE anywhere.
+
+Run it after step 1 (any time; idempotent, safe to re-run to rotate the
+password). Preferred — the committed runner, which now takes a SQL path and
+the env-var name holding the role password:
+
+```bash
+uv run python deploy/run_create_role.py deploy/create_grafana_ro.sql GRAFANA_RO_PASSWORD
+```
+
+Alternative, via psql inside the postgres container:
+
+```bash
+PW="$(grep '^GRAFANA_RO_PASSWORD=' /path/to/private.env | cut -d= -f2-)"
+sudo docker exec -i -e GRAFANA_RO_PASSWORD="$PW" postgres \
+  psql -U postgres -d apps -v ON_ERROR_STOP=1 \
+  < Cash_Flow_Commander/deploy/create_grafana_ro.sql
+```
+
+### Grafana datasource settings
+
+| Setting | Value |
+| --- | --- |
+| Host | `<HOST>:5432` |
+| Database | `apps` |
+| User | `grafana_ro` |
+| Password | value of `GRAFANA_RO_PASSWORD` (private env only) |
+| TLS/SSL mode | per your setup (`disable` on a trusted LAN, `require`+ otherwise) |
+
+**Important:** the tables live in the `cash_flow_commander` schema, not
+`public`. Set the datasource's default schema / `search_path` to
+`cash_flow_commander`, or schema-qualify every table in your queries
+(`cash_flow_commander.usage_intervals`, ...).
+
+Example dashboard query:
+
+```sql
+SELECT ts AS "time", value FROM cash_flow_commander.usage_intervals
+WHERE account_id = '$account' AND granularity = '15min' AND metric = 'consumption' AND $__timeFilter(ts)
+ORDER BY ts;
+```
+
+### Verification checklist (connect as `grafana_ro`)
+
+- `SELECT count(*) FROM cash_flow_commander.usage_intervals;` — works.
+- Any `INSERT` into a `cash_flow_commander` table — fails with
+  `permission denied`.
+- `SELECT count(*) FROM load_log.anything;` — fails (no `USAGE` on
+  `load_log`); that is the isolation working.
