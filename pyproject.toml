@@ -8,8 +8,10 @@ dependencies = [
     "black>=25.1.0",
     "ipykernel>=6.29.5",
     "pandas>=2.3.0",
+    "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.1.0",
     "readable-utils[google]",
+    "sqlalchemy>=2",
     "tqdm>=4.67.1",
 ]
 
