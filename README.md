@@ -61,3 +61,25 @@
   ```bash
   uv tree
   ```
+
+## Bill providers: /bills-<company> commands
+
+- Billing artifacts (portal API JSON, bill PDFs, emails) are acquired by per-company Claude Code slash commands committed in `.claude/commands/` (e.g. `/bills-rhythm`).
+- Each command acquires raw-first and lands artifacts into the `raw_documents` store via `src/ingest_raw.py`. All commands follow the shared contract in `docs/LANDING.md`.
+
+### Adding a company
+
+- Run `/bills-add-company`. It interviews you, scaffolds `.claude/commands/bills-<slug>.md` from `templates/provider-command.md`, and stubs your entry in `providers.local.yaml`.
+
+### Personal config
+
+- Personal values (account numbers, IDs, archive paths) live in `providers.local.yaml`, which is gitignored. Copy `template_providers.yaml` to start.
+- Committed command files contain ONLY company knowledge and reference your values symbolically.
+
+### Hygiene
+
+- Before committing provider work, run the leak check and expect zero hits:
+
+  ```bash
+  git diff --cached -U0 | grep -inE "RH-[0-9]|[0-9]{15,}|/Users/|OneDrive|@(gmail|outlook)|premise_id.*[0-9]"
+  ```

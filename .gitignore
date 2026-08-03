@@ -31,3 +31,6 @@ sheets.googleapis.com-python.json
 looker.ini
 sheet_ids.yaml
 .DS_Store
+
+# Bill-provider local config (real accounts; template_providers.yaml is the committed shape)
+providers.local.yaml

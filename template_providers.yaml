@@ -1,0 +1,37 @@
+# template_providers.yaml — committed shape of providers.local.yaml
+#
+# Usage:
+#   1. Copy this file to providers.local.yaml at the repo root (gitignored).
+#   2. Fill in your real values there — account numbers, IDs, local paths.
+#   3. NEVER commit providers.local.yaml. This repo is public; only this
+#      placeholder template belongs in git.
+#
+# One top-level key per provider. The key is the provider slug: lowercase
+# (a-z, 0-9, '_', '-'), and it must match both the ingest CLI's --provider
+# value and the /bills-<slug> command name.
+
+rhythm:
+  # Category of service this provider bills for
+  # (e.g. electricity, gas, water, internet, insurance).
+  service_type: electricity
+
+  # Your account number with the provider, exactly as it appears on bills.
+  account_number: ""
+
+  # Provider-specific identifiers beyond the account number — a free-form
+  # map. Examples for an electricity provider: premise_id, esi_id, meter_id.
+  external_ids: {}
+
+  # Absolute path to the directory where finished PDFs are filed long-term.
+  archive_dir: ""
+
+  # Staging directory for verbatim captures (API JSON, raw downloads)
+  # before ingest. Usually <archive_dir>/raw.
+  raw_dir: ""
+
+  # Directory for derived CSV exports, if any. Optional; leave "" if unused.
+  data_dir: ""
+
+  # Free text: browser/download quirks, login gotchas, contract history,
+  # billing cadence, anything the /bills-<slug> command should know.
+  notes: |
