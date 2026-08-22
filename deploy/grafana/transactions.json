@@ -1,0 +1,734 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource for the apps database, connecting as grafana_ro.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Income",
+      "description": "External money in over the selected range. Transfers between your own accounts are excluded.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT coalesce(sum(amount),0)::float8 AS \"Income\"\nFROM classified WHERE flow = 'income' AND $__timeFilter(post_date::timestamptz)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Expenses",
+      "description": "External money out (card purchases net of refunds, plus bank outflows). Card payments and account transfers are excluded.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT coalesce(-sum(amount),0)::float8 AS \"Expenses\"\nFROM classified WHERE flow = 'expense' AND $__timeFilter(post_date::timestamptz)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Net",
+      "description": "Income minus expenses over the selected range.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT coalesce(sum(amount),0)::float8 AS \"Net\"\nFROM classified WHERE flow <> 'transfer' AND $__timeFilter(post_date::timestamptz)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#199e70"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Monthly income vs expenses",
+      "description": "Bars: external money in (blue) and out (orange) each month, both shown as positive magnitudes. Line: net. Transfers between your own accounts are excluded from all three.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n), m AS (\n  SELECT date_trunc('month', post_date)::timestamptz AS time,\n    coalesce(sum(amount) FILTER (WHERE flow = 'income'), 0) AS income,\n    coalesce(-sum(amount) FILTER (WHERE flow = 'expense'), 0) AS expenses\n  FROM classified WHERE $__timeFilter(post_date::timestamptz) GROUP BY 1)\nSELECT time, 'Income' AS metric, income::float8 AS value FROM m\nUNION ALL SELECT time, 'Expenses', expenses::float8 FROM m\nUNION ALL SELECT time, 'Net', (income - expenses)::float8 FROM m\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "barAlignment": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Income"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Expenses"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Net"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Where money goes (transfers excluded)",
+      "description": "Card rows use Chase's category; bank rows are grouped by transaction type. Card refunds net against their category.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT CASE WHEN account_kind = 'credit' THEN coalesce(nullif(category,''),'Card - uncategorized')\n      ELSE CASE txn_type\n        WHEN 'DEBIT_CARD' THEN 'Debit card' WHEN 'CHECK_PAID' THEN 'Checks'\n        WHEN 'LOAN_PMT' THEN 'Loan payments' WHEN 'ACH_DEBIT' THEN 'ACH / bill pay'\n        WHEN 'MISC_DEBIT' THEN 'Misc debits' WHEN 'FEE_TRANSACTION' THEN 'Fees'\n        WHEN 'ATM' THEN 'ATM' ELSE coalesce(txn_type,'Other bank') END END AS category, (-sum(amount))::float8 AS \"Spend\"\nFROM classified\nWHERE flow = 'expense' AND $__timeFilter(post_date::timestamptz)\nGROUP BY 1 ORDER BY 2 DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Income sources",
+      "description": "External inflows grouped by the first words of the bank description.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT array_to_string((string_to_array(description, ' '))[1:3], ' ') AS source,\n       sum(amount)::float8 AS \"Income\"\nFROM classified\nWHERE flow = 'income' AND $__timeFilter(post_date::timestamptz)\nGROUP BY 1 ORDER BY 2 DESC LIMIT 12",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "title": "Monthly summary",
+      "description": "Transfers should net to roughly zero each month; a large value there means one side of a card payment fell in a different month, or an untracked account is involved.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 10,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT to_char(date_trunc('month', post_date), 'YYYY-MM') AS \"Month\",\n  coalesce(sum(amount) FILTER (WHERE flow = 'income'), 0)::float8 AS \"Income\",\n  coalesce(-sum(amount) FILTER (WHERE flow = 'expense'), 0)::float8 AS \"Expenses\",\n  coalesce(sum(amount) FILTER (WHERE flow <> 'transfer'), 0)::float8 AS \"Net\",\n  coalesce(sum(amount) FILTER (WHERE flow = 'transfer'), 0)::float8 AS \"Transfers (~0)\"\nFROM classified GROUP BY 1 ORDER BY 1 DESC",
+          "refId": "A"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Month"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Transactions",
+      "description": "flow = how each row counts: income, expense, or transfer (excluded from the money panels).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 14,
+        "x": 10,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT post_date AS \"Date\", flow, description AS \"Description\",\n       amount::float8 AS \"Amount\", coalesce(nullif(category,''), '') AS \"Category\",\n       coalesce(txn_type,'') AS \"Type\"\nFROM classified WHERE $__timeFilter(post_date::timestamptz)\nORDER BY post_date DESC, id DESC LIMIT 500",
+          "refId": "A"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Amount"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "Pipeline health",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "text",
+                "mode": "fixed"
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 35
+          },
+          "id": 1,
+          "options": {
+            "colorMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${DS_CASH_FLOW_COMMANDER}"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT count(*) AS \"Transactions\", count(DISTINCT account_id) AS \"Accounts\" FROM cash_flow_commander.transactions",
+              "refId": "A"
+            }
+          ],
+          "title": "Landed",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Days stale"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 10
+                        },
+                        {
+                          "color": "red",
+                          "value": 35
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 35
+          },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${DS_CASH_FLOW_COMMANDER}"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT min(post_date)::text AS \"Oldest\", max(post_date)::text AS \"Newest\",\n      (CURRENT_DATE - max(post_date))::int AS \"Days stale\" FROM cash_flow_commander.transactions",
+              "refId": "A"
+            }
+          ],
+          "title": "Coverage",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 35
+          },
+          "id": 3,
+          "options": {
+            "colorMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${DS_CASH_FLOW_COMMANDER}"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT count(*) FILTER (WHERE extra IS NOT NULL) AS \"With raw row\",\n      count(*) FILTER (WHERE raw_document_id IS NOT NULL) AS \"Linked to raw doc\",\n      count(*) FILTER (WHERE occurrence > 0) AS \"Needed occurrence\" FROM cash_flow_commander.transactions",
+              "refId": "A"
+            }
+          ],
+          "title": "Verbatim capture intact",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "net"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 18,
+            "y": 36
+          },
+          "id": 12,
+          "options": {
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${DS_CASH_FLOW_COMMANDER}"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT to_char(date_trunc('month', post_date),'YYYY-MM') AS month,\n        account_id, count(*) AS txns, sum(amount)::float8 AS net\n      FROM cash_flow_commander.transactions\n      GROUP BY 1,2 ORDER BY 1 DESC, 2",
+              "refId": "A"
+            }
+          ],
+          "title": "Months held per account \u2014 gaps are the point",
+          "type": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "cash-flow-commander",
+    "chase"
+  ],
+  "time": {
+    "from": "now-2y",
+    "to": "now"
+  },
+  "timezone": "America/Chicago",
+  "title": "Cash Flow Commander \u2014 Transactions",
+  "uid": "cfc-transactions",
+  "version": 1
+}
