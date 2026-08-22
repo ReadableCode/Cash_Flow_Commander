@@ -158,6 +158,32 @@ invisible. Dashboards are committed repo artifacts, never Grafana-only state.
 - Schema-qualify every table (`cash_flow_commander.<table>`) and use a literal
   timezone in date bucketing, not a dashboard variable.
 
+## 8.5 Data-quality check — the silent failures
+
+```sh
+uv run python src/checks.py --provider {{slug}}
+```
+
+`parse_raw` reports what *failed*. This reports what succeeded and is still
+unusable — the failures that render as plausible numbers instead of errors.
+
+The one that motivated it: every value panel on `cfc-solar-net-metering` inner-
+joins `bills` to `bill_line_items` and then filters `energy_rate_cents IS NOT
+NULL`. A bill whose line items did not parse, or parsed without an energy-rate
+line, silently drops out of the series. The chart does not gap and does not
+error — it draws a shorter line and a smaller total, which reads as "solar was
+worth less" rather than "data is missing".
+
+Non-zero exit means at least one billing period will be missing from the value
+panels. Fix it by reprocessing, never by editing rows:
+
+```sh
+uv run python src/parse_raw.py --provider {{slug}} --status all
+```
+
+Do not proceed to the dashboard step while this is failing — you would be
+verifying a dashboard that renders successfully and understates.
+
 ## 9. Report and verify
 
 Summarize the run: coverage window requested vs actually filled, documents
@@ -177,6 +203,21 @@ Provider-specific verification checklist:
 - [ ] `{{No gap months in the statement sequence}}`
 - [ ] `{{Usage totals roughly consistent with the bill period}}`
 - [ ] `{{Add checks specific to this provider}}`
+
+## Keeping this command current
+
+This provider will change its portal, its payload, or its quirks. When it does,
+the fix belongs in this file, not in a one-off workaround you forget by the next
+run. Before finishing, if reality did not match what is written above:
+
+1. Update the section that was wrong, and date it.
+2. Add any new popup, interstitial, or blocking modal to the portal-session
+   section.
+3. Add any newly-confirmed permanent gap to the coverage notes, so future runs
+   stop chasing it.
+4. Put user-specific quirks (download locations, account oddities) in the
+   `notes` field of `providers.local.yaml` — never in this file.
+5. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---
 

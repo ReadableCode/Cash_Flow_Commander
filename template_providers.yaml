@@ -35,3 +35,49 @@ rhythm:
   # Free text: browser/download quirks, login gotchas, contract history,
   # billing cadence, anything the /bills-<slug> command should know.
   notes: |
+
+chase:
+  # Chase transactions are not a utility bill; this provider feeds
+  # transaction_downloader/ rather than the usage/bills tables.
+  service_type: banking
+
+  # Unused for Chase — accounts are listed under external_ids.accounts below,
+  # because a single login covers several accounts. Leave blank.
+  account_number: ""
+
+  # Map each account's last 4 digits to a label and a kind (bank | credit).
+  #
+  # The 24-month export retention floor applies to BOTH kinds (verified live
+  # 2026-08-22 — an earlier reading that cards were unbounded was a false
+  # negative). `kind` is informational: cards additionally offer
+  # statement-cycle exports, and their exports carry two date columns.
+  # A bare string (`"0000": "Checking"`) still works and defaults to `bank`.
+  #
+  # Only accounts Chase offers a CSV export for belong here. Investment and
+  # loan accounts appear on the dashboard but are absent from the export form.
+  external_ids:
+    accounts:
+      "0000": {label: "Checking", kind: bank}
+      "1111": {label: "Savings", kind: bank}
+      "2222": {label: "Credit Card", kind: credit}
+
+  # Where downloaded statements/PDFs are filed long-term. Optional for Chase.
+  archive_dir: ""
+
+  # Where verbatim CSV captures land. Required — this is the capture store
+  # transaction_downloader/plan.py reads to work out what is still missing.
+  raw_dir: ""
+
+  # Unused for Chase; derived output lives in the database, not a CSV dir.
+  data_dir: ""
+
+  # Earliest month to backfill, YYYY-MM. Omit to go back 24 months on a first
+  # run. A long backfill is chunked newest-first across several runs.
+  backfill_start: ""
+
+  # Free text: browser download location, which accounts export how far back,
+  # anything /transactions-chase should know. Useful things to record here:
+  #   - where this browser puts downloads
+  #   - where archived pre-24-month exports live, for `capture.py import-legacy`
+  #   - any account whose export behaves unusually
+  notes: |

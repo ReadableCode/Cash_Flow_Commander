@@ -1,0 +1,204 @@
+# transaction_downloader
+
+Chase bank and credit-card transaction acquisition. Feeds the same pipeline as
+the bill providers — see `docs/LANDING.md` — but tracks coverage differently,
+for a reason worth understanding before changing anything here.
+
+```
+plan.py          →  agent downloads   →  capture.py     →  src/ingest_raw.py →  src/parse_raw.py
+what's missing      (Claude in Chrome)   file verbatim     raw_documents        transactions table
+```
+
+The agent half lives in `.claude/commands/transactions-chase.md`. Run it with
+`/transactions-chase`. There is no schedule and no cron: the planner derives what
+is missing from what is already captured, so the command is safe and cheap to
+run whenever you want, at whatever interval you feel like.
+
+## Why not `src/coverage.py`?
+
+`coverage.py` finds gaps by looking for *missing readings*. That works for an
+interval series because a meter emits a fixed number of readings per day, so a
+day with none is unambiguously a hole.
+
+Transactions have no cadence. A credit card can legitimately go ten days with no
+activity. "No rows on that date" tells you nothing about whether you fetched it.
+
+So coverage here is tracked by **requested window**, recorded at capture time:
+
+- A month you asked Chase for and got nothing back is **covered**. It was an
+  empty month.
+- A month you never asked for is **not covered**, however much data surrounds it.
+
+That distinction is why `capture.py file` requires `--start` and `--end` — the
+window you asked for, not the dates inside the file. Without it, every
+genuinely-empty month gets re-downloaded forever.
+
+## Chase's export limits — verified live 2026-08-22
+
+These are not guesses; they were checked against the real portal.
+
+| | Bank (checking, savings) | Credit card |
+| --- | --- | --- |
+| Oldest date the form accepts | **24 months, to the day** | **same — 24 months** |
+| Activity presets | `last24monthsOption`, `DATE_RANGE` | year-to-date, last year, since last statement, 24 statement cycles, `ALL`, `DATE_RANGE` |
+| "All transactions" means | **24 months** — the label is a misnomer | genuinely all (still capped at 24 months of history) |
+| Range filters on | posting date | posting date |
+| Rows per report | 1,000, then silently truncated | same |
+
+The floor is a **rolling daily** one, not a month boundary: with today
+2026-08-22, a From of 2024-08-22 was refused and 2024-08-23 accepted. Widening
+the range does not evade it — a 4-years-back-to-2-years-back window is rejected
+on both endpoints, because the rule applies to each date independently rather
+than to the span. And the form does not validate at all until both date fields
+are filled, so a lone out-of-range date can look accepted when it is not.
+
+Three consequences baked into the code:
+
+1. `RETENTION_MONTHS` in `plan.py` treats the floor as **hard**, and clips the
+   oldest window's start to it so no request asks for a day Chase refuses.
+   Months past it are reported as `BEYOND CHASE RETENTION`, not retried forever
+   — they can only come from `capture.py import-legacy`.
+2. Windows are month-aligned partly because of the **1,000-row cap**. A month
+   rarely exceeds it; `ALL` on a busy card easily does, and the truncation is
+   silent. `src/providers/chase.py` raises on any file with exactly 1,000 rows
+   rather than recording a truncated month as complete.
+3. Only accounts Chase actually offers a CSV export for are configurable.
+   Investment and loan accounts show on the dashboard but are absent from the
+   export form.
+
+## Importing archives older than the retention floor
+
+```sh
+uv run python transaction_downloader/capture.py import-legacy <old files>
+```
+
+Exports downloaded before the window lapsed have no record of the window that
+was *requested*, which is the one thing the coverage model needs. One is
+inferred from the transaction dates inside and stamped `window_source:
+inferred`; `plan.py` reports those months separately, because coverage resting
+on a guess should be visible as such. `--exact` claims only what the file
+literally proves, at the cost of leaving partial edge months looking uncovered.
+
+## What always gets re-fetched
+
+Two windows, every run, regardless of what is already stored:
+
+1. **The current month** — incomplete by definition.
+2. **Back to `newest transaction − 5 days`** (`--overlap-days`) — Chase posts
+   pending activity late and revises descriptions and amounts after the fact, so
+   the newest days already stored are the least trustworthy ones. This is the
+   transaction-shaped version of `RESTATEMENT_LOOKBACK_DAYS` in `coverage.py`.
+
+Because that second window is measured from the newest transaction rather than
+the calendar, it reaches back into the previous month exactly when it should —
+if the newest transaction you hold is the 2nd, the previous month is still
+settling and gets re-fetched too.
+
+Overlap is free (sha256 dedup at ingest), so both windows err wide on purpose.
+
+## Storage layout
+
+Everything lands in the `chase` entry's `raw_dir` from `providers.local.yaml`:
+
+```
+raw_dir/
+├── chase_csv_export_{account}_{start}_{end}_captured{date}.csv
+├── chase_csv_export_...
+└── _chase_captures.jsonl        # manifest: one record per capture
+```
+
+Captures are month-aligned, verbatim, and **never overwritten** — re-pulling a
+month adds a file rather than replacing one, so a restated transaction stays
+traceable to the day it appeared. The manifest is a cache; the files are the
+truth, and `capture.py reindex` rebuilds it from them. `plan.py` falls back to
+scanning the files automatically if the manifest is missing, so losing it never
+triggers a full re-download.
+
+## Commands
+
+```sh
+# what's missing
+uv run python transaction_downloader/plan.py
+uv run python transaction_downloader/plan.py --json          # for the agent
+uv run python transaction_downloader/plan.py --full          # include deferred backfill
+uv run python transaction_downloader/plan.py --overlap-days 10
+
+# file what was downloaded
+uv run python transaction_downloader/capture.py file \
+    --account <last4> --start 2026-08-01 --end 2026-08-22 ~/Downloads/<file>.CSV
+uv run python transaction_downloader/capture.py status
+uv run python transaction_downloader/capture.py reindex
+
+# archives older than Chase's retention floor
+uv run python transaction_downloader/capture.py import-legacy <old files>
+
+# land it, then normalize it
+uv run python src/ingest_raw.py --provider chase <archive_dir> <raw_dir> <data_dir>
+uv run python src/parse_raw.py --provider chase
+```
+
+## Configuration
+
+The `chase` block in `providers.local.yaml` (gitignored; shape in
+`template_providers.yaml`). `raw_dir` and `external_ids.accounts` are required;
+`backfill_start` is optional and defaults to 24 months.
+
+## Normalizing into `transactions`
+
+```sh
+uv run python src/parse_raw.py --provider chase
+```
+
+`src/providers/chase.py` handles all three layouts and upserts into the
+`transactions` table via `src/transaction_store.py`.
+
+The natural key is
+`(account_id, post_date, description, amount, occurrence)`. That last column is
+the interesting one: Chase CSVs carry **no transaction id**, and genuinely
+identical same-day rows occur — two identical coffees at the same shop. Rows are
+numbered in export order within each group, which is stable across re-downloads,
+so re-parsing an overlapping window updates in place instead of duplicating, and
+mass reprocessing stays idempotent. Without the counter the second coffee would
+upsert onto the first and vanish.
+
+### Nothing is discarded
+
+Every field of every source row is stored verbatim in the `transactions.extra`
+JSON column: keyed by the original header text, holding the raw unparsed string,
+including columns that are also projected into typed columns, values in
+positions past the last header, and any column Chase adds later. The typed
+columns are a projection for querying; `extra` is the record.
+
+The shape is fixed by parser code — `{layout, columns, unnamed?}` — so it is
+identical run to run and no agent decides what is worth keeping.
+
+One Chase login covers several accounts, so there is no single `account_number`
+for the provider. The parser reads the account from the capture filename, and
+`chase` is listed in `parse_raw.DERIVES_OWN_ACCOUNT_ID` so the usual
+account-resolution guard is skipped.
+
+## Still open: no dashboard
+
+Per `docs/LANDING.md` §0 a provider run is not done until the data is visible in
+Grafana, and `transactions` currently has no committed dashboard. That is the
+remaining gap. It was left undone deliberately rather than hand-rolled: §9 of
+the landing contract says dashboards are built in the UI and round-tripped
+through `deploy/grafana_sync.py`, never hand-authored as JSON.
+
+## Tests
+
+```sh
+uv run pytest tests/test_transaction_downloader.py tests/test_chase_transactions.py
+```
+
+`test_transaction_downloader.py` covers planning and filing: layout detection,
+the overlap window crossing a month boundary, gap detection,
+empty-month-is-covered, the retention floor, backfill chunking, verbatim filing,
+duplicate suppression, manifest recovery, legacy import, and the ingest
+classification hand-off.
+
+`test_chase_transactions.py` covers parsing and storage against a real sqlite
+database: all three layouts, identical same-day rows staying distinct,
+reprocessing idempotency, an overlapping re-download adding only what is new, a
+restated transaction being corrected in place, the 1,000-row truncation guard,
+and registry wiring.

@@ -37,6 +37,13 @@ the result drifts by an interval at each day boundary.
 
 ## 0. Setup
 
+**This command is deployed globally, so the session may not start in the repo.**
+Every path below — `src/...`, `deploy/...`, `docs/...` — is relative to the Cash
+Flow Commander clone. Change into it first, conventionally
+`~/GitHub/Cash_Flow_Commander`. If it lives elsewhere on this host, find it and
+use that; do not run these commands from an unrelated directory, and do not
+hardcode a machine-specific path in this file.
+
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `enphase_enlighten` entry from `providers.local.yaml` in the repo root. You need its
   `external_ids.system_id`, `archive_dir`, `raw_dir`, and `data_dir`.
@@ -197,6 +204,32 @@ On failure: fix parser code, bump `PARSER_VERSION`, reprocess. Never hand-edit p
 Derived self-consumption is a projection — compute it in the dashboard/report layer, never
 write it back into the raw store.
 
+## 7.05 Data-quality check — the silent failures
+
+```sh
+uv run python src/checks.py --provider enphase_enlighten
+```
+
+`parse_raw` reports what *failed*. This reports what succeeded and is still
+unusable — the failures that render as plausible numbers instead of errors.
+
+The one that motivated it: every value panel on `cfc-solar-net-metering` inner-
+joins `bills` to `bill_line_items` and then filters `energy_rate_cents IS NOT
+NULL`. A bill whose line items did not parse, or parsed without an energy-rate
+line, silently drops out of the series. The chart does not gap and does not
+error — it draws a shorter line and a smaller total, which reads as "solar was
+worth less" rather than "data is missing".
+
+Non-zero exit means at least one billing period will be missing from the value
+panels. Fix it by reprocessing, never by editing rows:
+
+```sh
+uv run python src/parse_raw.py --provider enphase_enlighten --status all
+```
+
+Do not proceed to the dashboard step while this is failing — you would be
+verifying a dashboard that renders successfully and understates.
+
 ## 7.1 Dashboards
 
 `deploy/grafana/solar_net_metering.json` (uid `cfc-solar-net-metering`) is the committed
@@ -260,6 +293,21 @@ always recoverable.
 
 Cadence: monthly, after the electricity bill posts, so both sides of the reconciliation cover the
 same closed billing period. Run it late rather than not at all.
+
+## Keeping this command current
+
+This provider will change its portal, its payload, or its quirks. When it does,
+the fix belongs in this file, not in a one-off workaround you forget by the next
+run. Before finishing, if reality did not match what is written above:
+
+1. Update the section that was wrong, and date it.
+2. Add any new popup, interstitial, or blocking modal to the portal-session
+   section.
+3. Add any newly-confirmed permanent gap to the coverage notes, so future runs
+   stop chasing it.
+4. Put user-specific quirks (download locations, account oddities) in the
+   `notes` field of `providers.local.yaml` — never in this file.
+5. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---
 
