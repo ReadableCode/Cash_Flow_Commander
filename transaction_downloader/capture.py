@@ -341,6 +341,66 @@ def cmd_import_legacy(args: argparse.Namespace, raw_dir: str) -> int:
     return 1 if failures else 0
 
 
+def cmd_record_empty(args: argparse.Namespace, raw_dir: str) -> int:
+    """Record a window Chase reported as having no activity.
+
+    Chase serves NO file for an empty window ("We couldn't find any activity
+    that matched the date range you chose"), so without this the coverage model
+    cannot tell an empty month from a never-fetched month and the planner asks
+    for it forever. The marker file records the observation; it flows through
+    ingest like any capture so the database — the durable coverage source —
+    carries it after staging is cleared.
+    """
+    try:
+        start = datetime.date.fromisoformat(args.start)
+        end = datetime.date.fromisoformat(args.end)
+    except ValueError:
+        print("--start and --end must be YYYY-MM-DD", file=sys.stderr)
+        return 2
+    if end < start:
+        print("--end is before --start", file=sys.stderr)
+        return 2
+    captured = datetime.date.fromisoformat(args.captured) if args.captured else datetime.date.today()
+
+    for entry in store.read_manifest(raw_dir):
+        if (
+            entry.get("empty")
+            and str(entry.get("account")) == args.account
+            and entry.get("requested_start") == start.isoformat()
+            and entry.get("requested_end") == end.isoformat()
+        ):
+            print(f"  = already recorded as empty: {entry['file']}")
+            return 0
+
+    name = store.empty_name(args.account, start, end, captured)
+    path = os.path.join(raw_dir, name)
+    os.makedirs(raw_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(
+            "Chase reported no activity for the requested window.\n"
+            f"account (last 4): {args.account}\n"
+            f"requested window: {start.isoformat()} .. {end.isoformat()}\n"
+            f"observed: {captured.isoformat()}\n"
+            'Portal message: "We couldn\'t find any activity that matched the date range you chose."\n'
+        )
+    entry = {
+        "file": name,
+        "account": args.account,
+        "requested_start": start.isoformat(),
+        "requested_end": end.isoformat(),
+        "captured_at": captured.isoformat(),
+        "sha256": store.sha256_file(path),
+        "window_source": "requested",
+        "empty": True,
+        "rows": 0,
+        "min_date": None,
+        "max_date": None,
+    }
+    store.append_manifest(raw_dir, entry)
+    print(f"  + {name}  (empty window recorded)")
+    return 0
+
+
 def cmd_reindex(raw_dir: str) -> int:
     """Rebuild the manifest from the capture files on disk."""
     entries = store.scan_captures(raw_dir)
@@ -401,6 +461,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="use the file's own first/last transaction dates instead of whole months",
     )
 
+    p_empty = sub.add_parser(
+        "record-empty", help="record a window Chase reported as having no activity"
+    )
+    p_empty.add_argument("--account", required=True, help="account last 4")
+    p_empty.add_argument("--start", required=True, help="requested window start, YYYY-MM-DD")
+    p_empty.add_argument("--end", required=True, help="requested window end, YYYY-MM-DD")
+    p_empty.add_argument("--captured", default=None, help="observation date override, YYYY-MM-DD (testing)")
+
     sub.add_parser("reindex", help="rebuild the manifest from files on disk")
     sub.add_parser("status", help="summarize the capture store")
     return parser
@@ -423,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_file(args, raw_dir)
     if args.cmd == "import-legacy":
         return cmd_import_legacy(args, raw_dir)
+    if args.cmd == "record-empty":
+        return cmd_record_empty(args, raw_dir)
     if args.cmd == "reindex":
         return cmd_reindex(raw_dir)
     return cmd_status(raw_dir)

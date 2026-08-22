@@ -291,6 +291,20 @@ def parse_transactions_csv(content: bytes, ctx: dict[str, Any]) -> dict[str, lis
     }
 
 
+def parse_empty_window(content: bytes, ctx: dict[str, Any]) -> dict[str, Any]:
+    """'Parse' an empty-window marker: there is nothing to extract, by design.
+
+    The document exists purely as coverage evidence — Chase serves no file for
+    a window with no activity, and the marker records that refusal. Registering
+    a parser keeps it from surfacing as `no_parser` on every run (a permanent
+    false alarm trains you to ignore the real one). It deliberately does NOT
+    emit a transactions_window sink: an empty result must never prune rows a
+    real export previously proved existed — if Chase glitches and serves
+    "no activity" for a window that has rows, the stored rows win.
+    """
+    return {}
+
+
 def _verbatim_row(headers: list[str], values: list[str], layout: str) -> dict[str, Any]:
     """Capture one source row losslessly, deterministically.
 

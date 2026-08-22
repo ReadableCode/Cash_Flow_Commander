@@ -228,7 +228,10 @@ def captures_from_database() -> list[dict[str, Any]] | None:
                 for row in conn.execute(
                     select(db.raw_documents.c.original_name).where(
                         db.raw_documents.c.provider == PROVIDER_SLUG,
-                        db.raw_documents.c.doc_type == "csv_export",
+                        # empty_window markers are coverage evidence: Chase
+                        # serves no CSV for a window with no activity, so the
+                        # recorded refusal is what proves the month was fetched.
+                        db.raw_documents.c.doc_type.in_(("csv_export", "empty_window")),
                     )
                 )
             ]
@@ -322,14 +325,20 @@ def merge_ranges(
 
 
 def month_is_covered(
-    month: datetime.date, covered: list[tuple[datetime.date, datetime.date]], today: datetime.date
+    month: datetime.date,
+    covered: list[tuple[datetime.date, datetime.date]],
+    today: datetime.date,
+    floor: datetime.date | None = None,
 ) -> bool:
-    """True when every day of `month` up to today falls inside a covered range.
+    """True when every fetchable day of `month` up to today falls inside a covered range.
 
     The current month is judged only through today — a month cannot be faulted
-    for missing days that have not happened yet.
+    for missing days that have not happened yet. Likewise days before the
+    retention `floor`: Chase will never serve them, so a capture that covers a
+    month from the floor onward covers everything that month can ever hold —
+    without the clip, the floor month re-reports as a gap forever.
     """
-    need_start = month
+    need_start = month if floor is None else max(month, floor)
     need_end = min(month_end(month), today)
     if need_end < need_start:
         return False
@@ -474,6 +483,9 @@ def analyze_account(
             months_between(newest_txn - datetime.timedelta(days=overlap_days), newest_txn)
         )
 
+    floor = retention_floor(today)
+    floor_month = month_start(floor)
+
     reasons: dict[datetime.date, str] = {}
     for month in months_between(horizon, today):
         if month in refresh_months:
@@ -482,7 +494,7 @@ def analyze_account(
                 if month == month_start(today)
                 else f"refresh window (newest txn -{overlap_days}d)"
             )
-        elif not month_is_covered(month, covered, today):
+        elif not month_is_covered(month, covered, today, floor=floor):
             reasons[month] = "never captured" if not covered else "gap"
 
     # Split off what Chase will not serve at all before doing anything else --
@@ -493,9 +505,6 @@ def analyze_account(
         if window_months == "auto"
         else max(1, int(window_months))
     )
-
-    floor = retention_floor(today)
-    floor_month = month_start(floor)
     wanted_all = sorted(reasons, reverse=True)
     # A month is reachable when any part of it is at or after the floor; the
     # month the floor falls inside is reachable but only from the floor onward.
@@ -523,7 +532,7 @@ def analyze_account(
     inferred_months = [
         month.strftime("%Y-%m")
         for month in months_between(horizon, today)
-        if month not in reasons and month_is_covered(month, inferred_ranges, today)
+        if month not in reasons and month_is_covered(month, inferred_ranges, today, floor=floor)
     ]
 
     return {

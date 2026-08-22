@@ -1,5 +1,5 @@
 ---
-description: Chase transaction acquisition — plan the windows still needed, download each month via Claude in Chrome, file verbatim, land into raw_documents
+description: Chase transaction acquisition — plan the windows still needed, download each via the user's real Chrome (Claude in Chrome or AppleScript), file verbatim, land into raw_documents
 argument-hint: [optional: "full" for deferred backfill months, or "YYYY-MM" for a single month]
 ---
 
@@ -57,16 +57,46 @@ Argument handling for `$ARGUMENTS`:
   backfill is chunked newest-first across runs)
 - `YYYY-MM` → ignore the plan and fetch just that month, for a targeted repair
 
-## 1. Browser session (Claude in Chrome)
+Two planner behaviors that look wrong and are not:
+
+- **The current month is listed as FETCH even immediately after a run.** It is
+  the always-refetch rule, not a gap. Right after a successful run, "N windows
+  to download" where every line says `[current month]` means you are done.
+- **Set `backfill_start` explicitly when the goal is "all of it".** Without it
+  the planner anchors history to the oldest existing capture — reasonable
+  after a completed first run, but a single stray capture (e.g. one filed
+  during a live verification) silently suppresses the whole backfill for that
+  account. That happened once (2026-08-22, Sapphire): one July capture made a
+  24-month backfill plan as a single 2-month refresh.
+
+## 1. Browser session — the user's REAL Chrome, one way or another
 
 - Portal: `https://secure.chase.com`
-- Open it in the user's Chrome via Claude in Chrome. The browser autofills
-  credentials — **ask the user before clicking Sign In.** Never type, store, or
-  echo credentials, and never read them out of the password manager.
-- If MFA is requested, hand control to the user and wait. Do not attempt to
-  guess, resend, or bypass a code.
-- If Chase offers "remember this device," accept it — it is what keeps later
-  runs from re-prompting.
+- **It must be the user's real Chrome profile.** The password manager lives
+  there; embedded/collaborative browser panels (t3 preview, fresh automation
+  profiles) don't autofill, which forces manual credential entry — the user
+  will reject that. Two pathways that work:
+  - **Claude in Chrome**, when its tools are available in the session.
+  - **AppleScript on macOS**, when they are not (proven 2026-08-22 for a full
+    31-window backfill): open the page with
+    `osascript -e 'tell app "Google Chrome" to open location ...'`, then drive
+    it with `execute <tab> javascript "..."`. Requires the one-time toggle
+    **View → Developer → Allow JavaScript from Apple Events** in Chrome (have
+    the user click it) plus macOS Automation consent on first use. Find the tab
+    by URL match on every call — never by index, tabs move.
+- The user signs in themselves — **never type, store, or echo credentials**,
+  and never read them out of the password manager. Hand control over for MFA
+  and wait. If Chase offers "remember this device," accept it.
+- **Keep exactly ONE signed-in Chase tab.** Two dashboard tabs sharing the
+  session has gotten the whole session logged out mid-run (one tab idles into
+  timeout and kills both). Close extras before starting.
+- **Chrome silently blocks every download after the first** until the user
+  clicks Allow on the "secure.chase.com wants to download multiple files"
+  prompt (near the address bar). The tell: Chase shows its confirmation page
+  but no file lands. The permission then persists for the profile.
+- A transient **HTTP ERROR 401** page has appeared mid-run without the session
+  actually dying. Re-navigate to the download URL before concluding you are
+  logged out; only a redirect to the sign-in page means re-login.
 
 The download form is reachable directly, no dashboard navigation needed:
 
@@ -98,6 +128,11 @@ Observed at least once:
 - survey and feedback overlays
 - session-timeout and "are you still there" modals
 - cookie and privacy banners
+- **stale restored state on the deep-link**: navigating straight to the
+  download URL has landed on a leftover confirmation page or even a leftover
+  error page ("You can't download your report because the number of
+  transactions is more than we're able to show") from a previous session.
+  Nothing is wrong — click "Download other activity" to get a fresh form.
 
 A dashboard banner reading **"N of M accounts is hidden"** has been observed
 while every account was in fact visible. Treat it as noise; do not go into
@@ -141,6 +176,32 @@ Reading the activity options for the currently selected account:
     .querySelectorAll('mds-select-option')]
   .map(o => ({value: o.getAttribute('value'), label: o.getAttribute('label')}))
 ```
+
+### Driving the controls — what actually registers (verified 2026-08-22)
+
+Setting `.value` or dispatching events on the `mds-select` element itself is
+**ignored**. What works is what a user does — open the dropdown, click the
+option:
+
+- **Account selector**: its options render inside its shadow root. Click the
+  shadow button (`sel.shadowRoot.querySelector('button')`), wait ~1s, then
+  click the shadow option:
+  `sel.shadowRoot.querySelector('mds-select-option[value="<internal id>"]').click()`.
+- **Activity selector**: same open-the-shadow-button step, but its options are
+  **light-DOM children** — click
+  `document.querySelector('#downloadActivityOptionId mds-select-option[value=DATE_RANGE]')`.
+  The two components differ; check both places before concluding an option is
+  missing.
+- **Date fields**: nested two shadow roots deep —
+  `mds-datepicker#accountActivityFromDate` → `mds-text-input` → `input`
+  (same for `...ToDate`). Reach the inner input, focus it, set the value with
+  the native setter
+  (`Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set`),
+  then dispatch `input` and `change` with `{bubbles:true, composed:true}` and
+  blur/`focusout`. Verify by reading the component's `value` attribute and its
+  `error-messages` attribute (a JSON array; `[]` means valid).
+- After every step, **verify state by reading attributes back** rather than
+  assuming the click landed.
 
 ### The two account kinds behave differently
 
@@ -227,12 +288,37 @@ account** rather than reusing coordinates from the previous account.
    merge two windows into one wider download, because the requested window is
    what marks a month covered.
 
-### Where the file lands
+### Where the file lands, and what it is called
 
 Not necessarily `~/Downloads` — this is browser-profile specific and has been
 observed pointing at a cloud-synced Documents folder. The path belongs in the
 `notes` field of `providers.local.yaml`; read it from there rather than
 guessing, and if a download seems to have vanished, check there before retrying.
+
+The filename differs by product: **card exports embed the requested window**
+(`ChaseNNNN_Activity20260701_20260822_20260822.CSV`) while **bank exports do
+not** (`ChaseNNNN_Activity_20260822.CSV`). Detect a completed download by
+watching the folder for a file newer than a marker timestamp taken just before
+clicking Download — never by predicting the name, and never by grabbing the
+newest file without the timestamp check (a leftover from an earlier session
+looks exactly like your download).
+
+### Empty windows produce NO file
+
+A window with no activity does not download an empty CSV — Chase shows
+*"We couldn't find any activity that matched the date range you chose"* on the
+confirmation page and serves nothing. This is a normal outcome (dormant
+savings, pre-opening months), not a failure. Record it immediately so the
+planner knows the month was fetched:
+
+```sh
+uv run python transaction_downloader/capture.py record-empty \
+    --account <last4> --start <YYYY-MM-DD> --end <YYYY-MM-DD>
+```
+
+The marker flows through ingest as an `empty_window` document, so the
+database — the durable coverage source — carries the evidence. Skipping this
+step means the planner re-requests the same empty window on every run forever.
 
 ### Which date Chase filters on
 
@@ -350,8 +436,10 @@ Report: windows planned vs downloaded, per-account row counts, anything Chase
 refused to export, captures filed vs deduped, ingest ingested/deduped counts,
 transactions upserted, and any popup or flow change you had to work around.
 
-- [ ] every planned window either has a capture or an explicit reason it does not
+- [ ] every planned window has a capture, a `record-empty` marker, or an
+      explicit reason it has neither
 - [ ] `transaction_downloader/plan.py` re-run shows the fetched months covered
+      (only `[current month]` lines remaining means fully covered)
 - [ ] no capture came back with exactly 1,000 rows (silent truncation)
 - [ ] re-run `ingest_raw.py` → 100% dedup, zero new rows
 - [ ] `parse_raw.py` reports zero errored and zero no_parser

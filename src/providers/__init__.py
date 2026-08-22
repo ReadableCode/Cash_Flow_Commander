@@ -61,6 +61,7 @@ _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
     ("rhythm", "bill_pdf", _any_name, rhythm.parse_bill_pdf, rhythm.BILL_PARSER_VERSION),
     ("rhythm", "csv_export", _is_payments_csv, rhythm.parse_payments_csv, rhythm.BILL_PARSER_VERSION),
     ("chase", "csv_export", _is_chase_capture, chase.parse_transactions_csv, chase.PARSER_VERSION),
+    ("chase", "empty_window", _any_name, chase.parse_empty_window, chase.PARSER_VERSION),
     (
         "enphase_enlighten",
         "api_usage_json",

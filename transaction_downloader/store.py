@@ -51,6 +51,20 @@ CAPTURE_RE = re.compile(
 # raw document on every run.
 MANIFEST_NAME = ".chase_captures.jsonl"
 
+# A window Chase reports as having no activity produces NO file at all —
+# "We couldn't find any activity that matched the date range you chose." —
+# so an empty month is indistinguishable from a never-fetched month unless the
+# refusal itself is recorded. record-empty writes this marker file; its content
+# is the observation, its name carries the requested window, and it flows
+# through ingest so the database (the durable coverage source) knows too.
+EMPTY_PREFIX = "chase_empty_window"
+
+EMPTY_RE = re.compile(
+    r"^chase_empty_window_(?P<account>[A-Za-z0-9\-]+)"
+    r"_(?P<start>\d{8})_(?P<end>\d{8})_captured(?P<captured>\d{8})"
+    r"(?:\(\d+\))?\.txt$"
+)
+
 # Chase names its own downloads like Chase7676_Activity_20260801.CSV. Used only
 # to guess the account when filing a file the agent did not label.
 _CHASE_DOWNLOAD_RE = re.compile(r"chase[_\- ]?(\d{4})", re.IGNORECASE)
@@ -197,17 +211,38 @@ def capture_name(account: str, start: datetime.date, end: datetime.date, capture
     )
 
 
+def empty_name(account: str, start: datetime.date, end: datetime.date, captured: datetime.date) -> str:
+    """Canonical marker filename for a window Chase reported as having no activity."""
+    return (
+        f"{EMPTY_PREFIX}_{account}"
+        f"_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}"
+        f"_captured{captured.strftime('%Y%m%d')}.txt"
+    )
+
+
 def parse_capture_name(name: str) -> dict[str, Any] | None:
-    """Inverse of capture_name; None when the filename is not a capture."""
-    match = CAPTURE_RE.match(os.path.basename(name))
+    """Inverse of capture_name/empty_name; None when the filename is neither.
+
+    Empty-window markers come back with `"empty": True` and represent a
+    requested window that held zero transactions — covered, with nothing in it.
+    """
+    base = os.path.basename(name)
+    match = CAPTURE_RE.match(base)
+    empty = False
+    if match is None:
+        match = EMPTY_RE.match(base)
+        empty = True
     if match is None:
         return None
-    return {
+    parsed = {
         "account": match.group("account"),
         "requested_start": datetime.datetime.strptime(match.group("start"), "%Y%m%d").date().isoformat(),
         "requested_end": datetime.datetime.strptime(match.group("end"), "%Y%m%d").date().isoformat(),
         "captured_at": datetime.datetime.strptime(match.group("captured"), "%Y%m%d").date().isoformat(),
     }
+    if empty:
+        parsed["empty"] = True
+    return parsed
 
 
 # %%
@@ -273,13 +308,18 @@ def scan_captures(raw_dir: str) -> list[dict[str, Any]]:
         entry = dict(meta)
         entry["file"] = name
         entry["sha256"] = sha256_file(path)
-        try:
-            entry.update(read_export_file(path))
-        except NotAChaseExport as exc:
-            entry["error"] = str(exc)
-            entry["rows"] = 0
-            entry["min_date"] = None
-            entry["max_date"] = None
+        if entry.get("empty"):
+            # An empty-window marker holds a refusal note, not a CSV; the
+            # window in its name is the whole record.
+            entry.update({"rows": 0, "min_date": None, "max_date": None})
+        else:
+            try:
+                entry.update(read_export_file(path))
+            except NotAChaseExport as exc:
+                entry["error"] = str(exc)
+                entry["rows"] = 0
+                entry["min_date"] = None
+                entry["max_date"] = None
         entries.append(entry)
     return entries
 

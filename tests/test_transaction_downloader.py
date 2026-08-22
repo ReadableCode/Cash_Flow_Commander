@@ -742,3 +742,88 @@ def test_forgetting_for_two_years_is_the_same_operation() -> None:
 
 
 # %%
+# Empty windows #
+#
+# Chase serves NO file for a window with no activity — "We couldn't find any
+# activity that matched the date range you chose." Without a record of that
+# refusal, an empty month is indistinguishable from a never-fetched month and
+# the planner asks for it forever.
+
+
+def test_record_empty_marks_the_window_covered(tmp_path: Any) -> None:
+    raw = str(tmp_path / "raw")
+    assert capture.main([
+        "--raw-dir", raw, "record-empty", "--account", ACCOUNT,
+        "--start", "2026-03-01", "--end", "2026-05-31", "--captured", "2026-08-22",
+    ]) == 0
+
+    captures = store.read_manifest(raw)
+    assert len(captures) == 1
+    assert captures[0]["empty"] is True
+
+    report = _analyze(captures + [
+        _capture("2025-12-01", "2026-02-28"),
+        _capture("2026-06-01", "2026-08-22", max_date="2026-08-21"),
+    ], backfill_start=dt.date(2025, 12, 1))
+    for month in ("2026-03", "2026-04", "2026-05"):
+        assert month not in _months(report)
+
+
+def test_record_empty_is_idempotent(tmp_path: Any) -> None:
+    raw = str(tmp_path / "raw")
+    args = ["--raw-dir", raw, "record-empty", "--account", ACCOUNT,
+            "--start", "2026-03-01", "--end", "2026-05-31", "--captured", "2026-08-22"]
+    assert capture.main(args) == 0
+    assert capture.main(args) == 0
+    assert len(store.read_manifest(raw)) == 1
+
+
+def test_scan_captures_rebuilds_empty_markers_from_disk(tmp_path: Any) -> None:
+    """The marker file, like any capture, survives a lost manifest."""
+    raw = str(tmp_path / "raw")
+    capture.main(["--raw-dir", raw, "record-empty", "--account", ACCOUNT,
+                  "--start", "2026-03-01", "--end", "2026-05-31", "--captured", "2026-08-22"])
+    os.remove(store.manifest_path(raw))
+
+    entries = store.scan_captures(raw)
+    assert len(entries) == 1
+    assert entries[0]["empty"] is True
+    assert entries[0]["requested_start"] == "2026-03-01"
+    assert entries[0]["rows"] == 0
+    assert "error" not in entries[0]
+
+
+def test_ingest_classifies_an_empty_window_marker() -> None:
+    name = store.empty_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    assert ingest_raw.classify(name) == ("empty_window", dt.date(2026, 3, 1))
+
+
+def test_empty_window_documents_have_a_registered_parser() -> None:
+    """A permanent no_parser alarm would train you to ignore the real one."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+    import providers
+    name = store.empty_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    parser = providers.get_parser("chase", "empty_window", name)
+    assert parser is not None
+    parse_fn, _version = parser
+    assert parse_fn(b"whatever the marker says", {"original_name": name}) == {}
+
+
+# %%
+# Retention floor vs coverage #
+
+
+def test_the_floor_month_covered_from_the_floor_is_not_a_gap() -> None:
+    """Days Chase will never serve cannot make a covered month look uncovered.
+
+    A capture that starts exactly at the retention floor (2024-08-23 with today
+    2026-08-22) covers everything its month can ever hold; reporting 2024-08 as
+    a gap would re-request the same window on every run forever.
+    """
+    captures = [_capture("2024-08-23", "2026-08-22", rows=1000,
+                         min_date="2024-08-23", max_date="2026-08-21")]
+
+    report = _analyze(captures)
+
+    assert "2024-08" not in _months(report)
+    assert report["unreachable_months"] == []

@@ -57,6 +57,13 @@ _CHASE_EXPORT_RE = re.compile(
     r"^chase_csv_export_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.csv$"
 )
 
+# Empty-window markers from transaction_downloader/capture.py record-empty:
+# Chase serves no file for a window with no activity, so the refusal is
+# recorded as its own document — coverage evidence, not transaction data.
+_CHASE_EMPTY_RE = re.compile(
+    r"^chase_empty_window_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.txt$"
+)
+
 # Folder-name slugs that should map onto an established provider slug (the
 # archive folder keeps the provider's own 'Rythm' spelling; rows use 'rhythm').
 PROVIDER_ALIASES = {"rythm": "rhythm"}
@@ -65,6 +72,7 @@ _MIME_BY_EXT = {
     ".pdf": "application/pdf",
     ".csv": "text/csv",
     ".json": "application/json",
+    ".txt": "text/plain",
 }
 
 
@@ -99,6 +107,9 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
         # is what makes the raw_documents provider/doc_type/period_hint index
         # useful for "which months have we landed".
         return ("csv_export", datetime.date(int(chase.group(1)), int(chase.group(2)), 1))
+    chase_empty = _CHASE_EMPTY_RE.match(name)
+    if chase_empty is not None:
+        return ("empty_window", datetime.date(int(chase_empty.group(1)), int(chase_empty.group(2)), 1))
     if name in CSV_EXPORT_NAMES:
         return ("csv_export", None)
     lowered = name.lower()
