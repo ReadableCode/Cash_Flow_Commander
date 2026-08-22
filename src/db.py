@@ -204,6 +204,50 @@ payments = Table(
 )
 
 
+transactions = Table(
+    "transactions",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    # Last 4 of the account, matching what the capture store files under.
+    Column("account_id", Text, nullable=False),
+    Column("account_kind", Text, nullable=False),  # 'bank' | 'credit'
+    Column("txn_date", Date, nullable=False),  # when it happened
+    Column("post_date", Date, nullable=False),  # when it settled; bank exports give only this
+    Column("description", Text, nullable=False),
+    Column("amount", Numeric(12, 2), nullable=False),  # signed; negative = money out
+    Column("category", Text, nullable=True),  # card exports only
+    Column("txn_type", Text, nullable=True),  # Chase 'Type', or 'Details' on bank exports
+    Column("balance", Numeric(12, 2), nullable=True),  # running balance, bank exports only
+    Column("check_no", Text, nullable=True),
+    Column("memo", Text, nullable=True),
+    # Chase CSVs carry NO transaction id, and genuinely identical same-day rows
+    # occur (two identical coffees at one shop). Without this counter the second
+    # one would upsert onto the first and silently vanish. It is assigned in
+    # export order within each (account, post_date, description, amount) group,
+    # which is stable across re-downloads, so reprocessing stays idempotent.
+    Column("occurrence", Integer, nullable=False, server_default=text("0")),
+    Column(
+        "raw_document_id",
+        Integer,
+        ForeignKey(raw_documents.c.id, name="fk_transactions_raw_document"),
+        nullable=True,
+    ),
+    # Every field of the source row, verbatim, keyed by its ORIGINAL header text
+    # and holding the RAW unparsed string — including columns that are also
+    # projected into the typed columns above. The typed columns are a
+    # convenience projection; this is the record. A column Chase adds later
+    # lands here automatically instead of being silently dropped.
+    Column("extra", JSON, nullable=True),
+    Column("parser_version", Text, nullable=False),
+    UniqueConstraint(
+        "account_id", "post_date", "description", "amount", "occurrence",
+        name="uq_transactions_natural",
+    ),
+    # Covers the dashboard's range scans: filter by account, scan by date.
+    Index("ix_transactions_account_post_date", "account_id", "post_date"),
+)
+
+
 # %%
 # DDL #
 

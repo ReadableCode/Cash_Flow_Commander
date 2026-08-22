@@ -41,6 +41,7 @@ import bill_store  # noqa: E402
 import db  # noqa: E402
 import providers  # noqa: E402
 import raw_store  # noqa: E402
+import transaction_store  # noqa: E402
 import usage_store  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
@@ -65,7 +66,16 @@ _DOC_TYPE_PRIORITY = {"api_invoice_json": 0, "bill_pdf": 2}
 _DEFAULT_PRIORITY = 1
 
 # Fixed display order for per-sink counts in the summary.
-_SINK_LABEL_ORDER = ("bills", "bills_patched", "line_items", "payments", "usage rows")
+_SINK_LABEL_ORDER = (
+    "bills", "bills_patched", "line_items", "payments", "usage rows",
+    "transactions", "stale transactions removed",
+)
+
+# Providers whose documents carry their own account identity, so the single
+# `account_number` in providers.local.yaml does not apply. One Chase login
+# covers several accounts; each capture names the account it came from, and the
+# parser reads it from the filename.
+DERIVES_OWN_ACCOUNT_ID = frozenset({"chase"})
 
 
 # %%
@@ -144,7 +154,11 @@ def _stamp_sinks(sinks: dict[str, Any], doc_id: int, parser_version: str) -> Non
     For 'pdf_bills' entries both the bill_patch and each line_item are stamped.
     """
     for sink, payload in sinks.items():
-        if sink == "pdf_bills":
+        if sink == "transactions_window":
+            # Capture-window metadata, not row data; the document id is what
+            # breaks authority ties between two captures made the same day.
+            payload["raw_document_id"] = doc_id
+        elif sink == "pdf_bills":
             for entry in payload:
                 _stamp_rows([entry["bill_patch"]], doc_id, parser_version)
                 _stamp_rows(entry["line_items"], doc_id, parser_version)
@@ -156,9 +170,11 @@ def _dry_run_counts(sinks: dict[str, Any]) -> Counter[str]:
     """Per-sink would-upsert counts for --dry-run; nothing is written."""
     counts: Counter[str] = Counter()
     for sink, payload in sinks.items():
+        if sink == "transactions_window":
+            continue  # metadata; a dry run cannot know what it would prune
         if sink == "usage_intervals":
             counts["usage rows"] += len(payload)
-        elif sink in ("bills", "payments"):
+        elif sink in ("bills", "payments", "transactions"):
             counts[sink] += len(payload)
         elif sink == "pdf_bills":
             counts["bills_patched"] += len(payload)
@@ -177,6 +193,9 @@ def _upsert_sinks(engine: Engine, sinks: dict[str, Any]) -> tuple[Counter[str], 
     """
     counts: Counter[str] = Counter()
     unresolved_reason: str | None = None
+    # The window rides alongside the transactions sink; it is consumed here,
+    # not written anywhere itself.
+    window = sinks.pop("transactions_window", None)
     for sink, payload in sinks.items():
         if sink == "usage_intervals":
             counts["usage rows"] += int(usage_store.upsert_intervals(engine, payload)["upserted"])
@@ -184,6 +203,15 @@ def _upsert_sinks(engine: Engine, sinks: dict[str, Any]) -> tuple[Counter[str], 
             counts["bills"] += int(bill_store.upsert_bills(engine, payload)["upserted"])
         elif sink == "payments":
             counts["payments"] += int(bill_store.upsert_payments(engine, payload)["upserted"])
+        elif sink == "transactions":
+            if window is not None:
+                result = transaction_store.sync_capture(engine, payload, window)
+                counts["transactions"] += int(result["upserted"])
+                counts["stale transactions removed"] += int(result["removed"])
+            else:
+                counts["transactions"] += int(
+                    transaction_store.upsert_transactions(engine, payload)["upserted"]
+                )
         elif sink == "pdf_bills":
             result = bill_store.apply_pdf_bill(engine, payload)
             counts["bills_patched"] += int(result["bills_patched"])
@@ -222,7 +250,7 @@ def _process_document(
     parse_fn, parser_version = parser
 
     account_id = _account_id_for(doc["provider"], config, args.account_id)
-    if account_id is None:
+    if account_id is None and doc["provider"] not in DERIVES_OWN_ACCOUNT_ID:
         reason = (
             f"no account_number for provider '{doc['provider']}' in providers.local.yaml "
             "(add it there or pass --account-id)"

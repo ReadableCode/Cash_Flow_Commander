@@ -51,6 +51,12 @@ CSV_EXPORT_NAMES = frozenset(
 _RYTHM_MONTH_RE = re.compile(r"^Rythm (\d{4})-(\d{2})\.pdf$")
 _RHYTHM_BILL_RE = re.compile(r"^rhythm_bill_.*_(\d{4})-(\d{2})-(\d{2})\.pdf$")
 
+# Chase transaction exports, as filed by transaction_downloader/capture.py:
+# chase_csv_export_{account}_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
+_CHASE_EXPORT_RE = re.compile(
+    r"^chase_csv_export_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.csv$"
+)
+
 # Folder-name slugs that should map onto an established provider slug (the
 # archive folder keeps the provider's own 'Rythm' spelling; rows use 'rhythm').
 PROVIDER_ALIASES = {"rythm": "rhythm"}
@@ -87,6 +93,12 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
     bill = _classify_bill_pdf(name)
     if bill is not None:
         return bill
+    chase = _CHASE_EXPORT_RE.match(name)
+    if chase is not None:
+        # period_hint is the first of the requested window's start month, which
+        # is what makes the raw_documents provider/doc_type/period_hint index
+        # useful for "which months have we landed".
+        return ("csv_export", datetime.date(int(chase.group(1)), int(chase.group(2)), 1))
     if name in CSV_EXPORT_NAMES:
         return ("csv_export", None)
     lowered = name.lower()
