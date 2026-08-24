@@ -82,6 +82,44 @@ chase:
   #   - any account whose export behaves unusually
   notes: |
 
+citi:
+  # Citi credit-card transactions; feeds transaction_downloader/ (with
+  # --provider citi) rather than the usage/bills tables.
+  service_type: banking
+
+  # Unused for Citi — accounts are listed under external_ids.accounts below,
+  # because a single login can cover several cards. Leave blank.
+  account_number: ""
+
+  # Map each card's last 4 digits to a label. `kind` is always credit here.
+  # `internal_id` is the accountId guid in the card-dashboard URL — the last 4
+  # appears only in the nav link text, so recording the guid saves a lookup.
+  external_ids:
+    accounts:
+      "0000": {label: "Card Name", kind: credit, internal_id: ""}
+
+  # Where this machine's browser drops Citi downloads. Citi names downloads by
+  # scope label ("Date range.CSV"), so capture.py can never infer the account
+  # from the filename — always pass --account when filing.
+  download_dir: ""
+
+  # Where verbatim CSV captures land. Required — this is the capture store
+  # plan.py reads to work out what is still missing.
+  archive_dir: ""
+  raw_dir: ""
+  data_dir: ""
+
+  # Earliest month to backfill, YYYY-MM. Set it explicitly when the goal is
+  # "all of it" — without it the planner anchors to the oldest existing
+  # capture, and one stray capture can silently suppress a whole backfill.
+  backfill_start: ""
+
+  # Free text: retention floor as last observed (it is a statement-cycle
+  # boundary ~24 months back, and moves with the statement calendar), browser
+  # download location, pending card conversions, anything /transactions-citi
+  # should know.
+  notes: |
+
 # Expected-transaction config (src/expected_import_sheet.py, src/expected_tui.py).
 # Maps your sheet's account labels onto transactions.account_id values so the
 # import and the pairing TUI know which account a bill usually moves through.

@@ -13,10 +13,10 @@ from sqlalchemy.engine import Engine
 
 try:
     import db
-    from providers import chase
+    from providers import capture_names
 except ImportError:  # pragma: no cover - fallback for `import src.transaction_store`
     from src import db  # type: ignore[no-redef]
-    from src.providers import chase  # type: ignore[no-redef]
+    from src.providers import capture_names  # type: ignore[no-redef]
 
 
 # %%
@@ -109,8 +109,9 @@ def upsert_transactions(
 # %%
 # Capture reconciliation #
 
-# Reconciliation only ever compares captures of this provider's documents.
-_PROVIDER = "chase"
+# Windows written before the provider dimension existed carry no provider key;
+# they are all Chase's.
+_DEFAULT_PROVIDER = "chase"
 
 
 def _row_key(row: Any) -> tuple[str, str, str, str, int]:
@@ -137,23 +138,23 @@ def _authority(original_name: str | None, doc_id: int | None) -> tuple[datetime.
     A row whose provenance cannot be read (no raw_document_id, or a name that is
     not a capture) sorts oldest, so any real capture may replace it.
     """
-    meta = chase.capture_meta_from_name(original_name or "")
+    meta = capture_names.capture_meta_from_name(original_name or "")
     captured = meta["captured"] if meta else datetime.date.min
     return (captured, int(doc_id) if doc_id is not None else -1)
 
 
 def _newer_capture_windows(
-    engine: Engine, account: str, incoming: tuple[datetime.date, int]
+    engine: Engine, provider: str, account: str, incoming: tuple[datetime.date, int]
 ) -> list[tuple[datetime.date, datetime.date]]:
-    """Requested windows of this account's captures that outrank `incoming`."""
+    """Requested windows of this provider+account's captures that outrank `incoming`."""
     stmt = select(db.raw_documents.c.id, db.raw_documents.c.original_name).where(
-        db.raw_documents.c.provider == _PROVIDER,
+        db.raw_documents.c.provider == provider,
         db.raw_documents.c.doc_type == "csv_export",
     )
     windows: list[tuple[datetime.date, datetime.date]] = []
     with engine.connect() as conn:
         for doc in conn.execute(stmt):
-            meta = chase.capture_meta_from_name(doc.original_name)
+            meta = capture_names.capture_meta_from_name(doc.original_name, provider)
             if meta is None or str(meta["account"]) != account:
                 continue
             if (meta["captured"], int(doc.id)) > incoming:
@@ -187,12 +188,13 @@ def sync_capture(
     Returns {'upserted', 'removed', 'skipped'} row counts ('skipped' = incoming
     rows on dates a newer capture owns).
     """
+    provider = str(window.get("provider") or _DEFAULT_PROVIDER)
     account = str(window["account_id"])
     start: datetime.date = window["start"]
     end: datetime.date = window["end"]
     incoming = (window["captured"], int(window.get("raw_document_id") or -1))
 
-    newer = _newer_capture_windows(engine, account, incoming)
+    newer = _newer_capture_windows(engine, provider, account, incoming)
 
     def owned_by_newer(day: datetime.date) -> bool:
         return any(w_start <= day <= w_end for w_start, w_end in newer)
@@ -226,11 +228,20 @@ def sync_capture(
     with engine.connect() as conn:
         existing = conn.execute(stmt).mappings().all()
 
+    def other_providers_row(original_name: str | None) -> bool:
+        # transactions has no provider column, so an account_id shared by two
+        # sources (two cards ending in the same 4 digits) would collide here.
+        # A row whose capture name proves it came from a different provider is
+        # never this capture's to prune, whatever its authority.
+        meta = capture_names.capture_meta_from_name(original_name or "")
+        return meta is not None and meta["provider"] != provider
+
     stale_ids = [
         row["id"]
         for row in existing
         if not owned_by_newer(row["post_date"])
         and _row_key(row) not in keep
+        and not other_providers_row(row["original_name"])
         and (
             # Same document re-parsed (parser fix): its own old rows are stale.
             row["raw_document_id"] == window.get("raw_document_id")

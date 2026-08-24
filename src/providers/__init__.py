@@ -3,7 +3,7 @@
 
 from typing import Any, Callable
 
-from . import chase, enphase_enlighten, rhythm, smt
+from . import chase, citi, enphase_enlighten, rhythm, smt
 
 
 # %%
@@ -41,6 +41,11 @@ def _is_chase_capture(name: str) -> bool:
     return chase.account_from_capture_name(name) is not None
 
 
+def _is_citi_capture(name: str) -> bool:
+    """Match a Citi capture filed by transaction_downloader/capture.py."""
+    return citi.account_from_capture_name(name) is not None
+
+
 def _is_enphase_daily_energy(name: str) -> bool:
     """Match Enlighten daily_energy captures (the 15-minute interval series)."""
     return "daily_energy" in name
@@ -62,6 +67,8 @@ _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
     ("rhythm", "csv_export", _is_payments_csv, rhythm.parse_payments_csv, rhythm.BILL_PARSER_VERSION),
     ("chase", "csv_export", _is_chase_capture, chase.parse_transactions_csv, chase.PARSER_VERSION),
     ("chase", "empty_window", _any_name, chase.parse_empty_window, chase.PARSER_VERSION),
+    ("citi", "csv_export", _is_citi_capture, citi.parse_transactions_csv, citi.PARSER_VERSION),
+    ("citi", "empty_window", _any_name, citi.parse_empty_window, citi.PARSER_VERSION),
     (
         "enphase_enlighten",
         "api_usage_json",

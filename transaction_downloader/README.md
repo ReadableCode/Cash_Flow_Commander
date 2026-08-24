@@ -1,18 +1,26 @@
 # transaction_downloader
 
-Chase bank and credit-card transaction acquisition. Feeds the same pipeline as
-the bill providers — see `docs/LANDING.md` — but tracks coverage differently,
-for a reason worth understanding before changing anything here.
+Bank and credit-card transaction acquisition — Chase and Citi today, one
+`--provider` flag apart. Feeds the same pipeline as the bill providers — see
+`docs/LANDING.md` — but tracks coverage differently, for a reason worth
+understanding before changing anything here.
 
 ```
 plan.py          →  agent downloads   →  capture.py     →  src/ingest_raw.py →  src/parse_raw.py
 what's missing      (Claude in Chrome)   file verbatim     raw_documents        transactions table
 ```
 
-The agent half lives in `.claude/commands/transactions-chase.md`. Run it with
-`/transactions-chase`. There is no schedule and no cron: the planner derives what
-is missing from what is already captured, so the command is safe and cheap to
-run whenever you want, at whatever interval you feel like.
+The agent half lives in `.claude/commands/transactions-<slug>.md`. Run it with
+`/transactions-chase` or `/transactions-citi`. There is no schedule and no
+cron: the planner derives what is missing from what is already captured, so the
+command is safe and cheap to run whenever you want, at whatever interval you
+feel like.
+
+Everything provider-specific — CSV layouts, the row cap, the retention months,
+the download-filename hint, the portal's empty-window message — lives in
+`store.PROVIDERS`. `plan.py` and `capture.py` take `--provider <slug>`
+(default `chase`); a new source is one PROVIDERS entry, one parser in
+`src/providers/<slug>.py`, and one registry line.
 
 ## Why not `src/coverage.py`?
 
@@ -66,6 +74,24 @@ Three consequences baked into the code:
    Investment and loan accounts show on the dashboard but are absent from the
    export form.
 
+## Citi's export limits — verified live 2026-08-24
+
+| | Citi credit card |
+| --- | --- |
+| Oldest date the search accepts | the statement-close date ~24 months back (a cycle boundary, moves with the statement calendar; refused with "You can only search from … For older transactions, you can request statements for download.") |
+| Rows per report | **no cap found** — the entire searchable window exported complete in one file |
+| Layout | `Status,Date,Description,Debit,Credit,Member Name` — one date column, unsigned Debit/Credit |
+| Empty window | shows "no transactions for this time period." and the export icon silently does nothing — record with `record-empty` |
+| Download filename | the scope label ("Date range.CSV"), no account, collisions get " (1)" — always pass `--account`, detect downloads by marker timestamp |
+
+The planner approximates Citi's cycle-boundary floor with the same rolling
+24-month computation as Chase; that is conservative (every date at or after it
+is guaranteed servable). Export order is newest-first and was verified stable
+across re-downloads — two overlapping captures minutes apart returned the
+748-row overlap region byte-identical and identically ordered — which is what
+makes the `occurrence` counter safe for Citi too. Sign convention:
+`amount = credit − debit`, so negative is money out, same as Chase.
+
 ## Importing archives older than the retention floor
 
 ```sh
@@ -117,19 +143,22 @@ triggers a full re-download.
 ## Commands
 
 ```sh
-# what's missing
+# what's missing (default provider is chase; add --provider citi for Citi)
 uv run python transaction_downloader/plan.py
+uv run python transaction_downloader/plan.py --provider citi
 uv run python transaction_downloader/plan.py --json          # for the agent
 uv run python transaction_downloader/plan.py --full          # include deferred backfill
 uv run python transaction_downloader/plan.py --overlap-days 10
 
-# file what was downloaded
+# file what was downloaded (--provider before the subcommand)
 uv run python transaction_downloader/capture.py file \
     --account <last4> --start 2026-08-01 --end 2026-08-22 ~/Downloads/<file>.CSV
+uv run python transaction_downloader/capture.py --provider citi file \
+    --account <last4> --start 2026-08-01 --end 2026-08-24 "Date range.CSV"
 uv run python transaction_downloader/capture.py status
 uv run python transaction_downloader/capture.py reindex
 
-# archives older than Chase's retention floor
+# archives older than the retention floor
 uv run python transaction_downloader/capture.py import-legacy <old files>
 
 # land it, then normalize it
@@ -188,7 +217,7 @@ through `deploy/grafana_sync.py`, never hand-authored as JSON.
 ## Tests
 
 ```sh
-uv run pytest tests/test_transaction_downloader.py tests/test_chase_transactions.py
+uv run pytest tests/test_transaction_downloader.py tests/test_chase_transactions.py tests/test_citi_transactions.py
 ```
 
 `test_transaction_downloader.py` covers planning and filing: layout detection,
@@ -202,3 +231,9 @@ database: all three layouts, identical same-day rows staying distinct,
 reprocessing idempotency, an overlapping re-download adding only what is new, a
 restated transaction being corrected in place, the 1,000-row truncation guard,
 and registry wiring.
+
+`test_citi_transactions.py` mirrors that for Citi: the Debit/Credit sign
+convention, the single-date fallback, occurrence stability, restatement
+pruning, registry wiring, and the guard that a Citi capture can never prune
+another provider's rows when two cards share a last-4 (`transactions` has no
+provider column, so the capture filename is what proves provenance).

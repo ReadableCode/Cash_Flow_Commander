@@ -1,20 +1,22 @@
-"""Shared plumbing for the Chase transaction downloader: naming, CSV reading, manifest.
+"""Shared plumbing for the transaction downloader: naming, CSV reading, manifest.
 
-Chase hands out a different column layout per product, and its CSV exports carry
-no transaction identifier and no record of the window you asked for. Both facts
-shape this module:
+Built against Chase first and later generalized: each source (Chase, Citi, …)
+is one entry in PROVIDERS, carrying its CSV layouts, its row cap, and its
+download-filename hint. Two facts common to every source shape this module:
 
-- `read_export` detects the layout from the header row and reports the date span
-  the file actually contains, so coverage never has to trust a filename.
-- `Capture` records the window that was *requested*, which the file itself cannot
-  tell you. A month with genuinely zero transactions produces an empty export;
-  without the requested window that month looks identical to one never fetched,
-  and the planner would ask for it forever.
+- Exports carry no record of the window you asked for, so `read_export` detects
+  the layout from the header row and reports the date span the file actually
+  contains — coverage never has to trust a filename.
+- A capture records the window that was *requested*, which the file itself
+  cannot tell you. A month with genuinely zero transactions produces an empty
+  export (or, on some sources, no file at all); without the requested window
+  that month looks identical to one never fetched, and the planner would ask
+  for it forever.
 
 Capture filename shape (all captures are kept; nothing is ever overwritten):
 
-    chase_csv_export_{account}_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
-                     account   req.start  req.end    capture date
+    {provider}_csv_export_{account}_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
+                          account   req.start  req.end    capture date
 """
 
 # %%
@@ -32,48 +34,30 @@ from typing import Any
 # %%
 # Constants #
 
-CAPTURE_PREFIX = "chase_csv_export"
+DEFAULT_PROVIDER = "chase"
 
+# The capture/empty regexes accept any provider slug prefix so one scan can
+# read a mixed directory; the `_csv_export_` / `_empty_window_` literal is the
+# unambiguous delimiter between slug and account.
 CAPTURE_RE = re.compile(
-    r"^chase_csv_export_(?P<account>[A-Za-z0-9\-]+)"
+    r"^(?P<provider>[a-z0-9_]+?)_csv_export_(?P<account>[A-Za-z0-9\-]+)"
     r"_(?P<start>\d{8})_(?P<end>\d{8})_captured(?P<captured>\d{8})"
     # Same window captured twice on one day gets a "(1)" suffix rather than
     # clobbering the earlier file; it is still a capture.
     r"(?:\(\d+\))?\.csv$"
 )
 
-# Append-only sidecar next to the captures. Rebuildable from the files
-# themselves via `capture.py reindex`, so losing it is never fatal.
-#
-# The leading dot is load-bearing: src/ingest_raw.py walks raw_dir and skips
-# hidden files, but only skips underscore-prefixed DIRECTORIES. Named
-# `_chase_captures.jsonl` this bookkeeping file gets ingested as an `other`
-# raw document on every run.
-MANIFEST_NAME = ".chase_captures.jsonl"
-
-# A window Chase reports as having no activity produces NO file at all —
-# "We couldn't find any activity that matched the date range you chose." —
-# so an empty month is indistinguishable from a never-fetched month unless the
-# refusal itself is recorded. record-empty writes this marker file; its content
-# is the observation, its name carries the requested window, and it flows
-# through ingest so the database (the durable coverage source) knows too.
-EMPTY_PREFIX = "chase_empty_window"
-
 EMPTY_RE = re.compile(
-    r"^chase_empty_window_(?P<account>[A-Za-z0-9\-]+)"
+    r"^(?P<provider>[a-z0-9_]+?)_empty_window_(?P<account>[A-Za-z0-9\-]+)"
     r"_(?P<start>\d{8})_(?P<end>\d{8})_captured(?P<captured>\d{8})"
     r"(?:\(\d+\))?\.txt$"
 )
-
-# Chase names its own downloads like Chase7676_Activity_20260801.CSV. Used only
-# to guess the account when filing a file the agent did not label.
-_CHASE_DOWNLOAD_RE = re.compile(r"chase[_\- ]?(\d{4})", re.IGNORECASE)
 
 _DATE_FORMATS = ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y")
 
 
 # %%
-# Layouts #
+# Providers #
 
 
 def _norm_header(cell: str) -> str:
@@ -84,7 +68,7 @@ def _norm_header(cell: str) -> str:
 # Every layout Chase has been observed to emit. `date_fields` are all date
 # columns in that layout: coverage takes the min and max across all of them so
 # the reported span errs wide, which is the safe direction (see LANDING 0.1).
-LAYOUTS: tuple[dict[str, Any], ...] = (
+CHASE_LAYOUTS: tuple[dict[str, Any], ...] = (
     {
         "name": "checking",
         "account_type": "bank",
@@ -105,18 +89,87 @@ LAYOUTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Citi card exports carry one layout (observed live 2026-08-24):
+# Status,Date,Description,Debit,Credit,Member Name — a single date column and
+# unsigned Debit/Credit columns instead of a signed amount.
+CITI_LAYOUTS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "citi_card",
+        "account_type": "credit",
+        "required": frozenset({"status", "date", "description", "debit", "credit"}),
+        "date_fields": ("date",),
+    },
+)
 
-class NotAChaseExport(Exception):
-    """Raised when a file does not match any known Chase CSV layout."""
+# Everything provider-specific the downloader tooling needs, in one place.
+#
+# - layouts: header-detected CSV shapes for this source
+# - row_cap: rows at which an export is presumed silently truncated and refused
+#   at capture time (None = no cap has ever been observed for this source)
+# - download_hint_re: pulls the account last-4 out of the source's own download
+#   filename, when it carries one (Citi's do not — the filename is the scope
+#   label, e.g. "Date range.CSV")
+# - empty_message: the portal's observed no-activity message, quoted in
+#   record-empty markers so the marker documents what was actually seen
+# - retention_months: how far back the portal's export reaches; plan.py clips
+#   the oldest window to this floor rather than requesting days the portal
+#   refuses
+PROVIDERS: dict[str, dict[str, Any]] = {
+    "chase": {
+        "layouts": CHASE_LAYOUTS,
+        "row_cap": 1000,
+        "download_hint_re": re.compile(r"chase[_\- ]?(\d{4})", re.IGNORECASE),
+        "empty_message": "We couldn't find any activity that matched the date range you chose.",
+        # Rolling DAILY floor, verified live 2026-08-22: From 2024-08-22
+        # refused, 2024-08-23 accepted, applied to each endpoint independently.
+        "retention_months": 24,
+    },
+    "citi": {
+        "layouts": CITI_LAYOUTS,
+        # No cap found: a single export of the entire ~24-month searchable
+        # window came back complete (773 rows), with no cap warning anywhere
+        # on the form. Revisit if an export ever lands on a suspiciously
+        # round row count.
+        "row_cap": None,
+        "download_hint_re": re.compile(r"citi[_\- ]?(\d{4})", re.IGNORECASE),
+        "empty_message": "no transactions for this time period.",
+        # Citi's real floor is the statement-close date ~24 months back (a
+        # cycle boundary that moves with the statement calendar, verified live
+        # 2026-08-24: "You can only search from 8/5/2024 to 8/24/2026").
+        # 24 rolling months is the conservative approximation: every date at
+        # or after it is guaranteed servable; the sliver between the cycle
+        # boundary and the rolling floor is reachable manually if ever needed.
+        "retention_months": 24,
+    },
+}
 
 
-def detect_layout(headers: list[str]) -> dict[str, Any]:
-    """Return the layout whose required columns are all present, or raise."""
+def provider_def(provider: str) -> dict[str, Any]:
+    """The PROVIDERS entry for a slug, or raise with the known slugs listed."""
+    try:
+        return PROVIDERS[provider]
+    except KeyError:
+        known = ", ".join(sorted(PROVIDERS))
+        raise KeyError(f"unknown transaction provider {provider!r}; known: {known}") from None
+
+
+class UnrecognizedExport(Exception):
+    """Raised when a file does not match any known CSV layout for its provider."""
+
+
+# Original name, kept as an alias so existing imports and except-clauses hold.
+NotAChaseExport = UnrecognizedExport
+
+
+def detect_layout(headers: list[str], provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    """Return the provider layout whose required columns are all present, or raise."""
     have = {_norm_header(cell) for cell in headers if cell.strip()}
-    for layout in LAYOUTS:
+    for layout in provider_def(provider)["layouts"]:
         if layout["required"] <= have:
             return layout
-    raise NotAChaseExport(f"unrecognized columns: {', '.join(sorted(have)) or '(none)'}")
+    raise UnrecognizedExport(
+        f"unrecognized {provider} columns: {', '.join(sorted(have)) or '(none)'}"
+    )
 
 
 # %%
@@ -136,8 +189,8 @@ def parse_date(raw: str) -> datetime.date | None:
     return None
 
 
-def read_export(content: str) -> dict[str, Any]:
-    """Describe one Chase CSV export: layout, row count, and the date span it holds.
+def read_export(content: str, provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    """Describe one CSV export: layout, row count, and the date span it holds.
 
     Rows whose date cells are all unparseable are skipped rather than fatal —
     Chase appends the occasional blank or totals line, and one junk row should
@@ -150,9 +203,9 @@ def read_export(content: str) -> dict[str, Any]:
             headers = candidate
             break
     if headers is None:
-        raise NotAChaseExport("file is empty")
+        raise UnrecognizedExport("file is empty")
 
-    layout = detect_layout(headers)
+    layout = detect_layout(headers, provider)
     keys = [_norm_header(cell) for cell in headers]
     date_indexes = [keys.index(field) for field in layout["date_fields"] if field in keys]
 
@@ -177,10 +230,10 @@ def read_export(content: str) -> dict[str, Any]:
     }
 
 
-def read_export_file(path: str) -> dict[str, Any]:
-    """read_export for a file on disk, tolerating Chase's occasional BOM."""
+def read_export_file(path: str, provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    """read_export for a file on disk, tolerating the occasional BOM."""
     with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
-        return read_export(handle.read())
+        return read_export(handle.read(), provider)
 
 
 def sha256_file(path: str) -> str:
@@ -192,9 +245,13 @@ def sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def account_hint_from_name(name: str) -> str | None:
-    """Pull the last-4 out of a Chase-supplied download filename; None when absent."""
-    match = _CHASE_DOWNLOAD_RE.search(os.path.basename(name))
+def account_hint_from_name(name: str, provider: str = DEFAULT_PROVIDER) -> str | None:
+    """Pull the last-4 out of a source-supplied download filename; None when absent.
+
+    Citi never trips this — its downloads are named by scope label ("Date
+    range.CSV"), so the agent must always pass --account for that source.
+    """
+    match = provider_def(provider)["download_hint_re"].search(os.path.basename(name))
     return match.group(1) if match else None
 
 
@@ -202,26 +259,42 @@ def account_hint_from_name(name: str) -> str | None:
 # Naming #
 
 
-def capture_name(account: str, start: datetime.date, end: datetime.date, captured: datetime.date) -> str:
+def capture_name(
+    account: str,
+    start: datetime.date,
+    end: datetime.date,
+    captured: datetime.date,
+    provider: str = DEFAULT_PROVIDER,
+) -> str:
     """Build the canonical capture filename for a requested window."""
     return (
-        f"{CAPTURE_PREFIX}_{account}"
+        f"{provider}_csv_export_{account}"
         f"_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}"
         f"_captured{captured.strftime('%Y%m%d')}.csv"
     )
 
 
-def empty_name(account: str, start: datetime.date, end: datetime.date, captured: datetime.date) -> str:
-    """Canonical marker filename for a window Chase reported as having no activity."""
+def empty_name(
+    account: str,
+    start: datetime.date,
+    end: datetime.date,
+    captured: datetime.date,
+    provider: str = DEFAULT_PROVIDER,
+) -> str:
+    """Canonical marker filename for a window the source reported as having no activity."""
     return (
-        f"{EMPTY_PREFIX}_{account}"
+        f"{provider}_empty_window_{account}"
         f"_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}"
         f"_captured{captured.strftime('%Y%m%d')}.txt"
     )
 
 
-def parse_capture_name(name: str) -> dict[str, Any] | None:
+def parse_capture_name(name: str, provider: str | None = None) -> dict[str, Any] | None:
     """Inverse of capture_name/empty_name; None when the filename is neither.
+
+    With `provider` given, a capture belonging to a different source also
+    returns None — a raw_dir is per-provider, but a stray file must not count
+    toward the wrong source's coverage.
 
     Empty-window markers come back with `"empty": True` and represent a
     requested window that held zero transactions — covered, with nothing in it.
@@ -234,7 +307,10 @@ def parse_capture_name(name: str) -> dict[str, Any] | None:
         empty = True
     if match is None:
         return None
+    if provider is not None and match.group("provider") != provider:
+        return None
     parsed = {
+        "provider": match.group("provider"),
         "account": match.group("account"),
         "requested_start": datetime.datetime.strptime(match.group("start"), "%Y%m%d").date().isoformat(),
         "requested_end": datetime.datetime.strptime(match.group("end"), "%Y%m%d").date().isoformat(),
@@ -249,31 +325,40 @@ def parse_capture_name(name: str) -> dict[str, Any] | None:
 # Manifest #
 
 
-def manifest_path(raw_dir: str) -> str:
+# Append-only sidecar next to the captures, one per provider. Rebuildable from
+# the files themselves via `capture.py reindex`, so losing it is never fatal.
+#
+# The leading dot is load-bearing: src/ingest_raw.py walks raw_dir and skips
+# hidden files, but only skips underscore-prefixed DIRECTORIES. Named
+# `_chase_captures.jsonl` this bookkeeping file gets ingested as an `other`
+# raw document on every run.
+def manifest_path(raw_dir: str, provider: str = DEFAULT_PROVIDER) -> str:
     """Absolute path to the capture manifest inside a raw_dir."""
-    return os.path.join(raw_dir, MANIFEST_NAME)
+    return os.path.join(raw_dir, f".{provider}_captures.jsonl")
 
 
-def append_manifest(raw_dir: str, entry: dict[str, Any]) -> None:
+def append_manifest(raw_dir: str, entry: dict[str, Any], provider: str = DEFAULT_PROVIDER) -> None:
     """Append one capture record. Append-only: history of captures is never rewritten."""
     os.makedirs(raw_dir, exist_ok=True)
-    with open(manifest_path(raw_dir), "a", encoding="utf-8") as handle:
+    with open(manifest_path(raw_dir, provider), "a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
-def write_manifest(raw_dir: str, entries: list[dict[str, Any]]) -> None:
+def write_manifest(
+    raw_dir: str, entries: list[dict[str, Any]], provider: str = DEFAULT_PROVIDER
+) -> None:
     """Replace the manifest wholesale. Only `capture.py reindex` should call this."""
     os.makedirs(raw_dir, exist_ok=True)
-    tmp = manifest_path(raw_dir) + ".tmp"
+    tmp = manifest_path(raw_dir, provider) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         for entry in entries:
             handle.write(json.dumps(entry, sort_keys=True) + "\n")
-    os.replace(tmp, manifest_path(raw_dir))
+    os.replace(tmp, manifest_path(raw_dir, provider))
 
 
-def read_manifest(raw_dir: str) -> list[dict[str, Any]]:
+def read_manifest(raw_dir: str, provider: str = DEFAULT_PROVIDER) -> list[dict[str, Any]]:
     """Read capture records, skipping any corrupt line rather than failing the run."""
-    path = manifest_path(raw_dir)
+    path = manifest_path(raw_dir, provider)
     if not os.path.isfile(path):
         return []
     entries: list[dict[str, Any]] = []
@@ -291,17 +376,18 @@ def read_manifest(raw_dir: str) -> list[dict[str, Any]]:
     return entries
 
 
-def scan_captures(raw_dir: str) -> list[dict[str, Any]]:
+def scan_captures(raw_dir: str, provider: str = DEFAULT_PROVIDER) -> list[dict[str, Any]]:
     """Rebuild capture records by reading every capture file in raw_dir.
 
     This is the authoritative recovery path: the manifest is a cache, the files
-    on disk are the truth.
+    on disk are the truth. Only this provider's captures count — a raw_dir is
+    per-provider, but a stray file must not pollute coverage.
     """
     if not os.path.isdir(raw_dir):
         return []
     entries: list[dict[str, Any]] = []
     for name in sorted(os.listdir(raw_dir)):
-        meta = parse_capture_name(name)
+        meta = parse_capture_name(name, provider)
         if meta is None:
             continue
         path = os.path.join(raw_dir, name)
@@ -314,8 +400,8 @@ def scan_captures(raw_dir: str) -> list[dict[str, Any]]:
             entry.update({"rows": 0, "min_date": None, "max_date": None})
         else:
             try:
-                entry.update(read_export_file(path))
-            except NotAChaseExport as exc:
+                entry.update(read_export_file(path, provider))
+            except UnrecognizedExport as exc:
                 entry["error"] = str(exc)
                 entry["rows"] = 0
                 entry["min_date"] = None

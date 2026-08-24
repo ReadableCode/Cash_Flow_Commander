@@ -29,6 +29,10 @@ import ingest_raw  # noqa: E402
 TODAY = dt.date(2026, 8, 22)
 ACCOUNT = "7676"
 
+# Chase's report cap, as the provider registry records it; the capture-time and
+# parser-side guards must both agree with this number.
+CHASE_ROW_CAP = store.provider_def("chase")["row_cap"]
+
 CHECKING_CSV = (
     "Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #,\n"
     'DEBIT,08/19/2026,"HEB #0567 AUSTIN TX",-96.31,DEBIT_CARD,5210.09,,\n'
@@ -115,6 +119,7 @@ def test_capture_name_round_trips() -> None:
 
     assert name == "chase_csv_export_7676_20260801_20260822_captured20260822.csv"
     assert store.parse_capture_name(name) == {
+        "provider": "chase",
         "account": ACCOUNT,
         "requested_start": "2026-08-01",
         "requested_end": "2026-08-22",
@@ -638,7 +643,7 @@ def _capped_card_csv(rows: int) -> str:
 def test_a_download_on_the_row_cap_is_refused_before_filing(tmp_path: Any) -> None:
     """Filing it would ingest a truncated month that then fails to parse forever."""
     raw_dir = os.path.join(str(tmp_path), "raw")
-    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(capture.ROW_CAP))
+    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(CHASE_ROW_CAP))
 
     with pytest.raises(capture.TruncatedExport):
         capture.file_capture(source, raw_dir, account="0002", start=dt.date(2026, 8, 1),
@@ -651,19 +656,19 @@ def test_a_download_on_the_row_cap_is_refused_before_filing(tmp_path: Any) -> No
 def test_a_download_just_under_the_cap_is_fine(tmp_path: Any) -> None:
     """The guard must not reject a legitimately busy month."""
     raw_dir = os.path.join(str(tmp_path), "raw")
-    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(capture.ROW_CAP - 1))
+    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(CHASE_ROW_CAP - 1))
 
     entry = capture.file_capture(source, raw_dir, account="0002", start=dt.date(2026, 8, 1),
                                  end=dt.date(2026, 8, 31), captured=TODAY)
 
     assert entry["status"] == "filed"
-    assert entry["rows"] == capture.ROW_CAP - 1
+    assert entry["rows"] == CHASE_ROW_CAP - 1
 
 
 def test_the_cli_reports_a_truncated_download_and_fails(tmp_path: Any, capsys: Any) -> None:
     """The agent must see this and narrow the window, not carry on."""
     raw_dir = os.path.join(str(tmp_path), "raw")
-    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(capture.ROW_CAP))
+    source = _write(tmp_path, "Chase4242_Activity.CSV", _capped_card_csv(CHASE_ROW_CAP))
 
     rc = capture.main(["--raw-dir", raw_dir, "file", "--account", "0002",
                        "--start", "2026-08-01", "--end", "2026-08-31", source])
@@ -678,7 +683,7 @@ def test_capture_and_parser_agree_on_the_cap() -> None:
     _sys.path.insert(0, os.path.join(_ROOT, "src"))
     from providers import chase as chase_parser
 
-    assert capture.ROW_CAP == chase_parser.ROW_CAP
+    assert CHASE_ROW_CAP == chase_parser.ROW_CAP
 
 
 # %%
@@ -827,3 +832,120 @@ def test_the_floor_month_covered_from_the_floor_is_not_a_gap() -> None:
 
     assert "2024-08" not in _months(report)
     assert report["unreachable_months"] == []
+
+
+# %%
+# Provider dimension (citi) #
+
+CITI_CSV = (
+    "Status,Date,Description,Debit,Credit,Member Name\n"
+    'Cleared,08/17/2026,"BOOKSTORE SEATTLE WA",12.34,,JANE Q MEMBER\n'
+    "Cleared,08/01/2026,AUTOPAY AUTO-PMT,,250.00,JANE Q MEMBER\n"
+)
+
+
+def test_detects_the_citi_layout() -> None:
+    described = store.read_export(CITI_CSV, provider="citi")
+
+    assert (described["layout"], described["account_type"]) == ("citi_card", "credit")
+    assert described["rows"] == 2
+    assert (described["min_date"], described["max_date"]) == ("2026-08-01", "2026-08-17")
+
+
+def test_a_citi_file_is_not_a_chase_export_and_vice_versa() -> None:
+    """Cross-provider filing must fail loudly, not misfile."""
+    with pytest.raises(store.UnrecognizedExport):
+        store.read_export(CITI_CSV, provider="chase")
+    with pytest.raises(store.UnrecognizedExport):
+        store.read_export(
+            "Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n"
+            "08/11/2026,08/12/2026,SHOP,Travel,Sale,-1.00,\n",
+            provider="citi",
+        )
+
+
+def test_citi_capture_name_round_trips() -> None:
+    name = store.capture_name("0001", dt.date(2026, 8, 1), dt.date(2026, 8, 24), TODAY,
+                              provider="citi")
+
+    assert name == "citi_csv_export_0001_20260801_20260824_captured20260822.csv"
+    parsed = store.parse_capture_name(name)
+    assert parsed["provider"] == "citi"
+    # A provider filter excludes the other source's captures.
+    assert store.parse_capture_name(name, "chase") is None
+
+
+def test_manifests_are_kept_per_provider(tmp_path: Any) -> None:
+    """Two sources sharing one raw_dir must not read each other's records."""
+    raw_dir = str(tmp_path)
+    store.append_manifest(raw_dir, {"file": "a"}, provider="chase")
+    store.append_manifest(raw_dir, {"file": "b"}, provider="citi")
+
+    assert [e["file"] for e in store.read_manifest(raw_dir, "chase")] == ["a"]
+    assert [e["file"] for e in store.read_manifest(raw_dir, "citi")] == ["b"]
+
+
+def test_citi_filing_records_provider_and_ignores_the_row_cap(tmp_path: Any) -> None:
+    """Citi has no observed cap, so a huge export files fine."""
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    body = "Status,Date,Description,Debit,Credit,Member Name\n" + "".join(
+        f'Cleared,08/{i % 28 + 1:02d}/2026,"TXN {i}",1.00,,JANE Q MEMBER\n'
+        for i in range(CHASE_ROW_CAP + 200)
+    )
+    source = _write(tmp_path, "Date range.CSV", body)
+
+    entry = capture.file_capture(
+        source, raw_dir, account="0001", start=dt.date(2024, 8, 5),
+        end=dt.date(2026, 8, 24), captured=TODAY, provider="citi",
+    )
+
+    assert entry["status"] == "filed"
+    assert entry["provider"] == "citi"
+    assert entry["rows"] == CHASE_ROW_CAP + 200
+    assert entry["file"].startswith("citi_csv_export_0001_")
+
+
+def test_citi_download_names_carry_no_account_hint() -> None:
+    """"Date range.CSV" proves nothing; the agent must pass --account."""
+    assert store.account_hint_from_name("Date range.CSV", "citi") is None
+    assert store.account_hint_from_name("Chase4242_Activity.CSV", "chase") == "4242"
+
+
+def test_scan_captures_filters_by_provider(tmp_path: Any) -> None:
+    raw_dir = str(tmp_path)
+    _write(tmp_path, "citi_csv_export_0001_20260801_20260824_captured20260824.csv", CITI_CSV)
+    _write(
+        tmp_path,
+        "chase_csv_export_0002_20260801_20260822_captured20260822.csv",
+        "Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n"
+        "08/11/2026,08/12/2026,SHOP,Travel,Sale,-1.00,\n",
+    )
+
+    citi_entries = store.scan_captures(raw_dir, "citi")
+    chase_entries = store.scan_captures(raw_dir, "chase")
+
+    assert [e["account"] for e in citi_entries] == ["0001"]
+    assert [e["account"] for e in chase_entries] == ["0002"]
+    assert citi_entries[0]["rows"] == 2
+
+
+def test_citi_record_empty_quotes_the_citi_portal_message(tmp_path: Any) -> None:
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    rc = capture.main([
+        "--provider", "citi", "--raw-dir", raw_dir, "record-empty",
+        "--account", "0001", "--start", "2025-04-20", "--end", "2025-05-03",
+        "--captured", "2026-08-24",
+    ])
+
+    assert rc == 0
+    name = "citi_empty_window_0001_20250420_20250503_captured20260824.txt"
+    with open(os.path.join(raw_dir, name), "r", encoding="utf-8") as handle:
+        body = handle.read()
+    assert "no transactions for this time period." in body
+    entries = store.read_manifest(raw_dir, "citi")
+    assert entries[0]["empty"] is True and entries[0]["provider"] == "citi"
+
+
+def test_unknown_provider_fails_loudly() -> None:
+    with pytest.raises(KeyError, match="unknown transaction provider"):
+        store.provider_def("wells_fargo")

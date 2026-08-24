@@ -1,10 +1,10 @@
-"""File a downloaded Chase CSV into the capture store, verbatim.
+"""File a downloaded transaction CSV into the capture store, verbatim.
 
-Step 2 of the Chase acquisition workflow: the agent downloads a window from
-chase.com, then hands the file here with the window it asked for. This module
-validates the file really is a Chase export, copies it byte-for-byte into the
-provider's raw_dir under the canonical capture name, and records the requested
-window in the manifest.
+Step 2 of the acquisition workflow for any transaction source: the agent
+downloads a window from the portal, then hands the file here with the window it
+asked for. This module validates the file really is that provider's export,
+copies it byte-for-byte into the provider's raw_dir under the canonical capture
+name, and records the requested window in the manifest.
 
 Raw-first (LANDING 1): the bytes are never rewritten, reordered, or normalized.
 Nothing is ever overwritten either — every capture keeps its own capture-date
@@ -15,6 +15,8 @@ Usage:
 
     uv run python transaction_downloader/capture.py file \
         --account 7676 --start 2026-08-01 --end 2026-08-22 ~/Downloads/Chase7676_Activity.CSV
+    uv run python transaction_downloader/capture.py --provider citi file \
+        --account 0000 --start 2026-08-01 --end 2026-08-24 "Date range.CSV"
     uv run python transaction_downloader/capture.py reindex
     uv run python transaction_downloader/capture.py status
 """
@@ -43,24 +45,19 @@ import store  # noqa: E402
 _REPO_ROOT = os.path.dirname(_THIS_DIR)
 PROVIDERS_YAML_PATH = os.path.join(_REPO_ROOT, "providers.local.yaml")
 
-PROVIDER_SLUG = "chase"
-
-# Chase caps a report at 1,000 rows and truncates silently. Mirrors
-# src/providers/chase.py::ROW_CAP, which keeps the same guard as defence in
-# depth for anything that reaches the parser by another route.
-ROW_CAP = 1000
+DEFAULT_PROVIDER = store.DEFAULT_PROVIDER
 
 
 class TruncatedExport(Exception):
-    """Raised when an export sits on Chase's row cap and is probably incomplete."""
+    """Raised when an export sits on its provider's row cap and is probably incomplete."""
 
 
 # %%
 # Config #
 
 
-def _provider_entry() -> dict[str, Any]:
-    """The `chase` entry from providers.local.yaml; {} when missing or unreadable."""
+def _provider_entry(provider: str) -> dict[str, Any]:
+    """The provider's entry from providers.local.yaml; {} when missing or unreadable."""
     if not os.path.isfile(PROVIDERS_YAML_PATH):
         return {}
     try:
@@ -70,7 +67,7 @@ def _provider_entry() -> dict[str, Any]:
         return {}
     if not isinstance(loaded, dict):
         return {}
-    entry = loaded.get(PROVIDER_SLUG)
+    entry = loaded.get(provider)
     return entry if isinstance(entry, dict) else {}
 
 
@@ -87,25 +84,25 @@ def _resolve_repo_relative(path: str) -> str:
     return os.path.normpath(os.path.join(_REPO_ROOT, expanded))
 
 
-def _load_raw_dir(override: str | None) -> str | None:
-    """Resolve raw_dir from the CLI flag or the chase entry in providers.local.yaml."""
+def _load_raw_dir(override: str | None, provider: str) -> str | None:
+    """Resolve raw_dir from the CLI flag or the provider's entry in providers.local.yaml."""
     if override:
         return _resolve_repo_relative(override)
-    raw_dir = _provider_entry().get("raw_dir")
+    raw_dir = _provider_entry(provider).get("raw_dir")
     return _resolve_repo_relative(raw_dir) if raw_dir else None
 
 
-def resolve_download(path: str) -> str:
+def resolve_download(path: str, provider: str = DEFAULT_PROVIDER) -> str:
     """Resolve a download path, falling back to the configured download_dir.
 
-    Browsers do not always save where you expect — this Mac's Chrome drops Chase
+    Browsers do not always save where you expect — this Mac's Chrome drops
     exports in a cloud-synced Documents folder, not ~/Downloads. Recording that
     once in providers.local.yaml means a bare filename is enough here.
     """
     expanded = os.path.expanduser(path)
     if os.path.isfile(expanded):
         return expanded
-    download_dir = _provider_entry().get("download_dir")
+    download_dir = _provider_entry(provider).get("download_dir")
     if download_dir and not os.path.isabs(expanded):
         candidate = os.path.join(os.path.expanduser(str(download_dir)), path)
         if os.path.isfile(candidate):
@@ -127,35 +124,40 @@ def file_capture(
     captured: datetime.date,
     window_source: str = "requested",
     move: bool = True,
+    provider: str = DEFAULT_PROVIDER,
 ) -> dict[str, Any]:
     """Copy one downloaded export into raw_dir and record it. Returns the manifest entry.
 
-    Raises store.NotAChaseExport when the file is not a recognizable Chase CSV,
-    which is the guard against filing a stray download and silently marking a
-    month covered by a file that holds nothing.
+    Raises store.UnrecognizedExport when the file is not a recognizable export
+    for this provider, which is the guard against filing a stray download and
+    silently marking a month covered by a file that holds nothing.
 
-    Raises TruncatedExport when the file sits on Chase's 1,000-row report cap.
-    That check belongs HERE rather than in the parser: once a file is filed it
-    is ingested into raw_documents, and a truncated one then fails to parse on
+    Raises TruncatedExport when the file sits on the provider's row cap (Chase:
+    1,000, silently truncated; Citi: no cap observed, so never raised). That
+    check belongs HERE rather than in the parser: once a file is filed it is
+    ingested into raw_documents, and a truncated one then fails to parse on
     every run forever. Refusing before it enters the pipeline leaves nothing to
     clean up — you just re-download a narrower window.
     """
-    described = store.read_export_file(source_path)
-    if described["rows"] >= ROW_CAP:
+    described = store.read_export_file(source_path, provider)
+    row_cap = store.provider_def(provider)["row_cap"]
+    if row_cap is not None and described["rows"] >= row_cap:
         raise TruncatedExport(
-            f"{described['rows']} rows hits Chase's {ROW_CAP}-row report cap, so this export is "
-            "almost certainly truncated. Re-download this window in smaller pieces "
+            f"{described['rows']} rows hits {provider}'s {row_cap}-row report cap, so this export "
+            "is almost certainly truncated. Re-download this window in smaller pieces "
             "(try --window-months 2)."
         )
 
     os.makedirs(raw_dir, exist_ok=True)
     digest = store.sha256_file(source_path)
 
-    already = [entry for entry in store.read_manifest(raw_dir) if entry.get("sha256") == digest]
+    already = [
+        entry for entry in store.read_manifest(raw_dir, provider) if entry.get("sha256") == digest
+    ]
     if already:
         return {**already[0], "status": "duplicate"}
 
-    name = store.capture_name(account, start, end, captured)
+    name = store.capture_name(account, start, end, captured, provider)
     target = os.path.join(raw_dir, name)
     suffix = 1
     while os.path.exists(target):
@@ -173,6 +175,7 @@ def file_capture(
 
     entry: dict[str, Any] = {
         "file": os.path.basename(target),
+        "provider": provider,
         "account": account,
         "requested_start": start.isoformat(),
         "requested_end": end.isoformat(),
@@ -182,7 +185,7 @@ def file_capture(
         "source_name": os.path.basename(source_path),
         **described,
     }
-    store.append_manifest(raw_dir, entry)
+    store.append_manifest(raw_dir, entry, provider)
     return {**entry, "status": "filed"}
 
 
@@ -190,7 +193,7 @@ def file_capture(
 # Commands #
 
 
-def cmd_file(args: argparse.Namespace, raw_dir: str) -> int:
+def cmd_file(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
     """File one or more downloaded exports for a single requested window."""
     try:
         start = datetime.date.fromisoformat(args.start)
@@ -206,17 +209,17 @@ def cmd_file(args: argparse.Namespace, raw_dir: str) -> int:
 
     failures = 0
     for source in args.paths:
-        source = resolve_download(source)
+        source = resolve_download(source, provider)
         if not os.path.isfile(source):
             print(f"  ! not found: {source}", file=sys.stderr)
             failures += 1
             continue
 
-        account = args.account or store.account_hint_from_name(source)
+        account = args.account or store.account_hint_from_name(source, provider)
         if not account:
             print(
-                f"  ! {os.path.basename(source)}: no account. Pass --account, "
-                "or keep Chase's own filename which carries the last 4.",
+                f"  ! {os.path.basename(source)}: no account. Pass --account "
+                "(the download filename carries no usable last 4).",
                 file=sys.stderr,
             )
             failures += 1
@@ -224,10 +227,11 @@ def cmd_file(args: argparse.Namespace, raw_dir: str) -> int:
 
         try:
             entry = file_capture(
-                source, raw_dir, account=account, start=start, end=end, captured=captured
+                source, raw_dir, account=account, start=start, end=end, captured=captured,
+                provider=provider,
             )
-        except store.NotAChaseExport as exc:
-            print(f"  ! {os.path.basename(source)}: not a Chase export ({exc})", file=sys.stderr)
+        except store.UnrecognizedExport as exc:
+            print(f"  ! {os.path.basename(source)}: not a {provider} export ({exc})", file=sys.stderr)
             failures += 1
             continue
         except TruncatedExport as exc:
@@ -261,8 +265,8 @@ def _month_bounds(first: datetime.date, last: datetime.date) -> tuple[datetime.d
     return start, end
 
 
-def cmd_import_legacy(args: argparse.Namespace, raw_dir: str) -> int:
-    """File Chase exports downloaded before this tool existed.
+def cmd_import_legacy(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
+    """File exports downloaded before this tool existed.
 
     These carry no record of the window that was requested, which is the one
     thing the coverage model actually needs. The window is therefore INFERRED
@@ -281,22 +285,22 @@ def cmd_import_legacy(args: argparse.Namespace, raw_dir: str) -> int:
     failures = 0
     filed = 0
     for source in args.paths:
-        source = resolve_download(source)
+        source = resolve_download(source, provider)
         if not os.path.isfile(source):
             print(f"  ! not found: {source}", file=sys.stderr)
             failures += 1
             continue
 
-        account = args.account or store.account_hint_from_name(source)
+        account = args.account or store.account_hint_from_name(source, provider)
         if not account:
             print(f"  ! {os.path.basename(source)}: no account; pass --account", file=sys.stderr)
             failures += 1
             continue
 
         try:
-            described = store.read_export_file(source)
-        except store.NotAChaseExport as exc:
-            print(f"  ! {os.path.basename(source)}: not a Chase export ({exc})", file=sys.stderr)
+            described = store.read_export_file(source, provider)
+        except store.UnrecognizedExport as exc:
+            print(f"  ! {os.path.basename(source)}: not a {provider} export ({exc})", file=sys.stderr)
             failures += 1
             continue
 
@@ -322,7 +326,7 @@ def cmd_import_legacy(args: argparse.Namespace, raw_dir: str) -> int:
             # window, which reflects Chase's later restatements.
             entry = file_capture(
                 source, raw_dir, account=account, start=start, end=end,
-                captured=last, window_source="inferred", move=False,
+                captured=last, window_source="inferred", move=False, provider=provider,
             )
         except OSError as exc:
             print(f"  ! {os.path.basename(source)}: {exc}", file=sys.stderr)
@@ -341,15 +345,16 @@ def cmd_import_legacy(args: argparse.Namespace, raw_dir: str) -> int:
     return 1 if failures else 0
 
 
-def cmd_record_empty(args: argparse.Namespace, raw_dir: str) -> int:
-    """Record a window Chase reported as having no activity.
+def cmd_record_empty(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
+    """Record a window the source reported as having no activity.
 
-    Chase serves NO file for an empty window ("We couldn't find any activity
-    that matched the date range you chose"), so without this the coverage model
-    cannot tell an empty month from a never-fetched month and the planner asks
-    for it forever. The marker file records the observation; it flows through
-    ingest like any capture so the database — the durable coverage source —
-    carries it after staging is cleared.
+    Both known sources serve NO file for an empty window (Chase: "We couldn't
+    find any activity..."; Citi: the export icon silently does nothing), so
+    without this the coverage model cannot tell an empty month from a
+    never-fetched month and the planner asks for it forever. The marker file
+    records the observation; it flows through ingest like any capture so the
+    database — the durable coverage source — carries it after staging is
+    cleared.
     """
     try:
         start = datetime.date.fromisoformat(args.start)
@@ -362,7 +367,7 @@ def cmd_record_empty(args: argparse.Namespace, raw_dir: str) -> int:
         return 2
     captured = datetime.date.fromisoformat(args.captured) if args.captured else datetime.date.today()
 
-    for entry in store.read_manifest(raw_dir):
+    for entry in store.read_manifest(raw_dir, provider):
         if (
             entry.get("empty")
             and str(entry.get("account")) == args.account
@@ -372,19 +377,20 @@ def cmd_record_empty(args: argparse.Namespace, raw_dir: str) -> int:
             print(f"  = already recorded as empty: {entry['file']}")
             return 0
 
-    name = store.empty_name(args.account, start, end, captured)
+    name = store.empty_name(args.account, start, end, captured, provider)
     path = os.path.join(raw_dir, name)
     os.makedirs(raw_dir, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(
-            "Chase reported no activity for the requested window.\n"
+            f"{provider} reported no activity for the requested window.\n"
             f"account (last 4): {args.account}\n"
             f"requested window: {start.isoformat()} .. {end.isoformat()}\n"
             f"observed: {captured.isoformat()}\n"
-            'Portal message: "We couldn\'t find any activity that matched the date range you chose."\n'
+            f'Portal message: "{store.provider_def(provider)["empty_message"]}"\n'
         )
     entry = {
         "file": name,
+        "provider": provider,
         "account": args.account,
         "requested_start": start.isoformat(),
         "requested_end": end.isoformat(),
@@ -396,25 +402,25 @@ def cmd_record_empty(args: argparse.Namespace, raw_dir: str) -> int:
         "min_date": None,
         "max_date": None,
     }
-    store.append_manifest(raw_dir, entry)
+    store.append_manifest(raw_dir, entry, provider)
     print(f"  + {name}  (empty window recorded)")
     return 0
 
 
-def cmd_reindex(raw_dir: str) -> int:
+def cmd_reindex(raw_dir: str, provider: str) -> int:
     """Rebuild the manifest from the capture files on disk."""
-    entries = store.scan_captures(raw_dir)
-    store.write_manifest(raw_dir, entries)
+    entries = store.scan_captures(raw_dir, provider)
+    store.write_manifest(raw_dir, entries, provider)
     broken = [entry for entry in entries if entry.get("error")]
-    print(f"Reindexed {len(entries)} capture(s) in {raw_dir}")
+    print(f"Reindexed {len(entries)} {provider} capture(s) in {raw_dir}")
     for entry in broken:
         print(f"  ! {entry['file']}: {entry['error']}", file=sys.stderr)
     return 1 if broken else 0
 
 
-def cmd_status(raw_dir: str) -> int:
+def cmd_status(raw_dir: str, provider: str) -> int:
     """Summarize what the capture store holds, per account."""
-    entries = store.read_manifest(raw_dir)
+    entries = store.read_manifest(raw_dir, provider)
     if not entries:
         print(f"No captures recorded in {raw_dir}")
         return 0
@@ -440,6 +446,12 @@ def cmd_status(raw_dir: str) -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     """Build the capture CLI argument parser."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER,
+        choices=sorted(store.PROVIDERS),
+        help=f"transaction source slug (default: {DEFAULT_PROVIDER})",
+    )
     parser.add_argument("--raw-dir", default=None, help="capture directory; overrides providers.local.yaml")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -478,24 +490,24 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point; returns a process exit code."""
     args = build_arg_parser().parse_args(argv)
 
-    raw_dir = _load_raw_dir(args.raw_dir)
+    raw_dir = _load_raw_dir(args.raw_dir, args.provider)
     if not raw_dir:
         print(
-            "No raw_dir for provider 'chase'. Add a `chase` entry to providers.local.yaml "
-            "(shape in template_providers.yaml) or pass --raw-dir.",
+            f"No raw_dir for provider '{args.provider}'. Add a `{args.provider}` entry to "
+            "providers.local.yaml (shape in template_providers.yaml) or pass --raw-dir.",
             file=sys.stderr,
         )
         return 2
 
     if args.cmd == "file":
-        return cmd_file(args, raw_dir)
+        return cmd_file(args, raw_dir, args.provider)
     if args.cmd == "import-legacy":
-        return cmd_import_legacy(args, raw_dir)
+        return cmd_import_legacy(args, raw_dir, args.provider)
     if args.cmd == "record-empty":
-        return cmd_record_empty(args, raw_dir)
+        return cmd_record_empty(args, raw_dir, args.provider)
     if args.cmd == "reindex":
-        return cmd_reindex(raw_dir)
-    return cmd_status(raw_dir)
+        return cmd_reindex(raw_dir, args.provider)
+    return cmd_status(raw_dir, args.provider)
 
 
 if __name__ == "__main__":

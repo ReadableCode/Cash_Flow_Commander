@@ -1,9 +1,9 @@
-"""Report Chase transaction coverage and emit the windows to download.
+"""Report transaction coverage and emit the windows to download.
 
-Step 1 of the Chase acquisition workflow, the transaction-shaped analogue of
-`src/coverage.py`. It answers, per account: which months are already captured,
-where the holes are, and therefore exactly which date windows this run should
-ask chase.com for.
+Step 1 of the acquisition workflow for any transaction source (--provider,
+default chase), the transaction-shaped analogue of `src/coverage.py`. It
+answers, per account: which months are already captured, where the holes are,
+and therefore exactly which date windows this run should ask the portal for.
 
 Why transactions need their own planner rather than reusing coverage.py: that
 tool infers gaps from *missing readings*, which works because an interval series
@@ -54,31 +54,22 @@ import store  # noqa: E402
 _REPO_ROOT = os.path.dirname(_THIS_DIR)
 PROVIDERS_YAML_PATH = os.path.join(_REPO_ROOT, "providers.local.yaml")
 
-PROVIDER_SLUG = "chase"
+DEFAULT_PROVIDER = store.DEFAULT_PROVIDER
 
 # Re-fetch this many days behind the newest stored transaction, on top of the
-# current month. Chase posts pending activity a few days late and revises
-# descriptions and amounts after the fact, so the newest days already stored are
-# the least trustworthy ones. Cheap insurance: overlap dedups at ingest.
+# current month. Portals post pending activity late and revise descriptions and
+# amounts after the fact, so the newest days already stored are the least
+# trustworthy ones. Cheap insurance: overlap dedups at ingest.
 OVERLAP_DAYS = 5
 
-# How far back Chase's CSV export reaches. Verified live 2026-08-22 against both
-# an account kinds: with both date fields filled, a From or To older than the
-# floor is rejected outright --
-#   "Please tell us a date range between 24 months ago and today."
-#
-# Measured to the DAY, not the month: with today = 2026-08-22, a From of
-# 2024-08-22 was refused and 2024-08-23 accepted. A month-aligned floor would
-# therefore ask for days Chase will not serve.
-#
-# This applies to credit cards too. An earlier reading suggested cards were
-# unbounded; that was a false negative -- the form does not validate until both
-# date fields are populated.
-#
-# This is a HARD limit, not a preference. Months older than the floor cannot be
-# fetched from chase.com at all; they are reported as unreachable so they can be
-# filled from an archive of previously-downloaded exports instead.
-RETENTION_MONTHS = 24
+# How far back each source's export reaches lives in store.PROVIDERS
+# ("retention_months"), with the per-source verification notes. This is a HARD
+# limit, not a preference: months older than the floor cannot be fetched from
+# the portal at all; they are reported as unreachable so they can be filled
+# from an archive of previously-downloaded exports instead. Chase's floor is a
+# rolling daily one; Citi's is a statement-cycle boundary approximated
+# conservatively by the same rolling computation.
+RETENTION_MONTHS = store.provider_def(DEFAULT_PROVIDER)["retention_months"]
 
 DEFAULT_ACCOUNT_KIND = "bank"
 
@@ -137,9 +128,9 @@ def _resolve_repo_relative(path: str) -> str:
     return os.path.normpath(os.path.join(_REPO_ROOT, expanded))
 
 
-def provider_entry(config: dict[str, Any]) -> dict[str, Any]:
-    """The `chase` entry from providers.local.yaml; {} when absent."""
-    entry = config.get(PROVIDER_SLUG)
+def provider_entry(config: dict[str, Any], provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    """The provider's entry from providers.local.yaml; {} when absent."""
+    entry = config.get(provider)
     return entry if isinstance(entry, dict) else {}
 
 
@@ -175,7 +166,7 @@ def configured_accounts(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def retention_floor(today: datetime.date, months: int = RETENTION_MONTHS) -> datetime.date:
-    """Earliest date Chase will export: exactly `months` back, plus one day.
+    """Earliest date the portal will export: exactly `months` back, plus one day.
 
     Day precision matters. Chase refuses a From equal to the boundary date and
     accepts the day after, so a month-aligned floor would generate windows whose
@@ -201,7 +192,7 @@ def _days_in_month(year: int, month: int) -> int:
 # Coverage source #
 
 
-def captures_from_database() -> list[dict[str, Any]] | None:
+def captures_from_database(provider: str = DEFAULT_PROVIDER) -> list[dict[str, Any]] | None:
     """Rebuild coverage from raw_documents, or None when the database is unreachable.
 
     This is the durable source. On-disk staging is transient by design — once a
@@ -227,10 +218,11 @@ def captures_from_database() -> list[dict[str, Any]] | None:
                 row[0]
                 for row in conn.execute(
                     select(db.raw_documents.c.original_name).where(
-                        db.raw_documents.c.provider == PROVIDER_SLUG,
-                        # empty_window markers are coverage evidence: Chase
-                        # serves no CSV for a window with no activity, so the
-                        # recorded refusal is what proves the month was fetched.
+                        db.raw_documents.c.provider == provider,
+                        # empty_window markers are coverage evidence: the
+                        # portal serves no CSV for a window with no activity,
+                        # so the recorded refusal is what proves the month was
+                        # fetched.
                         db.raw_documents.c.doc_type.in_(("csv_export", "empty_window")),
                     )
                 )
@@ -418,6 +410,7 @@ def analyze_account(
     max_months: int = MAX_MONTHS_PER_RUN,
     window_months: int | str = DEFAULT_WINDOW_MONTHS,
     full: bool = False,
+    retention_months: int = RETENTION_MONTHS,
 ) -> dict[str, Any]:
     """Describe one account's coverage and the month windows worth downloading.
 
@@ -483,7 +476,7 @@ def analyze_account(
             months_between(newest_txn - datetime.timedelta(days=overlap_days), newest_txn)
         )
 
-    floor = retention_floor(today)
+    floor = retention_floor(today, retention_months)
     floor_month = month_start(floor)
 
     reasons: dict[datetime.date, str] = {}
@@ -587,11 +580,11 @@ def analyze_all(
 # Reporting #
 
 
-def _print_report(reports: list[dict[str, Any]], today: datetime.date) -> None:
+def _print_report(reports: list[dict[str, Any]], today: datetime.date, provider: str) -> None:
     """Print a human-readable coverage-and-plan report."""
     if not reports:
-        print("No Chase accounts configured and no captures on disk.")
-        print("Add a `chase` entry to providers.local.yaml (see template_providers.yaml).")
+        print(f"No {provider} accounts configured and no captures on disk.")
+        print(f"Add a `{provider}` entry to providers.local.yaml (see template_providers.yaml).")
         return
 
     total_requests = 0
@@ -630,11 +623,11 @@ def _print_report(reports: list[dict[str, Any]], today: datetime.date) -> None:
         if report["unreachable_months"]:
             months = report["unreachable_months"]
             print(
-                f"  BEYOND CHASE RETENTION ({len(months)}): {months[-1]} .. {months[0]}"
+                f"  BEYOND {provider.upper()} RETENTION ({len(months)}): {months[-1]} .. {months[0]}"
                 f"  (floor {report['retention_floor']})"
             )
-            print("    ^ chase.com will not export these. Fill them from archived exports:")
-            print("      capture.py import-legacy <files>")
+            print(f"    ^ {provider} will not export these. Fill them from archived exports:")
+            print(f"      capture.py --provider {provider} import-legacy <files>")
 
     print(f"\n{total_requests} window(s) to download, as of {today.isoformat()}.")
 
@@ -646,6 +639,12 @@ def _print_report(reports: list[dict[str, Any]], today: datetime.date) -> None:
 def build_arg_parser() -> argparse.ArgumentParser:
     """Build the plan CLI argument parser."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER,
+        choices=sorted(store.PROVIDERS),
+        help=f"transaction source slug (default: {DEFAULT_PROVIDER})",
+    )
     parser.add_argument("--raw-dir", default=None, help="capture directory; overrides providers.local.yaml")
     parser.add_argument("--account", default=None, help="only this account (last 4 digits)")
     parser.add_argument(
@@ -710,12 +709,13 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point; returns a process exit code."""
     args = build_arg_parser().parse_args(argv)
 
-    entry = provider_entry(_load_providers_config(PROVIDERS_YAML_PATH))
+    provider = args.provider
+    entry = provider_entry(_load_providers_config(PROVIDERS_YAML_PATH), provider)
     raw_dir = args.raw_dir or entry.get("raw_dir") or ""
     if not raw_dir:
         print(
-            "No raw_dir for provider 'chase'. Add a `chase` entry to providers.local.yaml "
-            "(shape in template_providers.yaml) or pass --raw-dir.",
+            f"No raw_dir for provider '{provider}'. Add a `{provider}` entry to "
+            "providers.local.yaml (shape in template_providers.yaml) or pass --raw-dir.",
             file=sys.stderr,
         )
         return 2
@@ -725,12 +725,16 @@ def main(argv: list[str] | None = None) -> int:
     # asking the disk alone would report months as missing that are safely
     # landed. Disk is the fallback for a first run, or when there is no database.
     source = "database"
-    captures = None if args.from_disk else captures_from_database()
+    captures = None if args.from_disk else captures_from_database(provider)
     if captures is None:
         source = "disk"
-        captures = store.scan_captures(raw_dir) if args.rescan else store.read_manifest(raw_dir)
+        captures = (
+            store.scan_captures(raw_dir, provider)
+            if args.rescan
+            else store.read_manifest(raw_dir, provider)
+        )
         if not captures and not args.rescan:
-            captures = store.scan_captures(raw_dir)
+            captures = store.scan_captures(raw_dir, provider)
 
     accounts = configured_accounts(entry)
     if args.account:
@@ -754,16 +758,23 @@ def main(argv: list[str] | None = None) -> int:
         max_months=args.max_months,
         window_months=args.window_months if args.window_months == "auto" else int(args.window_months),
         full=args.full,
+        retention_months=store.provider_def(provider)["retention_months"],
     )
 
     if args.json:
         print(json.dumps(
-            {"today": today.isoformat(), "coverage_source": source, "raw_dir": raw_dir, "accounts": reports},
+            {
+                "today": today.isoformat(),
+                "provider": provider,
+                "coverage_source": source,
+                "raw_dir": raw_dir,
+                "accounts": reports,
+            },
             indent=2,
         ))
     else:
         print(f"coverage from: {source}")
-        _print_report(reports, today)
+        _print_report(reports, today, provider)
     return 0
 
 

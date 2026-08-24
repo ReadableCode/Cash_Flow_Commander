@@ -72,10 +72,10 @@ _SINK_LABEL_ORDER = (
 )
 
 # Providers whose documents carry their own account identity, so the single
-# `account_number` in providers.local.yaml does not apply. One Chase login
-# covers several accounts; each capture names the account it came from, and the
-# parser reads it from the filename.
-DERIVES_OWN_ACCOUNT_ID = frozenset({"chase"})
+# `account_number` in providers.local.yaml does not apply. One Chase or Citi
+# login covers several accounts; each capture names the account it came from,
+# and the parser reads it from the filename.
+DERIVES_OWN_ACCOUNT_ID = frozenset({"chase", "citi"})
 
 
 # %%

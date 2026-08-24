@@ -51,17 +51,18 @@ CSV_EXPORT_NAMES = frozenset(
 _RYTHM_MONTH_RE = re.compile(r"^Rythm (\d{4})-(\d{2})\.pdf$")
 _RHYTHM_BILL_RE = re.compile(r"^rhythm_bill_.*_(\d{4})-(\d{2})-(\d{2})\.pdf$")
 
-# Chase transaction exports, as filed by transaction_downloader/capture.py:
-# chase_csv_export_{account}_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
-_CHASE_EXPORT_RE = re.compile(
-    r"^chase_csv_export_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.csv$"
+# Transaction exports, as filed by transaction_downloader/capture.py for any
+# provider (chase, citi, ...):
+# {provider}_csv_export_{account}_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
+_TXN_EXPORT_RE = re.compile(
+    r"^[a-z0-9_]+?_csv_export_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.csv$"
 )
 
 # Empty-window markers from transaction_downloader/capture.py record-empty:
-# Chase serves no file for a window with no activity, so the refusal is
-# recorded as its own document — coverage evidence, not transaction data.
-_CHASE_EMPTY_RE = re.compile(
-    r"^chase_empty_window_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.txt$"
+# both known sources serve no file for a window with no activity, so the
+# refusal is recorded as its own document — coverage evidence, not data.
+_TXN_EMPTY_RE = re.compile(
+    r"^[a-z0-9_]+?_empty_window_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.txt$"
 )
 
 # Folder-name slugs that should map onto an established provider slug (the
@@ -101,15 +102,15 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
     bill = _classify_bill_pdf(name)
     if bill is not None:
         return bill
-    chase = _CHASE_EXPORT_RE.match(name)
-    if chase is not None:
+    txn = _TXN_EXPORT_RE.match(name)
+    if txn is not None:
         # period_hint is the first of the requested window's start month, which
         # is what makes the raw_documents provider/doc_type/period_hint index
         # useful for "which months have we landed".
-        return ("csv_export", datetime.date(int(chase.group(1)), int(chase.group(2)), 1))
-    chase_empty = _CHASE_EMPTY_RE.match(name)
-    if chase_empty is not None:
-        return ("empty_window", datetime.date(int(chase_empty.group(1)), int(chase_empty.group(2)), 1))
+        return ("csv_export", datetime.date(int(txn.group(1)), int(txn.group(2)), 1))
+    txn_empty = _TXN_EMPTY_RE.match(name)
+    if txn_empty is not None:
+        return ("empty_window", datetime.date(int(txn_empty.group(1)), int(txn_empty.group(2)), 1))
     if name in CSV_EXPORT_NAMES:
         return ("csv_export", None)
     lowered = name.lower()
