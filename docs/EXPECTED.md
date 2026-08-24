@@ -53,7 +53,13 @@ a row a person wrote.
 uv run python src/expected_tui.py        # one app: pairing, t = transactions, e = series
 uv run python src/expected_checks.py     # broken / past-due / net-zero / drift report
 uv run python src/expected_discover.py   # recurring transactions no series accounts for
+uv run python src/expected_forecast.py   # cash forecast preview; --publish writes the sheet
 ```
+
+The forecast replaced the sheet's manual half: future balance = the anchor
+account's newest bank-export running balance + every unpaid, unskipped
+occurrence forward. The sheet's Transactions_Report is a rendered output now
+— paid rows show their matched actuals, nobody types Amount_Paid again.
 
 In the pairing screen's match view: space claims a whole transaction, x claims
 a stated share of one (splits). Closing a series deletes its untouched

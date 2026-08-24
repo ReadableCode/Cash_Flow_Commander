@@ -760,6 +760,7 @@ class SeriesScreen(Screen):
         table.add_columns(
             "",
             "name",
+            "replaces",
             "category",
             "schedule",
             "amount",
@@ -810,9 +811,9 @@ class SeriesScreen(Screen):
             if len(block) == 0:
                 continue
             if table.row_count > 0:  # a little air between sections
-                table.add_row(*[""] * 8)
+                table.add_row(*[""] * 9)
                 self.row_to_series.append(None)
-            table.add_row("", Text(f"── {title} ──", style="bold cyan"), *[""] * 6)
+            table.add_row("", Text(f"── {title} ──", style="bold cyan"), *[""] * 7)
             self.row_to_series.append(None)
 
             for df_index, row in block.iterrows():
@@ -829,9 +830,15 @@ class SeriesScreen(Screen):
             str(row["auto_pay_account_id"]), row["auto_pay_account_id"]
         )
         active_until = "" if pd.isna(row["active_until"]) else str(row["active_until"])
+        replaced_name = ""
+        if pd.notna(row["replaces_series_id"]):
+            replaced = self.df_series[self.df_series["id"] == row["replaces_series_id"]]
+            if len(replaced):
+                replaced_name = "→ " + str(replaced.iloc[0]["name"])
         cells = [
             "done" if row["once_done"] else ("ended" if row["is_ended"] else ""),
             str(row["name"]),
+            replaced_name,
             str(row["category"]),
             str(schedule),
             f"{row['amount']:.2f}",

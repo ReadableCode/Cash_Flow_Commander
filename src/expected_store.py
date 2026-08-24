@@ -386,6 +386,7 @@ def get_occurrence_status_df(
             db.expected_occurrences.c.skipped_at,
             db.expected_occurrences.c.skip_note,
             db.expected_series.c.name.label("series_name"),
+            db.expected_series.c.schedule_type,
             db.expected_series.c.category,
             db.expected_series.c.sub_category,
             db.expected_series.c.auto_pay_account_id,

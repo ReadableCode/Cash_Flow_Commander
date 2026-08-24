@@ -94,3 +94,7 @@ our_cash:
   # savings transfers). Legs on this account are excluded from the paid-net.
   transfer_accounts: {}
     # "My Card Payoff": "5678"
+
+  # Account whose bank-export running balance anchors the cash forecast
+  # (src/expected_forecast.py), as transactions.account_id.
+  forecast_anchor_account: ""
