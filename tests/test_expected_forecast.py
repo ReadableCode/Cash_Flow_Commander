@@ -189,3 +189,14 @@ def test_forecast_days_outflows_hit_before_inflows(engine):
     assert float(pay_day["start_balance"]) == 60.00
     assert float(pay_day["trough_balance"]) == -240.00  # 60 - 300, before pay
     assert float(pay_day["end_balance"]) == 260.00
+
+
+def test_anchor_uses_the_days_final_balance_regardless_of_row_order(engine):
+    # Payday: the paycheck row and an autopay land on the same day, and the
+    # autopay is chronologically last even though it was inserted first.
+    add_bank_transaction(engine, dt.date(2026, 1, 7), "PRIOR DAY", -5.00, 1000.00)
+    add_bank_transaction(engine, dt.date(2026, 1, 8), "AUTOPAY", -20.80, 3090.62)
+    add_bank_transaction(engine, dt.date(2026, 1, 8), "PAYROLL", 2111.42, 3111.42)
+    anchor_date, anchor_balance = expected_forecast.get_anchor(engine, "1234")
+    assert anchor_date == dt.date(2026, 1, 8)
+    assert anchor_balance == 3090.62  # after BOTH rows, not the paycheck's

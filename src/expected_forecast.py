@@ -28,7 +28,7 @@ import sys
 
 import pandas as pd
 import yaml
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
@@ -81,21 +81,50 @@ def load_forecast_config() -> dict:
 
 
 def get_anchor(engine, account_id: str):
-    """(date, balance) of the newest balance-bearing transaction on the account."""
-    stmt = (
-        select(db.transactions.c.post_date, db.transactions.c.balance)
-        .where(
-            db.transactions.c.account_id == account_id,
-            db.transactions.c.balance.is_not(None),
-        )
-        .order_by(db.transactions.c.post_date.desc(), db.transactions.c.id.desc())
-        .limit(1)
+    """(date, balance) after the LAST transaction of the newest balanced day.
+
+    Several transactions can land on one day and row ids don't promise their
+    order, so the running-balance chain itself decides which came last: each
+    row's balance equals the previous row's balance plus its own amount, and
+    the final row is the one no other row's balance points back to. Without
+    this, a payday anchor could read the pre-autopay balance and overstate
+    the whole forecast.
+    """
+    day_stmt = select(func.max(db.transactions.c.post_date)).where(
+        db.transactions.c.account_id == account_id,
+        db.transactions.c.balance.is_not(None),
     )
     with engine.connect() as conn:
-        row = conn.execute(stmt).first()
-    if row is None:
+        anchor_date = conn.execute(day_stmt).scalar()
+    if anchor_date is None:
         raise ValueError(f"No balance-bearing transactions for account {account_id!r}")
-    return row.post_date, float(row.balance)
+
+    rows_stmt = (
+        select(db.transactions.c.amount, db.transactions.c.balance)
+        .where(
+            db.transactions.c.account_id == account_id,
+            db.transactions.c.post_date == anchor_date,
+            db.transactions.c.balance.is_not(None),
+        )
+        .order_by(db.transactions.c.id)
+    )
+    with engine.connect() as conn:
+        day_rows = [
+            (float(r.amount), float(r.balance)) for r in conn.execute(rows_stmt)
+        ]
+
+    # A row is NOT last if some other row continues the chain from it.
+    predecessor_balances = {round(balance - amount, 2) for amount, balance in day_rows}
+    last_candidates = [
+        balance
+        for amount, balance in day_rows
+        if round(balance, 2) not in predecessor_balances
+    ]
+    if len(last_candidates) == 1:
+        return anchor_date, last_candidates[0]
+    # Chain ambiguous (identical amounts, restated rows): any of the day's
+    # balances is close; take the one from the highest row id as before.
+    return anchor_date, day_rows[-1][1]
 
 
 def get_paid_dates(engine) -> dict:
