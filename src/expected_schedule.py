@@ -11,8 +11,6 @@ Schedule vocabulary (matches the old Income_Expense sheet's Type column):
 - every_x_days:   anchor_date + interval_days
 - every_x_months: anchor_date + interval_months (a 5-month subscription)
 - once:           no generated dates; occurrences are entered directly
-- irregular:      recurring but on no fixed schedule (a contract paid 35-47
-                  days after each invoice); occurrences are entered directly
 """
 
 # %%
@@ -210,7 +208,7 @@ def due_dates_for_series(
             window_end,
         )
 
-    if schedule_type in ("once", "irregular"):
+    if schedule_type == "once":
         return []
 
     raise ValueError(f"Unknown schedule_type: {schedule_type!r}")

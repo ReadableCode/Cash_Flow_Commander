@@ -334,7 +334,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 22
       },
@@ -355,55 +355,6 @@
       ],
       "title": "One-time items ahead",
       "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "${DS_CASH_FLOW_COMMANDER}"
-      },
-      "description": "Recurring payments with no fixed date \u2014 the HelloFresh contract runs until the December invoice, paid 35-47 days after each billed month ends. Amounts past the last real invoice are estimates.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "due"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "none"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 22
-      },
-      "id": 6,
-      "options": {},
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "${DS_CASH_FLOW_COMMANDER}"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT to_char(o.due_date, 'YYYY-MM-DD') AS due, s.name AS series, o.amount FROM cash_flow_commander.expected_occurrences o JOIN cash_flow_commander.expected_series s ON o.series_id = s.id WHERE s.schedule_type = 'irregular' AND o.skipped_at IS NULL AND o.due_date >= CURRENT_DATE ORDER BY o.due_date LIMIT 30",
-          "refId": "A"
-        }
-      ],
-      "title": "Contract payments ahead (irregular schedule)",
-      "type": "table"
     }
   ],
   "refresh": "",
@@ -418,5 +369,5 @@
   "timezone": "browser",
   "title": "Cash Flow Commander \u2014 Cash Forecast",
   "uid": "cfc-cash-forecast",
-  "version": 2
+  "version": 3
 }

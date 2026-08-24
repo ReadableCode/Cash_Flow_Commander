@@ -20,9 +20,9 @@ a row a person wrote.
 ## Rules that keep history true
 
 - **Schedules:** monthly, yearly, biweekly, every_x_days, every_x_months,
-  plus two that never generate: `once` (a true one-shot) and `irregular`
-  (recurring with no fixed schedule — a contract paid 35-47 days after each
-  invoice — whose occurrences are entered by hand).
+  and `once`, which never generates — a true one-shot whose date is entered
+  directly. A bill on a sloppy real-world schedule is still just monthly;
+  the per-occurrence amount override and wide date windows absorb the slop.
 - **Series are append-only.** Switching electric companies, a price change, a
   new card — close the old series (`active_until`) and add a new one,
   optionally linked via `replaces_series_id`. Old matches keep pointing at the
