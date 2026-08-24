@@ -98,3 +98,7 @@ our_cash:
   # Account whose bank-export running balance anchors the cash forecast
   # (src/expected_forecast.py), as transactions.account_id.
   forecast_anchor_account: ""
+
+  # Six months of essential expenses, as a positive dollar amount. Drawn on
+  # the forecast dashboard; the daily balance should always end above it.
+  emergency_fund: 0

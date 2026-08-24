@@ -72,6 +72,7 @@ def load_forecast_config() -> dict:
             config.get("our_cash", {}).get("forecast_anchor_account", "")
         ),
         "account_labels": labels,
+        "emergency_fund": float(config.get("our_cash", {}).get("emergency_fund", 0)),
     }
 
 
@@ -210,6 +211,7 @@ def rebuild_forecast_days(
             inflows_by_day[day] = inflows_by_day.get(day, 0.0) + amount
 
     generated_at = datetime.datetime.now()
+    emergency_fund = config.get("emergency_fund", 0.0)
     rows = []
     balance = anchor_balance
     day = first_day
@@ -226,6 +228,7 @@ def rebuild_forecast_days(
                 "inflows": inflows,
                 "trough_balance": trough,
                 "end_balance": end,
+                "emergency_fund": emergency_fund,
                 "generated_at": generated_at,
             }
         )
@@ -292,7 +295,13 @@ def main() -> int:
         our_cash_data.generate_future_cast_alert_dates_df(df_future_cast),
         our_cash_data.isolate_label_dates(df_future_cast),
     )
-    print("published: Transactions_Report, Daily_Balance_Report, Summary")
+    our_cash_data.write_account_balances_report(
+        our_cash_data.generate_account_balances_report()
+    )
+    print(
+        "published: Transactions_Report, Daily_Balance_Report, Summary, "
+        "Account_Balances_Report"
+    )
     return 0
 
 

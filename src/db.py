@@ -406,6 +406,10 @@ forecast_days = Table(
     # money IN arrives, so a same-day paycheck can never hide an overdraft.
     Column("trough_balance", Numeric(12, 2), nullable=False),
     Column("end_balance", Numeric(12, 2), nullable=False),
+    # Six months of essential expenses (from local config), repeated on every
+    # row so the dashboard can draw the always-stay-above-this line without
+    # the personal number living in the committed dashboard JSON.
+    Column("emergency_fund", Numeric(12, 2), nullable=False, server_default=text("0")),
     Column("generated_at", DateTime, nullable=False),
 )
 

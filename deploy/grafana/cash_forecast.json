@@ -29,7 +29,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "${DS_CASH_FLOW_COMMANDER}"
       },
-      "description": "Projected checking balance from expected occurrences (rebuilt by expected_forecast.py). 'Worst moment' assumes every outflow leaves before any same-day inflow arrives, so a paycheck can never hide a same-day overdraft.",
+      "description": "Projected checking balance from expected occurrences (rebuilt by expected_forecast.py). 'Worst moment' assumes every outflow leaves before any same-day inflow arrives. The balance should always end above the emergency fund \u2014 six months of essential expenses.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -117,6 +117,35 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Emergency fund"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    6
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -145,7 +174,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT day::timestamptz AS \"time\", end_balance AS \"End of day\", trough_balance AS \"Worst moment\", 0 AS \"Zero\", 1000 AS \"Alert threshold\" FROM cash_flow_commander.forecast_days ORDER BY day",
+          "rawSql": "SELECT day::timestamptz AS \"time\", end_balance AS \"End of day\", trough_balance AS \"Worst moment\", emergency_fund AS \"Emergency fund\", 0 AS \"Zero\", 1000 AS \"Alert threshold\" FROM cash_flow_commander.forecast_days ORDER BY day",
           "refId": "A"
         }
       ],
@@ -369,5 +398,5 @@
   "timezone": "browser",
   "title": "Cash Flow Commander \u2014 Cash Forecast",
   "uid": "cfc-cash-forecast",
-  "version": 3
+  "version": 4
 }
