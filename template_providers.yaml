@@ -81,3 +81,16 @@ chase:
   #   - where archived pre-24-month exports live, for `capture.py import-legacy`
   #   - any account whose export behaves unusually
   notes: |
+
+# Expected-transaction config (src/expected_import_sheet.py, src/expected_tui.py).
+# Maps your sheet's account labels onto transactions.account_id values so the
+# import and the pairing TUI know which account a bill usually moves through.
+our_cash:
+  # Sheet Auto_Pay_Account label -> transactions.account_id (last 4).
+  account_aliases: {}
+    # "My Bank": "1234"
+
+  # Transfer series name -> the account the other leg lands on (card payoffs,
+  # savings transfers). Legs on this account are excluded from the paid-net.
+  transfer_accounts: {}
+    # "My Card Payoff": "5678"
