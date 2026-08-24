@@ -72,15 +72,22 @@ PROVIDERS_YAML_PATH = os.path.join(_REPO_ROOT, "providers.local.yaml")
 
 
 def load_account_labels() -> dict:
-    """account_id -> friendly label, from providers.local.yaml (chase section)."""
+    """account_id -> friendly label, from every provider in providers.local.yaml.
+
+    Any provider section may enumerate accounts under external_ids.accounts
+    (chase and citi both do); they all merge into one lookup.
+    """
     if not os.path.isfile(PROVIDERS_YAML_PATH):
         return {}
     with open(PROVIDERS_YAML_PATH, "r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
-    accounts = config.get("chase", {}).get("external_ids", {}).get("accounts", {})
     labels = {}
-    for account_id, details in accounts.items():
-        labels[str(account_id)] = details.get("label", str(account_id))
+    for provider_entry in config.values():
+        if not isinstance(provider_entry, dict):
+            continue
+        accounts = provider_entry.get("external_ids", {}).get("accounts", {})
+        for account_id, details in accounts.items():
+            labels[str(account_id)] = details.get("label", str(account_id))
     return labels
 
 

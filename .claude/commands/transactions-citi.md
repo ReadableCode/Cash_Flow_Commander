@@ -210,10 +210,19 @@ a suspiciously round number.
 
 Header: `Status,Date,Description,Debit,Credit,Member Name`.
 
-- **No transaction id** — the Chase-style occurrence-counter question applies,
-  and export-order stability across re-downloads is NOT yet verified.
-- **Debit and Credit are separate unsigned columns** (charge in Debit,
-  payment/refund in Credit), unlike Chase's signed single amount.
+- **No transaction id** — the Chase-style occurrence counter applies. Export
+  order was verified stable live (two overlapping downloads, byte-identical
+  overlap region).
+- **Debit and Credit are separate columns** (charge in Debit, payment/refund
+  in Credit), unlike Chase's signed single amount — and **Citi prints Credit
+  values NEGATIVE** (verified across every live credit row, 2026-08-24). The
+  parser projects `amount = abs(credit) - abs(debit)` so a payment lands as
+  money IN whichever sign Citi prints. A naive `credit - debit` flipped every
+  payment to money-out once already.
+- **Payment credits carry several descriptions** depending on channel:
+  `ONLINE PAYMENT, THANK YOU` for manual payments, `AUTOPAY ...AUTO-PMT` for
+  autopay. Anything pairing payoff legs must match on amount/direction, not
+  one description.
 - **One Date column only.** All observed rows had Status `Cleared`; whether
   pending activity ever exports (and with what Status value) is unverified.
 - `Member Name` distinguishes cardholders/authorized users.
@@ -343,6 +352,9 @@ transactions upserted, and any popup or flow change you had to work around.
       (reprocessing must be idempotent)
 - [ ] a spot-checked month's transaction count and net total match what the
       Citi UI shows for that account and period
+- [ ] sign spot-check: payments/credits land POSITIVE in `transactions`
+      (money in), charges negative — Citi's negative-Credit quirk flipped
+      every payment once, and a card with zero positive rows is the tell
 - [ ] months reported as inferred are ones you actually imported from an
       archive
 

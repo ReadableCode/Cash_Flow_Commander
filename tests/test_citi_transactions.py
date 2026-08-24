@@ -26,12 +26,13 @@ from providers import capture_names, citi  # noqa: E402
 CAPTURE = "citi_csv_export_0001_20260801_20260824_captured20260824.csv"
 
 # The one observed layout: Status,Date,Description,Debit,Credit,Member Name.
-# Debit and Credit are UNSIGNED; a charge is Debit, a payment/refund Credit.
+# A charge is Debit (unsigned positive); a payment/refund is Credit, which
+# Citi prints as a NEGATIVE number (verified across every live credit row).
 CARD = (
     "Status,Date,Description,Debit,Credit,Member Name\n"
     'Cleared,08/17/2026,"BOOKSTORE SEATTLE WA",12.34,,JANE Q MEMBER\n'
     'Cleared,08/13/2026,"RESORT CHICAGO IL",1500.00,,JANE Q MEMBER\n'
-    "Cleared,08/01/2026,AUTOPAY AUTO-PMT,,250.00,JANE Q MEMBER\n"
+    "Cleared,08/01/2026,AUTOPAY AUTO-PMT,,-250.00,JANE Q MEMBER\n"
 )
 
 IDENTICAL_ROWS = (
@@ -43,7 +44,9 @@ IDENTICAL_ROWS = (
 
 def _parse(text: str, name: str = CAPTURE) -> list[dict[str, Any]]:
     """Run the parser the way parse_raw does, returning the transactions sink."""
-    return citi.parse_transactions_csv(text.encode("utf-8"), {"original_name": name})["transactions"]
+    return citi.parse_transactions_csv(text.encode("utf-8"), {"original_name": name})[
+        "transactions"
+    ]
 
 
 def _reload_modules() -> None:
@@ -80,7 +83,9 @@ def engine(tmp_path: Any) -> Any:
 
 def _count(eng: Any) -> int:
     with eng.connect() as conn:
-        return int(conn.execute(select(func.count()).select_from(db.transactions)).scalar_one())
+        return int(
+            conn.execute(select(func.count()).select_from(db.transactions)).scalar_one()
+        )
 
 
 def _stamp(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -112,7 +117,7 @@ def test_debit_is_money_out_and_credit_is_money_in() -> None:
 
     assert rows[0]["amount"] == -12.34  # charge
     assert rows[1]["amount"] == -1500.00  # charge
-    assert rows[2]["amount"] == 250.00  # payment
+    assert rows[2]["amount"] == 250.00  # payment: money IN despite Citi's minus sign
 
     assert rows[0]["txn_type"] == "DEBIT"
     assert rows[2]["txn_type"] == "CREDIT"
@@ -189,7 +194,9 @@ def test_rejects_a_name_that_is_not_a_citi_capture() -> None:
 def test_rejects_a_chase_capture_name() -> None:
     """A chase capture routed here by mistake must fail loudly, not misfile."""
     with pytest.raises(ValueError, match="cannot determine account"):
-        _parse(CARD, name="chase_csv_export_0001_20260801_20260824_captured20260824.csv")
+        _parse(
+            CARD, name="chase_csv_export_0001_20260801_20260824_captured20260824.csv"
+        )
 
 
 def test_rejects_unrecognized_columns() -> None:
@@ -242,7 +249,9 @@ def test_registry_routes_citi_documents() -> None:
     assert parser[0] is citi.parse_transactions_csv
 
     empty = providers.get_parser(
-        "citi", "empty_window", "citi_empty_window_0001_20260801_20260824_captured20260824.txt"
+        "citi",
+        "empty_window",
+        "citi_empty_window_0001_20260801_20260824_captured20260824.txt",
     )
     assert empty is not None
     assert empty[0] is citi.parse_empty_window
@@ -321,8 +330,7 @@ def test_a_restated_row_is_corrected_in_place(engine: Any) -> None:
     assert _count(engine) == 3
     with engine.connect() as conn:
         amounts = sorted(
-            float(row[0])
-            for row in conn.execute(select(db.transactions.c.amount))
+            float(row[0]) for row in conn.execute(select(db.transactions.c.amount))
         )
     assert -1550.00 in amounts
     assert -1500.00 not in amounts
@@ -338,13 +346,17 @@ def test_a_citi_capture_never_prunes_another_providers_rows(engine: Any) -> None
         "08/10/2026,08/11/2026,CHASE ONLY ROW,Shopping,Sale,-5.00,\n"
     )
     chase_doc = _insert_doc(engine, chase_name, provider="chase")
-    chase_sinks = chase.parse_transactions_csv(chase_csv.encode(), {"original_name": chase_name})
+    chase_sinks = chase.parse_transactions_csv(
+        chase_csv.encode(), {"original_name": chase_name}
+    )
     chase_rows = chase_sinks["transactions"]
     for row in chase_rows:
         row.setdefault("raw_document_id", chase_doc)
         row.setdefault("parser_version", chase.PARSER_VERSION)
     transaction_store.sync_capture(
-        engine, chase_rows, {**chase_sinks["transactions_window"], "raw_document_id": chase_doc}
+        engine,
+        chase_rows,
+        {**chase_sinks["transactions_window"], "raw_document_id": chase_doc},
     )
     assert _count(engine) == 1
 

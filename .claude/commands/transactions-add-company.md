@@ -54,28 +54,39 @@ otherwise ask. Use AskUserQuestion where available. Collect:
 If `.claude/commands/transactions-<slug>.md` already exists, STOP and tell the
 user — this command onboards new sources, it does not overwrite existing ones.
 
-## 2. Code reality check — say what the pipeline can't do yet
+## 2. Code reality check — say what the pipeline needs for this source
 
-`transaction_downloader/` (`plan.py`, `capture.py`, `store.py`) was built
-against Chase and is currently Chase-specific: retention constants, capture
-filename patterns, and layout detection all assume it. Before scaffolding
-anything, tell the user plainly which of these the new source needs, and scope
-it with them — none of it is scaffolding work, it is real code with tests:
+`transaction_downloader/` (`plan.py`, `capture.py`, `store.py`) is
+multi-provider: `store.PROVIDERS` carries each source's layouts, row cap,
+retention, and capture-filename hints, and `plan.py`/`capture.py` take
+`--provider`. Onboarding is therefore additive, but it is still real code
+with tests, not scaffolding. Tell the user plainly what this source needs:
 
-- **Planner/capture generalization** — a provider dimension (or a sibling
-  module) so windows, retention floors, always-refetch overlap, and the capture
-  manifest are tracked per source rather than assumed to be Chase's.
+- **A `store.PROVIDERS` entry** — retention floor, row cap, filename hints,
+  always-refetch overlap. Capture reconciliation is provider-scoped through
+  the shared capture-name parser (`src/providers/capture_names.py`), so one
+  provider's capture can never prune another's rows even when two cards share
+  a last-4 — keep new capture names inside that scheme.
 - **A parser** — `src/providers/<slug>.py`, registered in
-  `src/providers/__init__.py::_REGISTRY`, with tests. Two Chase-derived rules
-  to *check*, not assume:
+  `src/providers/__init__.py::_REGISTRY`, with tests. Rules learned the hard
+  way, to *check* against live data rather than assume:
+  - **Verify money signs against real exported rows.** Sources split or sign
+    amount columns in surprising ways — Citi's Credit column prints payments
+    as NEGATIVE numbers, so a naive projection flipped every payment to
+    money-out and the suite still passed, because the test fixture modeled
+    the assumed shape instead of copying a live row. Build fixtures from
+    verbatim live rows, and after the first real parse confirm a card's
+    payments land positive (an account with zero rows in one direction is
+    the tell).
   - If exports carry **no transaction id**, the natural key needs an
     `occurrence` counter for genuinely identical same-day rows — and that is
-    only safe if **export order is stable across re-downloads**. Verify the
-    stability before trusting it.
+    only safe if **export order is stable across re-downloads**. Verify it
+    live (two overlapping downloads; compare the overlap region) before
+    trusting it.
   - If the source **restates posted rows** (a tip settles, a description
-    changes), a changed amount is a new natural key and upsert alone leaves the
-    old row behind as a phantom. Plan for window-scoped pruning of stale rows
-    plus an always-refetch overlap tail, like the Chase parser.
+    changes), a changed amount is a new natural key and upsert alone leaves
+    the old row behind as a phantom. Plan for window-scoped pruning of stale
+    rows plus an always-refetch overlap tail, like the Chase parser.
 - **Preserve everything**: every source field verbatim into
   `transactions.extra`, keyed by original header, with the shape fixed by
   parser code — no run decides what is worth keeping.
@@ -85,10 +96,12 @@ it with them — none of it is scaffolding work, it is real code with tests:
 
 ## 3. Scaffold the provider command
 
-There is deliberately no fill-in-the-blanks template yet — with one source
-onboarded, `transactions-chase.md` *is* the template. Copy its section skeleton
-and its provider-independent rules into
-`.claude/commands/transactions-<slug>.md`:
+There is deliberately no fill-in-the-blanks template — the onboarded commands
+*are* the template. `transactions-chase.md` has the fullest section skeleton;
+`transactions-citi.md` shows the same skeleton applied to a second source
+(SPA portal, Debit/Credit columns, no row cap) and is the better model for
+what changes between sources. Copy the section skeleton and the
+provider-independent rules into `.claude/commands/transactions-<slug>.md`:
 
 - **0 Orient** — deployed globally, so locate the repo first; load config from
   `providers.local.yaml`; STOP if the entry is absent.

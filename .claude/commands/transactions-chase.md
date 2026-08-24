@@ -447,6 +447,9 @@ transactions upserted, and any popup or flow change you had to work around.
       (reprocessing must be idempotent)
 - [ ] a spot-checked month's transaction count and net total match what the
       Chase UI shows for that account and period
+- [ ] sign spot-check: card payments land POSITIVE in `transactions` and bank
+      debits negative — an account with zero rows in one direction means the
+      parser's sign projection is wrong (Citi shipped that way once)
 - [ ] months reported as inferred are ones you actually imported from an archive
 
 ## 8. Keeping this command current

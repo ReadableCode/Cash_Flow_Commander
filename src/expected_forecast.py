@@ -60,13 +60,20 @@ SHEET_TYPE_NAMES = {"once": "oncely", "every_x_days": "everyXDays"}
 
 
 def load_forecast_config() -> dict:
-    """Anchor account and account labels from providers.local.yaml."""
+    """Anchor account and account labels from providers.local.yaml.
+
+    Labels merge from every provider section that enumerates accounts under
+    external_ids.accounts (chase and citi both do).
+    """
     with open(PROVIDERS_YAML_PATH, "r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
-    accounts = config.get("chase", {}).get("external_ids", {}).get("accounts", {})
     labels = {}
-    for account_id, details in accounts.items():
-        labels[str(account_id)] = details.get("label", str(account_id))
+    for provider_entry in config.values():
+        if not isinstance(provider_entry, dict):
+            continue
+        accounts = provider_entry.get("external_ids", {}).get("accounts", {})
+        for account_id, details in accounts.items():
+            labels[str(account_id)] = details.get("label", str(account_id))
     return {
         "anchor_account_id": str(
             config.get("our_cash", {}).get("forecast_anchor_account", "")

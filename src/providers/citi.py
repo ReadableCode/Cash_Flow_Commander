@@ -6,10 +6,11 @@ One layout has been observed (live discovery 2026-08-24):
 
 Differences from Chase that shape this parser:
 
-- **No signed amount.** Debit and Credit are separate unsigned columns: a
-  charge lands in Debit, a payment or refund in Credit. The pipeline's
-  convention (negative = money out, matching Chase) makes the projection
-  `amount = credit - debit`.
+- **No signed amount.** Debit and Credit are separate columns: a charge
+  lands in Debit (unsigned positive), a payment or refund in Credit — which
+  Citi prints as a NEGATIVE number (verified across every live credit row).
+  The projection is therefore `amount = abs(credit) - abs(debit)`: Debit is
+  money out, Credit is money in, whichever sign Citi chooses to print.
 - **One date column.** `txn_date` and `post_date` are both the Date column —
   inventing a second date would be fabrication.
 - **No transaction id**, same as Chase, so rows carry an `occurrence` counter
@@ -51,7 +52,7 @@ except ImportError:  # pragma: no cover - fallback for `import src.providers.cit
 # %%
 # Constants #
 
-PARSER_VERSION = "citi-transactions-1"
+PARSER_VERSION = "citi-transactions-2"
 
 PROVIDER = "citi"
 
@@ -170,9 +171,12 @@ def parse_transactions_csv(content: bytes, ctx: dict[str, Any]) -> dict[str, Any
 
         # Negative = money out, matching Chase and the transactions table
         # contract. A charge (Debit) is money out; a payment/refund (Credit)
-        # is money in. Both present would be contradictory but still resolves
-        # to the net rather than dropping the row.
-        amount = (credit or 0.0) - (debit or 0.0)
+        # is money in. Citi's export puts credits in the Credit column as
+        # NEGATIVE numbers (verified across every live credit row), so a
+        # naive `credit - debit` flips payments to money-out. abs() states
+        # the intent — Debit is out, Credit is in — whichever sign Citi
+        # chooses to print.
+        amount = abs(credit or 0.0) - abs(debit or 0.0)
 
         rows.append(
             {
