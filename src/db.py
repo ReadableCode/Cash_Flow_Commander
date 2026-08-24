@@ -392,6 +392,24 @@ expected_matches = Table(
 )
 
 
+# Daily cash forecast, one row per future day — a machine-built projection
+# (rebuilt wholesale by expected_forecast.rebuild_forecast_days) that exists
+# so Grafana can chart the forecast without re-deriving it in SQL.
+forecast_days = Table(
+    "forecast_days",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("start_balance", Numeric(12, 2), nullable=False),
+    Column("outflows", Numeric(12, 2), nullable=False),  # signed; <= 0
+    Column("inflows", Numeric(12, 2), nullable=False),  # >= 0
+    # The day's worst moment: all money OUT is assumed to leave before any
+    # money IN arrives, so a same-day paycheck can never hide an overdraft.
+    Column("trough_balance", Numeric(12, 2), nullable=False),
+    Column("end_balance", Numeric(12, 2), nullable=False),
+    Column("generated_at", DateTime, nullable=False),
+)
+
+
 # %%
 # DDL #
 

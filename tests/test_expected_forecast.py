@@ -136,3 +136,56 @@ def test_unpaid_rows_chain_the_balance_and_paid_rows_do_not(engine):
 
     assert "2026-03-10" not in list(df_cast["Date"])  # skipped: absent
     assert series_id is not None
+
+
+def test_forecast_days_outflows_hit_before_inflows(engine):
+    add_bank_transaction(engine, dt.date(2026, 1, 8), "ANCHOR", -10.00, 100.00)
+
+    # Same day: rent out -300, paycheck in +500. The day ENDS at 300, but the
+    # worst moment is -200 — that must be flagged, not hidden by the paycheck.
+    rent_id = expected_store.add_series(
+        engine,
+        {
+            "name": "Rent",
+            "category": "Expense",
+            "schedule_type": "once",
+            "amount": -300.00,
+            "auto_pay_account_id": "1234",
+            "active_from": dt.date(2026, 1, 1),
+        },
+    )
+    pay_id = expected_store.add_series(
+        engine,
+        {
+            "name": "Paycheck",
+            "category": "Income",
+            "schedule_type": "once",
+            "amount": 500.00,
+            "auto_pay_account_id": "1234",
+            "active_from": dt.date(2026, 1, 1),
+        },
+    )
+    expected_store.add_occurrence(engine, rent_id, dt.date(2026, 1, 15), -300.00)
+    expected_store.add_occurrence(engine, pay_id, dt.date(2026, 1, 15), 500.00)
+    # An unpaid bill already past due still counts — it lands on the first day.
+    expected_store.add_occurrence(engine, rent_id, dt.date(2026, 1, 2), -40.00)
+
+    count = expected_forecast.rebuild_forecast_days(
+        engine, horizon_days=30, config=CONFIG
+    )
+    assert count > 0
+
+    import pandas as pd
+    from sqlalchemy import select
+
+    df_days = pd.read_sql(select(db.forecast_days), engine)
+    df_days["day"] = pd.to_datetime(df_days["day"]).dt.date
+
+    first = df_days[df_days["day"] == dt.date(2026, 1, 9)].iloc[0]
+    assert float(first["outflows"]) == -40.00  # the late bill lands tomorrow
+    assert float(first["end_balance"]) == 60.00
+
+    pay_day = df_days[df_days["day"] == dt.date(2026, 1, 15)].iloc[0]
+    assert float(pay_day["start_balance"]) == 60.00
+    assert float(pay_day["trough_balance"]) == -240.00  # 60 - 300, before pay
+    assert float(pay_day["end_balance"]) == 260.00

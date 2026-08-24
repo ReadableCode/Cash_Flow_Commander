@@ -19,6 +19,10 @@ a row a person wrote.
 
 ## Rules that keep history true
 
+- **Schedules:** monthly, yearly, biweekly, every_x_days, every_x_months,
+  plus two that never generate: `once` (a true one-shot) and `irregular`
+  (recurring with no fixed schedule — a contract paid 35-47 days after each
+  invoice — whose occurrences are entered by hand).
 - **Series are append-only.** Switching electric companies, a price change, a
   new card — close the old series (`active_until`) and add a new one,
   optionally linked via `replaces_series_id`. Old matches keep pointing at the
@@ -60,6 +64,28 @@ The forecast replaced the sheet's manual half: future balance = the anchor
 account's newest bank-export running balance + every unpaid, unskipped
 occurrence forward. The sheet's Transactions_Report is a rendered output now
 — paid rows show their matched actuals, nobody types Amount_Paid again.
+
+The forecast also rebuilds `forecast_days`, one row per future day, for the
+`cfc-cash-forecast` Grafana dashboard (`deploy/grafana/cash_forecast.json`).
+Within a day the order money moves is unknowable, so the projection assumes
+the worst: every outflow leaves before any inflow arrives. `trough_balance`
+is that worst moment — the number that flags a bounce a same-day paycheck
+would otherwise hide — and `end_balance` is where the day closes.
+
+## Balance anchors
+
+- **Bank accounts (checking, savings):** Chase bank exports carry a running
+  balance on every row, so the newest balance-bearing transaction IS the
+  current balance. This is the forecast anchor
+  (`our_cash.forecast_anchor_account` in providers.local.yaml).
+- **Chase credit cards:** card CSVs carry no balance column. The agreed
+  future approach, when card balances matter: a small `balance_anchors`
+  table holding one manually-recorded statement balance per card, then
+  balance = anchor + sum of held transactions since — accurate forever
+  after one entry, drift-checkable against statements.
+- **External accounts** (other cards, loans): no transactions held; the
+  Account_Date_Balances sheet remains their manual entry point until their
+  sources are onboarded.
 
 In the pairing screen's match view: space claims a whole transaction, x claims
 a stated share of one (splits). Closing a series deletes its untouched

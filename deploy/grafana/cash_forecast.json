@@ -1,0 +1,248 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource for the apps database, connecting as grafana_ro.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Projected checking balance from expected occurrences (rebuilt by expected_forecast.py). 'Worst moment' assumes every outflow leaves before any same-day inflow arrives, so a paycheck can never hide a same-day overdraft.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 5,
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Worst moment" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } },
+              { "id": "custom.lineWidth", "value": 1 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Zero" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Alert threshold" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } },
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [4, 8] } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT day::timestamptz AS \"time\", end_balance AS \"End of day\", trough_balance AS \"Worst moment\", 0 AS \"Zero\", 1000 AS \"Alert threshold\" FROM cash_flow_commander.forecast_days ORDER BY day",
+          "refId": "A"
+        }
+      ],
+      "title": "Daily ending balance (forecast)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "The lowest worst-moment balance anywhere in the forecast.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 12 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT min(trough_balance) AS \"Lowest worst moment\" FROM cash_flow_commander.forecast_days",
+          "refId": "A"
+        }
+      ],
+      "title": "Lowest projected balance",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Days where the worst moment (all outflows first) dips below zero. Empty is the goal.",
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "day" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 18, "x": 6, "y": 12 },
+      "id": 3,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT day, start_balance, outflows, trough_balance, inflows, end_balance FROM cash_flow_commander.forecast_days WHERE trough_balance < 0 ORDER BY day LIMIT 100",
+          "refId": "A"
+        }
+      ],
+      "title": "Days that would go negative",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "When expected_forecast.py last rebuilt this projection.",
+      "fieldConfig": {
+        "defaults": { "unit": "dateTimeAsIso" },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 17 },
+      "id": 4,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT max(generated_at) AS \"Generated\" FROM cash_flow_commander.forecast_days",
+          "refId": "A"
+        }
+      ],
+      "title": "Forecast generated",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Upcoming one-shot commitments and irregular contract payments — the sheet chart's orange labels, as a list.",
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "due" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "series" },
+            "properties": [{ "id": "unit", "value": "none" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      "id": 5,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT o.due_date AS due, s.name AS series, o.amount FROM cash_flow_commander.expected_occurrences o JOIN cash_flow_commander.expected_series s ON o.series_id = s.id WHERE s.schedule_type IN ('once','irregular') AND o.skipped_at IS NULL AND o.due_date >= CURRENT_DATE ORDER BY o.due_date LIMIT 30",
+          "refId": "A"
+        }
+      ],
+      "title": "One-time and irregular items ahead",
+      "type": "table"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["cash-flow-commander"],
+  "time": { "from": "now-7d", "to": "now+2y" },
+  "timezone": "browser",
+  "title": "Cash Flow Commander — Cash Forecast",
+  "uid": "cfc-cash-forecast",
+  "version": 1
+}

@@ -28,7 +28,7 @@ import sys
 
 import pandas as pd
 import yaml
-from sqlalchemy import select
+from sqlalchemy import delete, insert, select
 
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
@@ -169,6 +169,76 @@ def build_future_cast(
 
 
 # %%
+# Daily projection for Grafana #
+
+
+def rebuild_forecast_days(
+    engine, horizon_days: int = HORIZON_DAYS, config: dict | None = None
+) -> int:
+    """Rebuild the forecast_days table: one row per day from the anchor out.
+
+    Within a day the ORDER money moves is unknowable ahead of time, so we
+    assume the worst: every outflow lands before any inflow. trough_balance
+    is that worst moment; end_balance is where the day actually closes.
+    A trough below zero is the day a bill could bounce even though the
+    day ends positive.
+
+    Unpaid occurrences already past due land on tomorrow — the money is
+    still owed and could leave at any moment.
+    """
+    if config is None:
+        config = load_forecast_config()
+    anchor_date, anchor_balance = get_anchor(engine, config["anchor_account_id"])
+
+    first_day = anchor_date + datetime.timedelta(days=1)
+    last_day = datetime.date.today() + datetime.timedelta(days=horizon_days)
+    df_status = expected_store.get_occurrence_status_df(
+        engine, anchor_date - datetime.timedelta(days=365), last_day
+    )
+    df_status = df_status[~df_status["status"].isin(["skipped", "paid"])]
+
+    outflows_by_day: dict = {}
+    inflows_by_day: dict = {}
+    for _, occurrence in df_status.iterrows():
+        amount = float(occurrence["amount"])
+        day = pd.to_datetime(occurrence["due_date"]).date()
+        if day < first_day:
+            day = first_day
+        if amount < 0:
+            outflows_by_day[day] = outflows_by_day.get(day, 0.0) + amount
+        else:
+            inflows_by_day[day] = inflows_by_day.get(day, 0.0) + amount
+
+    generated_at = datetime.datetime.now()
+    rows = []
+    balance = anchor_balance
+    day = first_day
+    while day <= last_day:
+        outflows = round(outflows_by_day.get(day, 0.0), 2)
+        inflows = round(inflows_by_day.get(day, 0.0), 2)
+        trough = round(balance + outflows, 2)
+        end = round(trough + inflows, 2)
+        rows.append(
+            {
+                "day": day,
+                "start_balance": round(balance, 2),
+                "outflows": outflows,
+                "inflows": inflows,
+                "trough_balance": trough,
+                "end_balance": end,
+                "generated_at": generated_at,
+            }
+        )
+        balance = end
+        day = day + datetime.timedelta(days=1)
+
+    with engine.begin() as conn:
+        conn.execute(delete(db.forecast_days))
+        conn.execute(insert(db.forecast_days), rows)
+    return len(rows)
+
+
+# %%
 # Run #
 
 
@@ -185,6 +255,9 @@ def main() -> int:
     print(
         f"anchor: {anchor_balance:.2f} on {anchor_date} (account {config['anchor_account_id']})"
     )
+
+    day_count = rebuild_forecast_days(engine)
+    print(f"forecast_days rebuilt: {day_count} days (Grafana reads this)")
 
     df_future_cast = build_future_cast(engine)
     print(

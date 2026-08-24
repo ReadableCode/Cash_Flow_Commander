@@ -635,7 +635,7 @@ SERIES_FORM_FIELDS = [
     ("sub_category", "Sub category", False),
     (
         "schedule_type",
-        "Schedule (monthly/yearly/biweekly/every_x_days/every_x_months/once)",
+        "Schedule (monthly/yearly/biweekly/every_x_days/every_x_months/once/irregular)",
         True,
     ),
     ("day_of_month", "Day of month (monthly, yearly)", False),
