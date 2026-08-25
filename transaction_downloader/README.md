@@ -1,7 +1,7 @@
 # transaction_downloader
 
-Bank and credit-card transaction acquisition — Chase and Citi today, one
-`--provider` flag apart. Feeds the same pipeline as the bill providers — see
+Bank and credit-card transaction acquisition — Chase, Citi, and Elan today,
+one `--provider` flag apart. Feeds the same pipeline as the bill providers — see
 `docs/LANDING.md` — but tracks coverage differently, for a reason worth
 understanding before changing anything here.
 
@@ -11,7 +11,7 @@ what's missing      (Claude in Chrome)   file verbatim     raw_documents        
 ```
 
 The agent half lives in `.claude/commands/transactions-<slug>.md`. Run it with
-`/transactions-chase` or `/transactions-citi`. There is no schedule and no
+`/transactions-chase`, `/transactions-citi`, or `/transactions-elan`. There is no schedule and no
 cron: the planner derives what is missing from what is already captured, so the
 command is safe and cheap to run whenever you want, at whatever interval you
 feel like.
@@ -91,6 +91,24 @@ across re-downloads — two overlapping captures minutes apart returned the
 748-row overlap region byte-identical and identically ordered — which is what
 makes the `occurrence` counter safe for Citi too. Sign convention:
 `amount = credit − debit`, so negative is money out, same as Chase.
+
+## Elan's export limits — verified live 2026-08-24
+
+| | Elan (myaccountaccess.com) credit card |
+| --- | --- |
+| Oldest date the export serves | **18 months** ("All available dates" is literally `d_545` in the portal's search select) — and the portal never refuses an out-of-range date, it **silently clamps**: a request from 2024-01-01 returned rows starting at the 545-day boundary with no error |
+| Rows per report | no cap found — but the discovery account ran ~2.6 rows/month, far too little volume to surface one |
+| Layout | `"Date","Transaction","Name","Memo","Amount"` — ISO dates, a single **signed** Amount (negative = money out, no projection needed; a waived fee prints `-0.00`), direction stated in the Transaction column (DEBIT/CREDIT) |
+| Empty window | inline "There aren't any transactions for that date range." and no file — record with `record-empty` |
+| Download filename | `<label> - <last4>_<start>_<end>.csv`, but the end segment is NOT the requested end (observed ~4 days past it) — the last-4 hint works, the window does not; detect downloads by marker timestamp |
+
+Export order is oldest-first and was verified stable across re-downloads (two
+overlapping downloads minutes apart, 25-row overlap byte-identical and
+identically ordered), which is what makes the `occurrence` counter safe for
+Elan too. Because the portal clamps instead of refusing, the planner's
+retention clip is what keeps requests honest — and a floor-straddling request
+(only possible manually) must be *filed* with its start clipped to the floor,
+or the pre-floor months would be falsely recorded as fetched-and-empty.
 
 ## Importing archives older than the retention floor
 
@@ -217,7 +235,7 @@ through `deploy/grafana_sync.py`, never hand-authored as JSON.
 ## Tests
 
 ```sh
-uv run pytest tests/test_transaction_downloader.py tests/test_chase_transactions.py tests/test_citi_transactions.py
+uv run pytest tests/test_transaction_downloader.py tests/test_chase_transactions.py tests/test_citi_transactions.py tests/test_elan_transactions.py
 ```
 
 `test_transaction_downloader.py` covers planning and filing: layout detection,
@@ -237,3 +255,9 @@ convention, the single-date fallback, occurrence stability, restatement
 pruning, registry wiring, and the guard that a Citi capture can never prune
 another provider's rows when two cards share a last-4 (`transactions` has no
 provider column, so the capture filename is what proves provenance).
+
+`test_elan_transactions.py` mirrors that for Elan: the signed Amount kept
+as-is (no flip), signed-zero normalization, separator-only memos dropping to
+None, layout detection and the download-filename last-4 hint in `store`,
+occurrence stability, restatement pruning, registry wiring, and the
+cross-provider prune guard.

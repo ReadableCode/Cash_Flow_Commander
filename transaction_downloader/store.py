@@ -101,6 +101,19 @@ CITI_LAYOUTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Elan (myaccountaccess.com) card exports carry one layout (observed live
+# 2026-08-24): "Date","Transaction","Name","Memo","Amount" — ISO dates and a
+# single signed Amount column (negative = money out). Memo is not required so
+# a future export that drops it still parses.
+ELAN_LAYOUTS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "elan_card",
+        "account_type": "credit",
+        "required": frozenset({"date", "transaction", "name", "amount"}),
+        "date_fields": ("date",),
+    },
+)
+
 # Everything provider-specific the downloader tooling needs, in one place.
 #
 # - layouts: header-detected CSV shapes for this source
@@ -140,6 +153,30 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         # or after it is guaranteed servable; the sliver between the cycle
         # boundary and the rolling floor is reachable manually if ever needed.
         "retention_months": 24,
+    },
+    "elan": {
+        "layouts": ELAN_LAYOUTS,
+        # No cap has been observed — but the discovery account ran ~2.6
+        # rows/month, far too little volume to surface one. Revisit if an
+        # export ever lands on a suspiciously round row count.
+        "row_cap": None,
+        # Downloads are named "<label> - <last4>_<MM-DD-YYYY>_<MM-DD-YYYY>.csv"
+        # (e.g. "Credit Card - 0000_01-01-2026_08-28-2026.csv"); the last 4
+        # sits between the "- " and the date range. NOTE the trailing date is
+        # NOT the requested end (observed four days past it) — only the
+        # account hint is trustworthy here.
+        "download_hint_re": re.compile(r"-\s*(\d{4})_\d{2}-\d{2}-\d{4}"),
+        "empty_message": (
+            "There aren’t any transactions for that date range. "
+            "Try expanding your search."
+        ),
+        # 18 months ("All available dates" is literally d_545 in the portal's
+        # search select). Unlike Chase/Citi the portal never REFUSES an
+        # out-of-range date — it silently clamps: a request from 2024-01-01
+        # (2026-08-24 run) returned rows starting at the 545-day boundary
+        # with no error. The clip here is what keeps requests honest, since
+        # the portal will not complain about a dishonest one.
+        "retention_months": 18,
     },
 }
 
