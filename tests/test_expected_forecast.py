@@ -134,7 +134,11 @@ def test_unpaid_rows_chain_the_balance_and_paid_rows_do_not(engine):
     assert february["Amount_Paid"] == ""
     assert february["Running_Balance"] == 400.00  # 700 + (-300)
 
-    assert "2026-03-10" not in list(df_cast["Date"])  # skipped: absent
+    # Skipped rows appear IN ORDER (the TUI shows the whole story) but move
+    # nothing; the sheet publisher strips them via _status.
+    march = df_cast[df_cast["Date"] == "2026-03-10"].iloc[0]
+    assert march["_status"] == "skipped"
+    assert march["Running_Balance"] == february["Running_Balance"]
     assert series_id is not None
 
 

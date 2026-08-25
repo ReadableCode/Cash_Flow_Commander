@@ -9,6 +9,10 @@ The model is one sentence:
     future balance = anchor balance + every unpaid, unskipped occurrence
                      from the anchor date forward.
 
+One deliberate exception: card-payoff occurrences are excluded — this is a
+PLANNED-NEEDS forecast, and card spending beyond the budgeted bills (which
+already deduct on their own due dates) is optional. See _drop_card_payoffs.
+
 Paid occurrences drop out on their own — their real transactions are already
 inside the anchor balance. The anchor comes straight from the bank: Chase
 bank exports carry a running balance on every transaction, so the newest
@@ -147,28 +151,81 @@ def get_paid_dates(engine) -> dict:
 
 
 # %%
+# Card payoff exclusion #
+
+
+def _drop_card_payoffs(engine, df_status: pd.DataFrame) -> pd.DataFrame:
+    """Remove card-payoff occurrences: this is a PLANNED-NEEDS forecast.
+
+    Jason's call (2026-08-24, reversing an estimate-based approach tried the
+    same day): the checking forecast shows planned expenses only. Bills
+    billed to a card already reduce checking on their own due dates, and the
+    card spend beyond them is optional — the whole point of the forecast is
+    what the plan REQUIRES, not what current habits would spend. Card
+    payoffs (transfer series whose target account is credit-kind) therefore
+    contribute nothing here; they stay visible on the budget dashboard's
+    Transfers panel instead. Bank-target transfers (savings moves) are
+    planned needs and keep deducting.
+
+    Excluding rather than zeroing also prevents a real double count: a
+    payoff that already left checking before the anchor date is inside the
+    anchor balance, and its still-unpaired occurrence would deduct it again.
+    """
+    with engine.connect() as conn:
+        card_accounts = {
+            row[0]
+            for row in conn.execute(
+                select(db.transactions.c.account_id)
+                .where(db.transactions.c.account_kind == "credit")
+                .distinct()
+            )
+        }
+    is_card_payoff = df_status["is_transfer"].fillna(False).astype(bool) & df_status[
+        "transfer_account_id"
+    ].isin(card_accounts)
+    return df_status[~is_card_payoff]
+
+
+# %%
 # Forecast #
 
 
 def build_future_cast(
-    engine, horizon_days: int = HORIZON_DAYS, config: dict | None = None
+    engine,
+    horizon_days: int = HORIZON_DAYS,
+    config: dict | None = None,
+    days_back_shown: int | None = DAYS_BACK_SHOWN,
 ) -> pd.DataFrame:
     """The Transactions_Report dataframe, same columns the sheet always had.
 
     Recently-paid rows show their actual net and paid date and leave the
     running balance alone. Unpaid rows (including late ones, and 'broken' /
     'net_zero' ones — effectively unpaid) chain the balance forward from the
-    anchor. Skipped occurrences do not appear at all.
+    anchor. Skipped rows appear IN ORDER but move nothing — they are part of
+    the story of the money even though they are not owed. The sheet publisher
+    strips them (the sheet never showed skipped rows); the TUI shows all of
+    it.
     """
     if config is None:
         config = load_forecast_config()
     anchor_date, anchor_balance = get_anchor(engine, config["anchor_account_id"])
     account_labels = config["account_labels"]
 
-    start = anchor_date - datetime.timedelta(days=DAYS_BACK_SHOWN)
+    # Unpaid rows reach back over ALL of history — an unpaid bill does not
+    # stop counting against the balance however old it is, exactly like the
+    # sheet this replaced. Resolved rows (paid, skipped) are context only:
+    # the TUI shows the recent window (days_back_shown) plus everything
+    # ahead, while the sheet publish passes None to keep the full paid
+    # history the sheet always carried.
+    start = datetime.date(2000, 1, 1)
     end = datetime.date.today() + datetime.timedelta(days=horizon_days)
     df_status = expected_store.get_occurrence_status_df(engine, start, end)
-    df_status = df_status[df_status["status"] != "skipped"]
+    df_status = _drop_card_payoffs(engine, df_status)
+    if days_back_shown is not None:
+        shown_from = anchor_date - datetime.timedelta(days=days_back_shown)
+        is_recent = pd.to_datetime(df_status["due_date"]).dt.date >= shown_from
+        is_resolved = df_status["status"].isin(["paid", "skipped"])
+        df_status = df_status[~is_resolved | is_recent]
     paid_dates = get_paid_dates(engine)
 
     df_status = df_status.sort_values(["due_date", "amount"]).reset_index(drop=True)
@@ -177,8 +234,9 @@ def build_future_cast(
     running_balance = anchor_balance
     for _, occurrence in df_status.iterrows():
         is_paid = occurrence["status"] == "paid"
-        if not is_paid:
-            running_balance = round(running_balance + float(occurrence["amount"]), 2)
+        amount = float(occurrence["amount"])
+        if not is_paid and occurrence["status"] != "skipped":
+            running_balance = round(running_balance + amount, 2)
         account_id = occurrence["auto_pay_account_id"]
         paid_date = paid_dates.get(int(occurrence["occurrence_id"]))
         rows.append(
@@ -194,12 +252,17 @@ def build_future_cast(
                     if pd.notna(account_id)
                     else ""
                 ),
-                "Amount": float(occurrence["amount"]),
+                "Amount": amount,
                 "Amount_Paid": (
                     round(float(occurrence["net_amount"]), 2) if is_paid else ""
                 ),
                 "Date_Paid": str(paid_date) if is_paid and paid_date else "",
                 "Running_Balance": running_balance,
+                # Internal columns (leading underscore): consumed by the TUI's
+                # Forecast screen so rows can be paired/skipped in place;
+                # stripped before anything is published to the sheet.
+                "_occurrence_id": int(occurrence["occurrence_id"]),
+                "_status": occurrence["status"],
             }
         )
     return pd.DataFrame(rows)
@@ -229,10 +292,12 @@ def rebuild_forecast_days(
 
     first_day = anchor_date + datetime.timedelta(days=1)
     last_day = datetime.date.today() + datetime.timedelta(days=horizon_days)
+    # ALL of history: an unpaid occurrence never ages out of being owed.
     df_status = expected_store.get_occurrence_status_df(
-        engine, anchor_date - datetime.timedelta(days=365), last_day
+        engine, datetime.date(2000, 1, 1), last_day
     )
     df_status = df_status[~df_status["status"].isin(["skipped", "paid"])]
+    df_status = _drop_card_payoffs(engine, df_status)
 
     outflows_by_day: dict = {}
     inflows_by_day: dict = {}
@@ -298,7 +363,9 @@ def main() -> int:
     day_count = rebuild_forecast_days(engine)
     print(f"forecast_days rebuilt: {day_count} days (Grafana reads this)")
 
-    df_future_cast = build_future_cast(engine)
+    # The sheet keeps its full paid history (days_back_shown=None), like it
+    # always had before the DB took over.
+    df_future_cast = build_future_cast(engine, days_back_shown=None)
     print(
         f"future cast: {len(df_future_cast)} rows, {df_future_cast['Date'].min()} → {df_future_cast['Date'].max()}"
     )
@@ -312,6 +379,14 @@ def main() -> int:
         print(
             f"lowest projected balance: {lowest['Running_Balance']:.2f} on {lowest['Date']}"
         )
+
+    # The TUI shows skipped rows in order; the sheet never did. Internal
+    # (underscore) columns exist for the TUI; the sheet gets the exact rows
+    # and columns it always had.
+    df_future_cast = df_future_cast[df_future_cast["_status"] != "skipped"]
+    df_future_cast = df_future_cast[
+        [name for name in df_future_cast.columns if not name.startswith("_")]
+    ]
 
     if not args.publish:
         print("\n(preview only — pass --publish to write the sheet)")
