@@ -54,7 +54,7 @@ a row a person wrote.
 ## Daily use
 
 ```
-uv run python src/expected_tui.py        # one app: pairing, t = transactions, e = series
+uv run python src/cfc_tui.py        # one app: pairing + forecast, t = transactions, e = series
 uv run python src/expected_checks.py     # broken / past-due / net-zero / drift report
 uv run python src/expected_discover.py   # recurring transactions no series accounts for
 uv run python src/expected_forecast.py   # cash forecast preview; --publish writes the sheet
@@ -100,7 +100,7 @@ Occurrences are generated to a 2-year horizon by `generate_occurrences`
 src/expected_schedule.py      schedule -> due dates (pure date math)
 src/expected_store.py         all reads/writes + the derived-status query
 src/expected_suggest.py       candidate ranking (pure; never writes)
-src/expected_tui.py           Textual UI: pairing + transactions + series screens
+src/cfc_tui.py           Textual UI: pairing + forecast, transactions, series screens
 src/expected_checks.py        quiet-failure report, exit 1 on findings
 src/expected_discover.py      recurring-but-unbudgeted transaction finder
 src/expected_import_sheet.py  one-time import from the sheet backups

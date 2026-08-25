@@ -1,15 +1,17 @@
 """Terminal UI for pairing expected occurrences with real transactions.
 
-    uv run python src/expected_tui.py
+    uv run python src/cfc_tui.py
 
 One app, three screens:
 
-- Pairing (default): every occurrence in a date window — past AND upcoming —
-  with its derived status. Select one and press m to see candidate
+- Pairing + forecast (p or f): every occurrence ever, in date order, with the
+  running balance chained from checking's real anchor — paid and skipped rows
+  shown in place but moving nothing. Press m on a row to see candidate
   transactions, suggestions ranked first, and pick the one(s) that paid it.
   Nothing is ever matched without a person choosing it here. When one bill
   pays several expected items (the mortgage payment that also covers the PMI
   line), press x instead of space to claim a stated share of a transaction.
+  Skip (s), unskip (u), and amount edits (a) live here too.
 - Transactions (press t): every real transaction, date-ordered, showing which
   series each one pays — the place to spot reversals and strays.
 - Series (press e): the bills themselves. New series, close a series, or
@@ -42,6 +44,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 import db  # noqa: E402
+import expected_forecast  # noqa: E402
 import expected_store  # noqa: E402
 import expected_suggest  # noqa: E402
 
@@ -172,16 +175,20 @@ class MatchScreen(ModalScreen):
     with the series they pay, so a bill that covers several expected items
     can be shared. Space toggles a whole-transaction claim, x claims a stated
     share (the PMI inside the mortgage payment), enter saves, escape leaves.
+    / focuses a filter box that narrows the list as you type — every
+    space-separated word must appear somewhere in the row.
     """
 
     # priority=True: the focused DataTable also wants space and enter (row
     # selection); without priority these bindings never fire and the screen
-    # looks keyless.
+    # looks keyless. check_action turns them back off while the filter box
+    # has focus, so typing a space filters instead of toggling.
     BINDINGS = [
         Binding("space", "toggle", "Select", priority=True),
         Binding("x", "split_claim", "Claim a share", priority=True),
         Binding("enter", "save", "Save matches", priority=True),
         Binding("escape", "cancel", "Cancel", priority=True),
+        Binding("slash", "focus_filter", "Filter", priority=True),
     ]
 
     def __init__(self, app_state, occurrence_row) -> None:
@@ -189,7 +196,9 @@ class MatchScreen(ModalScreen):
         self.app_state = app_state
         self.occurrence_row = occurrence_row
         self.candidates = []  # list of dicts: txn fields + suggested flag
-        self.selected_indexes = set()
+        self.selected_indexes = set()  # indexes into self.candidates
+        self.filter_text = ""
+        self.visible_indexes = []  # table row -> index into self.candidates
 
     def compose(self) -> ComposeResult:
         row = self.occurrence_row
@@ -201,6 +210,7 @@ class MatchScreen(ModalScreen):
         )
         with Vertical(classes="match_box"):
             yield Label(header)
+            yield Input(placeholder="/ filter — words match date, account, amount, description", id="candidate_filter")
             yield DataTable(id="candidates_table")
         yield Footer()
 
@@ -214,6 +224,50 @@ class MatchScreen(ModalScreen):
         )
         self.render_candidates()
         table.focus()
+
+    def _filter_focused(self) -> bool:
+        return self.focused is not None and self.focused.id == "candidate_filter"
+
+    def check_action(self, action: str, parameters) -> bool | None:
+        """While the filter box has focus, keys belong to it, not the table.
+
+        Escape stays live (it refocuses the table); everything else falls
+        through so a typed space or x lands in the filter text.
+        """
+        if self._filter_focused() and action in ("toggle", "split_claim", "save"):
+            return False
+        return True
+
+    def action_focus_filter(self) -> None:
+        self.query_one("#candidate_filter", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "candidate_filter":
+            self.filter_text = event.value
+            self.render_candidates()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "candidate_filter":
+            self.query_one("#candidates_table", DataTable).focus()
+
+    def _candidate_matches_filter(self, candidate: dict) -> bool:
+        """Every space-separated word must appear somewhere in the row."""
+        words = self.filter_text.lower().split()
+        if not words:
+            return True
+        account_label = self.app_state.account_labels.get(
+            candidate["account_id"], candidate["account_id"]
+        )
+        haystack = " ".join(
+            [
+                candidate["post_date"].isoformat(),
+                str(account_label),
+                f"{candidate['amount']:.2f}",
+                candidate["matched_series"],
+                candidate["description"],
+            ]
+        ).lower()
+        return all(word in haystack for word in words)
 
     def load_candidates(self) -> None:
         due_date = pd.to_datetime(self.occurrence_row["due_date"]).date()
@@ -260,7 +314,13 @@ class MatchScreen(ModalScreen):
         table = self.query_one("#candidates_table", DataTable)
         cursor = table.cursor_row
         table.clear()
-        for index, candidate in enumerate(self.candidates):
+        self.visible_indexes = [
+            index
+            for index, candidate in enumerate(self.candidates)
+            if self._candidate_matches_filter(candidate)
+        ]
+        for index in self.visible_indexes:
+            candidate = self.candidates[index]
             # Text, not str: a plain "[x]" string would be read as Rich markup
             # (an unknown style tag) and vanish from the cell.
             if index in self.selected_indexes:
@@ -282,13 +342,19 @@ class MatchScreen(ModalScreen):
                 candidate["matched_series"][:24],
                 candidate["description"][:60],
             )
-        if len(self.candidates) > 0:
-            table.move_cursor(row=min(cursor, len(self.candidates) - 1))
+        if len(self.visible_indexes) > 0:
+            table.move_cursor(row=max(0, min(cursor, len(self.visible_indexes) - 1)))
+
+    def _cursor_candidate_index(self) -> int | None:
+        """The candidate index under the cursor, through the filter mapping."""
+        row = self.query_one("#candidates_table", DataTable).cursor_row
+        if row < 0 or row >= len(self.visible_indexes):
+            return None
+        return self.visible_indexes[row]
 
     def action_toggle(self) -> None:
-        table = self.query_one("#candidates_table", DataTable)
-        index = table.cursor_row
-        if index < 0 or index >= len(self.candidates):
+        index = self._cursor_candidate_index()
+        if index is None:
             return
         if self.candidates[index]["matched_series"] != "":
             self.notify(
@@ -310,9 +376,8 @@ class MatchScreen(ModalScreen):
         transaction gets a full (or split) match on the mortgage occurrence
         and a split match carrying the PMI share on the PMI occurrence.
         """
-        table = self.query_one("#candidates_table", DataTable)
-        index = table.cursor_row
-        if index < 0 or index >= len(self.candidates):
+        index = self._cursor_candidate_index()
+        if index is None:
             return
         candidate = self.candidates[index]
 
@@ -365,15 +430,33 @@ class MatchScreen(ModalScreen):
         self.dismiss(True)
 
     def action_cancel(self) -> None:
+        # Escape from the filter box returns to the table (keeping the
+        # filter); escape from the table leaves the screen.
+        if self._filter_focused():
+            self.query_one("#candidates_table", DataTable).focus()
+            return
         self.dismiss(False)
 
 
 # %%
-# Pairing screen #
+# Forecast screen #
 
 
-class PairingScreen(Screen):
-    """Date-ordered occurrences with derived status; the daily driver."""
+class ForecastScreen(Screen):
+    """THE daily driver: every occurrence in date order with the running balance.
+
+    This is the pairing screen and the forecast in one, replacing the old
+    windowed Pairing screen. It starts from the anchor (checking's newest
+    bank-export balance) and chains every unpaid, unskipped occurrence
+    forward: each row shows the balance AFTER that row is taken out. Paid
+    and skipped rows appear in order for the story but move nothing (paid
+    money is already inside the anchor; skipped money is not owed). Unpaid
+    rows from ALL of history still count — an unpaid bill does not stop
+    being owed because it is late — so a stale unpaired occurrence visibly
+    drags every balance below it. Pair (m), unpair (v), skip (s), unskip
+    (u), and edit the expected amount (a) right here; the balance recomputes
+    on save. Card payoffs are excluded (planned-needs model). / filters.
+    """
 
     BINDINGS = [
         ("m", "open_match", "Pair"),
@@ -381,9 +464,8 @@ class PairingScreen(Screen):
         ("s", "skip", "Skip"),
         ("u", "unskip", "Unskip"),
         ("a", "edit_amount", "Amount"),
-        ("b", "window_back", "Older"),
-        ("f", "window_forward", "Newer"),
         ("r", "refresh", "Refresh"),
+        ("slash", "focus_filter", "Filter"),
         ("t", "goto_transactions", "Transactions"),
         ("e", "goto_series", "Series"),
         ("escape", "back", "Menu"),
@@ -393,61 +475,123 @@ class PairingScreen(Screen):
     def __init__(self, app_state) -> None:
         super().__init__()
         self.app_state = app_state
-        self.window_end = datetime.date.today() + datetime.timedelta(days=DAYS_FORWARD)
-        self.df_status = pd.DataFrame()
+        self.rows = []
+        self.filter_text = ""
+        self.visible_rows = []  # table row -> row dict, through the filter
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static("", id="window_label")
-        yield DataTable(id="occurrences_table")
+        yield Static("", id="forecast_label")
+        yield Input(placeholder="/ filter — words match date, series, category, amount", id="forecast_filter")
+        yield DataTable(id="forecast_table")
         yield Footer()
 
     def on_mount(self) -> None:
-        table = self.query_one("#occurrences_table", DataTable)
+        table = self.query_one("#forecast_table", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_columns(
-            "due", "series", "category", "expected", "status", "actual", "matches"
+            "date", "series", "category", "expected", "status",
+            "actual", "date paid", "running balance"
         )
         self.action_refresh()
         table.focus()
 
     def action_refresh(self) -> None:
-        window_start = self.window_end - datetime.timedelta(
-            days=DAYS_BACK + DAYS_FORWARD
+        try:
+            config = expected_forecast.load_forecast_config()
+            anchor_date, anchor_balance = expected_forecast.get_anchor(
+                self.app_state.engine, config["anchor_account_id"]
+            )
+            df_cast = expected_forecast.build_future_cast(
+                self.app_state.engine, config=config
+            )
+        except Exception as error:  # missing config/anchor: report, don't crash
+            self.notify(f"Cannot build forecast: {error}", severity="error")
+            return
+        self.rows = df_cast.to_dict("records")
+        self.query_one("#forecast_label", Static).update(
+            f" anchor {anchor_balance:,.2f} on {anchor_date} — each row shows the "
+            "balance after it; paid rows don't move it; card payoffs excluded"
         )
-        self.df_status = expected_store.get_occurrence_status_df(
-            self.app_state.engine, window_start, self.window_end
-        )
-        self.query_one("#window_label", Static).update(
-            f" {window_start} → {self.window_end}   (b/f to move, m to pair)"
-        )
+        self.render_rows(initial=True)
 
-        table = self.query_one("#occurrences_table", DataTable)
+    def render_rows(self, initial: bool = False) -> None:
+        table = self.query_one("#forecast_table", DataTable)
         cursor = table.cursor_row
         table.clear()
-        for _, row in self.df_status.iterrows():
-            actual_text = "" if row["match_count"] == 0 else f"{row['net_amount']:.2f}"
-            table.add_row(
-                str(row["due_date"]),
-                row["series_name"],
-                row["category"],
-                f"{float(row['amount']):.2f}",
-                styled_status(row["status"]),
-                actual_text,
-                str(row["match_count"]) if row["match_count"] else "",
+        self.visible_rows = []
+        words = self.filter_text.lower().split()
+        today = datetime.date.today().isoformat()
+        first_future_row = None
+        shown = 0
+        for row in self.rows:
+            status = str(row["_status"])
+            is_resolved = status in ("paid", "skipped")
+            haystack = " ".join(
+                str(row[key])
+                for key in ("Date", "Account_Name", "Category", "Amount", "Running_Balance")
+            ).lower() + " " + status
+            if words and not all(word in haystack for word in words):
+                continue
+            balance = float(row["Running_Balance"])
+            balance_text = Text(
+                f"{balance:,.2f}",
+                style="bold red" if balance < 0 else ("dim" if is_resolved else ""),
             )
-        if len(self.df_status) > 0 and cursor >= 0:
-            table.move_cursor(row=min(cursor, len(self.df_status) - 1))
+            amount_text = Text(
+                f"{float(row['Amount']):,.2f}", style="dim" if is_resolved else ""
+            )
+            status_label = (
+                "late" if status == "unpaid" and str(row["Date"]) < today else status
+            )
+            status_text = Text(
+                status_label,
+                style="yellow" if status_label == "late" else STATUS_STYLES.get(status, ""),
+            )
+            actual_text = (
+                f"{float(row['Amount_Paid']):,.2f}" if row["Amount_Paid"] != "" else ""
+            )
+            table.add_row(
+                str(row["Date"]),
+                str(row["Account_Name"])[:36],
+                str(row["Category"]),
+                amount_text,
+                status_text,
+                actual_text,
+                str(row["Date_Paid"]),
+                balance_text,
+            )
+            self.visible_rows.append(row)
+            if first_future_row is None and str(row["Date"]) >= today:
+                first_future_row = shown
+            shown += 1
+        if shown:
+            if initial:
+                table.move_cursor(row=first_future_row or 0)
+            else:
+                table.move_cursor(row=max(0, min(cursor, shown - 1)))
 
-    def selected_row(self):
-        index = self.query_one("#occurrences_table", DataTable).cursor_row
-        if index < 0 or index >= len(self.df_status):
+    def _status_row_for_cursor(self):
+        """The full occurrence-status row for the cursor, fresh from the store.
+
+        The forecast frame carries only the display columns plus the
+        occurrence id; MatchScreen and the skip/unskip actions want the same
+        rich row Pairing hands them, so fetch it for the one due date.
+        """
+        index = self.query_one("#forecast_table", DataTable).cursor_row
+        if index < 0 or index >= len(self.visible_rows):
             return None
-        return self.df_status.iloc[index]
+        row = self.visible_rows[index]
+        due = datetime.date.fromisoformat(str(row["Date"]))
+        df_status = expected_store.get_occurrence_status_df(
+            self.app_state.engine, due, due
+        )
+        hits = df_status[df_status["occurrence_id"] == int(row["_occurrence_id"])]
+        return hits.iloc[0] if len(hits) else None
 
     def action_open_match(self) -> None:
-        row = self.selected_row()
+        row = self._status_row_for_cursor()
         if row is None:
             return
         self.app.push_screen(
@@ -455,7 +599,7 @@ class PairingScreen(Screen):
         )
 
     def action_void_matches(self) -> None:
-        row = self.selected_row()
+        row = self._status_row_for_cursor()
         if row is None or row["match_count"] == 0:
             return
 
@@ -473,7 +617,7 @@ class PairingScreen(Screen):
         self.app.push_screen(ConfirmScreen(question), on_confirm)
 
     def action_skip(self) -> None:
-        row = self.selected_row()
+        row = self._status_row_for_cursor()
         if row is None:
             return
 
@@ -490,7 +634,7 @@ class PairingScreen(Screen):
         )
 
     def action_unskip(self) -> None:
-        row = self.selected_row()
+        row = self._status_row_for_cursor()
         if row is None or row["status"] != "skipped":
             return
         expected_store.unskip_occurrence(
@@ -499,7 +643,7 @@ class PairingScreen(Screen):
         self.action_refresh()
 
     def action_edit_amount(self) -> None:
-        row = self.selected_row()
+        row = self._status_row_for_cursor()
         if row is None:
             return
 
@@ -521,13 +665,17 @@ class PairingScreen(Screen):
             on_amount,
         )
 
-    def action_window_back(self) -> None:
-        self.window_end = self.window_end - datetime.timedelta(days=WINDOW_STEP_DAYS)
-        self.action_refresh()
+    def action_focus_filter(self) -> None:
+        self.query_one("#forecast_filter", Input).focus()
 
-    def action_window_forward(self) -> None:
-        self.window_end = self.window_end + datetime.timedelta(days=WINDOW_STEP_DAYS)
-        self.action_refresh()
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "forecast_filter":
+            self.filter_text = event.value
+            self.render_rows()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "forecast_filter":
+            self.query_one("#forecast_table", DataTable).focus()
 
     def action_goto_transactions(self) -> None:
         self.app.push_screen(TransactionsScreen(self.app_state))
@@ -536,100 +684,13 @@ class PairingScreen(Screen):
         self.app.push_screen(SeriesScreen(self.app_state))
 
     def action_back(self) -> None:
+        if self.focused is not None and self.focused.id == "forecast_filter":
+            self.query_one("#forecast_table", DataTable).focus()
+            return
         self.app.pop_screen()
 
     def action_quit_app(self) -> None:
         self.app.exit()
-
-
-# %%
-# Transactions screen #
-
-
-# View filters, cycled with v.
-TXN_VIEWS = ["all", "matched", "unmatched"]
-
-
-class TransactionsScreen(Screen):
-    """Every held transaction — the whole two years at once — with the series
-    it pays. Newest first.
-
-    Read-only. Press v to cycle all / matched / unmatched: 'matched' is the
-    audit view of everything the sheet import (and you) have paired so far;
-    'unmatched' is money the plan doesn't know about yet, where reversals and
-    stray subscriptions stand out. PageUp/PageDown and Home/End move fast.
-    """
-
-    BINDINGS = [
-        ("v", "cycle_view", "All/Matched/Unmatched"),
-        ("r", "refresh", "Refresh"),
-        ("escape", "back", "Back"),
-    ]
-
-    def __init__(self, app_state) -> None:
-        super().__init__()
-        self.app_state = app_state
-        self.view = "all"
-        self.df_all = pd.DataFrame()
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("", id="txn_view_label")
-        yield DataTable(id="transactions_table")
-        yield Footer()
-
-    def on_mount(self) -> None:
-        table = self.query_one("#transactions_table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_columns("date", "account", "amount", "pays", "description")
-        self.action_refresh()
-        table.focus()
-
-    def action_refresh(self) -> None:
-        # All of history in one load; a few thousand rows is nothing.
-        self.df_all = expected_store.get_transactions_with_matches_df(
-            self.app_state.engine, datetime.date(2000, 1, 1), datetime.date(2100, 1, 1)
-        )
-        self.df_all = self.df_all.sort_values(
-            ["post_date", "account_id"], ascending=[False, True]
-        )
-        self.render_transactions()
-
-    def render_transactions(self) -> None:
-        is_matched = self.df_all["matched_series"] != ""
-        if self.view == "matched":
-            df_view = self.df_all[is_matched]
-        elif self.view == "unmatched":
-            df_view = self.df_all[~is_matched]
-        else:
-            df_view = self.df_all
-        self.query_one("#txn_view_label", Static).update(
-            f" view: {self.view} ({len(df_view)} rows)   "
-            f"all {len(self.df_all)} / matched {int(is_matched.sum())} / "
-            f"unmatched {int((~is_matched).sum())}   "
-            "(v to switch, PgUp/PgDn/Home/End to move)"
-        )
-        table = self.query_one("#transactions_table", DataTable)
-        table.clear()
-        for _, txn_row in df_view.iterrows():
-            account_label = self.app_state.account_labels.get(
-                str(txn_row["account_id"]), str(txn_row["account_id"])
-            )
-            table.add_row(
-                str(txn_row["post_date"]),
-                account_label,
-                f"{float(txn_row['amount']):.2f}",
-                str(txn_row["matched_series"])[:30],
-                str(txn_row["description"])[:70],
-            )
-
-    def action_cycle_view(self) -> None:
-        self.view = TXN_VIEWS[(TXN_VIEWS.index(self.view) + 1) % len(TXN_VIEWS)]
-        self.render_transactions()
-
-    def action_back(self) -> None:
-        self.app.pop_screen()
 
 
 # %%
@@ -951,29 +1012,49 @@ MENU_BANNER = """\
 class MenuScreen(Screen):
     """The landing page: pick where to go.
 
+    Three ways to choose, all equivalent: the hotkey, a mouse click, or
+    arrow keys + enter on the focused button.
+
     Deliberately cheap — a few COUNT queries and nothing else, so the app
     opens instantly. The heavy status derivation happens only when a page
     that needs it is opened.
     """
 
     BINDINGS = [
-        ("p", "goto_pairing", "Pairing"),
+        # p and f both open the combined screen — muscle memory from when
+        # Pairing and Forecast were separate.
+        ("p", "goto_forecast", "Pairing + forecast"),
+        ("f", "goto_forecast", "Pairing + forecast"),
         ("t", "goto_transactions", "Transactions"),
         ("e", "goto_series", "Series"),
         ("q", "quit_app", "Quit"),
+        ("down", "focus_next_button", "Down"),
+        ("up", "focus_previous_button", "Up"),
     ]
 
     def __init__(self, app_state) -> None:
         super().__init__()
         self.app_state = app_state
 
+    def on_mount(self) -> None:
+        # Focus the first button so arrows + enter work immediately; a
+        # focused Button already handles enter (and space) natively.
+        self.query(Button).first().focus()
+
+    def action_focus_next_button(self) -> None:
+        self.focus_next(Button)
+
+    def action_focus_previous_button(self) -> None:
+        self.focus_previous(Button)
+
     def compose(self) -> ComposeResult:
         with Vertical(classes="menu_box"):
             yield Static(MENU_BANNER, id="menu_banner")
             yield Static(self._counts_line(), id="menu_counts")
             yield Button(
-                "p   Pairing — expected vs actual, month by month",
-                id="goto_pairing",
+                "p   Pairing + forecast — every occurrence in order, "
+                "with the running balance",
+                id="goto_forecast",
             )
             yield Button(
                 "t   Transactions — every actual, matched and not",
@@ -1012,11 +1093,11 @@ class MenuScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         getattr(self, f"action_{event.button.id}")()
 
-    def action_goto_pairing(self) -> None:
-        self.app.push_screen(PairingScreen(self.app_state))
-
     def action_goto_transactions(self) -> None:
         self.app.push_screen(TransactionsScreen(self.app_state))
+
+    def action_goto_forecast(self) -> None:
+        self.app.push_screen(ForecastScreen(self.app_state))
 
     def action_goto_series(self) -> None:
         self.app.push_screen(SeriesScreen(self.app_state))
