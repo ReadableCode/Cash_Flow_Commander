@@ -177,7 +177,7 @@
     {
       "type": "timeseries",
       "title": "Monthly income vs expenses",
-      "description": "Bars: external money in (blue) and out (orange) each month, both shown as positive magnitudes. Line: net. Transfers between your own accounts are excluded from all three.",
+      "description": "Blue bars up: external money in each month. Orange bars down: money out, drawn below zero so the two never overlap. Green line: net. Transfers between your own accounts are excluded from all three.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${DS_CASH_FLOW_COMMANDER}"
@@ -197,7 +197,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n), m AS (\n  SELECT date_trunc('month', post_date)::timestamptz AS time,\n    coalesce(sum(amount) FILTER (WHERE flow = 'income'), 0) AS income,\n    coalesce(-sum(amount) FILTER (WHERE flow = 'expense'), 0) AS expenses\n  FROM classified WHERE $__timeFilter(post_date::timestamptz) GROUP BY 1)\nSELECT time, 'Income' AS metric, income::float8 AS value FROM m\nUNION ALL SELECT time, 'Expenses', expenses::float8 FROM m\nUNION ALL SELECT time, 'Net', (income - expenses)::float8 FROM m\nORDER BY 1",
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n), m AS (\n  SELECT date_trunc('month', post_date)::timestamptz AS time,\n    coalesce(sum(amount) FILTER (WHERE flow = 'income'), 0) AS income,\n    coalesce(-sum(amount) FILTER (WHERE flow = 'expense'), 0) AS expenses\n  FROM classified WHERE $__timeFilter(post_date::timestamptz) GROUP BY 1)\nSELECT time, 'Income' AS metric, income::float8 AS value FROM m\nUNION ALL SELECT time, 'Expenses', (-expenses)::float8 FROM m\nUNION ALL SELECT time, 'Net', (income - expenses)::float8 FROM m\nORDER BY 1",
           "refId": "A"
         }
       ],
@@ -217,7 +217,7 @@
           "unit": "currencyUSD",
           "custom": {
             "drawStyle": "bars",
-            "fillOpacity": 70,
+            "fillOpacity": 90,
             "lineWidth": 1,
             "barAlignment": 0
           }
@@ -285,14 +285,14 @@
     },
     {
       "type": "barchart",
-      "title": "Where money goes (transfers excluded)",
-      "description": "Card rows use Chase's category; bank rows are grouped by transaction type. Card refunds net against their category.",
+      "title": "Budget — this month, share of total (green = paid)",
+      "description": "Each bill's share of this month's total budgeted bills, colored by whether it has been paid. Transfer series (card payoffs, savings moves) are excluded; they get their own panel to the right. Always the current calendar month.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${DS_CASH_FLOW_COMMANDER}"
       },
       "gridPos": {
-        "h": 10,
+        "h": 16,
         "w": 12,
         "x": 0,
         "y": 14
@@ -306,7 +306,385 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT CASE WHEN account_kind = 'credit' THEN coalesce(nullif(category,''),'Card - uncategorized')\n      ELSE CASE txn_type\n        WHEN 'DEBIT_CARD' THEN 'Debit card' WHEN 'CHECK_PAID' THEN 'Checks'\n        WHEN 'LOAN_PMT' THEN 'Loan payments' WHEN 'ACH_DEBIT' THEN 'ACH / bill pay'\n        WHEN 'MISC_DEBIT' THEN 'Misc debits' WHEN 'FEE_TRANSACTION' THEN 'Fees'\n        WHEN 'ATM' THEN 'ATM' ELSE coalesce(txn_type,'Other bank') END END AS category, (-sum(amount))::float8 AS \"Spend\"\nFROM classified\nWHERE flow = 'expense' AND $__timeFilter(post_date::timestamptz)\nGROUP BY 1 ORDER BY 2 DESC LIMIT 15",
+          "rawSql": "WITH occ AS (\n  SELECT o.id, -o.amount::float8 AS expected, s.name\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE o.due_date >= date_trunc('month', CURRENT_DATE)::date\n    AND o.due_date < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date\n    AND o.skipped_at IS NULL AND NOT s.is_transfer AND o.amount < 0\n), live AS (\n  SELECT m.occurrence_id, count(*) AS n\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t ON t.account_id = m.txn_account_id\n    AND t.post_date = m.txn_post_date AND t.description = m.txn_description\n    AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL GROUP BY 1\n), tot AS (SELECT sum(expected) AS total FROM occ)\nSELECT occ.name AS \"Series\",\n  coalesce(sum(occ.expected) FILTER (WHERE live.n > 0) / tot.total, 0)::float8 AS \"Paid\",\n  coalesce(sum(occ.expected) FILTER (WHERE live.n IS NULL) / tot.total, 0)::float8 AS \"Unpaid\"\nFROM occ LEFT JOIN live ON live.occurrence_id = occ.id CROSS JOIN tot\nGROUP BY occ.name, tot.total\nORDER BY sum(occ.expected) DESC",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Series",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "custom": {
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paid"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unpaid"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Transfers — this month",
+      "description": "Card autopays and savings moves that pull from checking. Transfers, not spending — card purchases are already in the budget and savings stay yours — but each one still lowers the checking balance on its due date.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH occ AS (\n  SELECT o.id, o.due_date, o.amount::float8 AS expected, s.name\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE o.due_date >= date_trunc('month', CURRENT_DATE)::date\n    AND o.due_date < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date\n    AND o.skipped_at IS NULL AND s.is_transfer\n), live AS (\n  SELECT m.occurrence_id, count(*) AS n\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t ON t.account_id = m.txn_account_id\n    AND t.post_date = m.txn_post_date AND t.description = m.txn_description\n    AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL GROUP BY 1\n)\nSELECT occ.due_date::text AS \"Due\", occ.name AS \"Transfer\", occ.expected AS \"Expected\",\n  CASE WHEN live.n > 0 THEN 'paid' WHEN occ.due_date > CURRENT_DATE THEN 'upcoming'\n       ELSE 'unpaid' END AS \"Status\"\nFROM occ LEFT JOIN live ON live.occurrence_id = occ.id\nORDER BY occ.due_date",
+          "refId": "A"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Expected"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "paid": {
+                        "color": "#199e70",
+                        "index": 0
+                      },
+                      "unpaid": {
+                        "color": "#e0b400",
+                        "index": 1
+                      },
+                      "upcoming": {
+                        "color": "#3987e5",
+                        "index": 2
+                      },
+                      "skipped": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Budget — this month",
+      "description": "Every expected occurrence due this calendar month and what actually paid it. Paid is derived by joining matches to live transactions, so a restated or vanished transaction flips its row back to unpaid. Always the current month — the dashboard time picker does not apply. Matches are made in the pairing TUI (src/cfc_tui.py).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH occ AS (\n  SELECT o.id, o.due_date, o.amount::float8 AS expected, o.skipped_at,\n         s.name, s.category\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE o.due_date >= date_trunc('month', CURRENT_DATE)::date\n    AND o.due_date < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date\n), live2 AS (\n  SELECT m.occurrence_id,\n         sum(coalesce(m.matched_amount, m.txn_amount))::float8 AS actual,\n         count(*) AS n\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t ON t.account_id = m.txn_account_id\n    AND t.post_date = m.txn_post_date AND t.description = m.txn_description\n    AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n  GROUP BY 1\n)\nSELECT occ.due_date::text AS \"Due\", occ.name AS \"Series\", occ.category AS \"Category\",\n  occ.expected AS \"Expected\", live2.actual AS \"Actual\",\n  CASE WHEN occ.skipped_at IS NOT NULL THEN 'skipped'\n       WHEN live2.n > 0 THEN 'paid'\n       WHEN occ.due_date > CURRENT_DATE THEN 'upcoming'\n       ELSE 'unpaid' END AS \"Status\"\nFROM occ LEFT JOIN live2 ON live2.occurrence_id = occ.id\nORDER BY occ.due_date, occ.name",
+          "refId": "A"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Expected"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "paid": {
+                        "color": "#199e70",
+                        "index": 0
+                      },
+                      "unpaid": {
+                        "color": "#e0b400",
+                        "index": 1
+                      },
+                      "upcoming": {
+                        "color": "#3987e5",
+                        "index": 2
+                      },
+                      "skipped": {
+                        "color": "#8e8e8e",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Left to pay — this month",
+      "description": "Expense occurrences due this month that are neither paid nor skipped. Transfer series (card payoffs) are excluded — the card's own purchases are the spending.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH occ AS (\n  SELECT o.id, o.amount::float8 AS expected, o.skipped_at\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE o.due_date >= date_trunc('month', CURRENT_DATE)::date\n    AND o.due_date < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date\n    AND NOT s.is_transfer\n), live AS (\n  SELECT m.occurrence_id FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t ON t.account_id = m.txn_account_id\n    AND t.post_date = m.txn_post_date AND t.description = m.txn_description\n    AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL GROUP BY 1\n)\nSELECT coalesce(-sum(expected) FILTER (WHERE expected < 0 AND skipped_at IS NULL\n         AND id NOT IN (SELECT occurrence_id FROM live)), 0) AS \"Left to pay\"\nFROM occ",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#d95926"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Expected net — this month",
+      "description": "Sum of every non-skipped, non-transfer expected amount this month: income minus bills.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(o.amount), 0)::float8 AS \"Expected net\"\nFROM cash_flow_commander.expected_occurrences o\nJOIN cash_flow_commander.expected_series s ON s.id = o.series_id\nWHERE o.skipped_at IS NULL AND NOT s.is_transfer\n  AND o.due_date >= date_trunc('month', CURRENT_DATE)::date\n  AND o.due_date < (date_trunc('month', CURRENT_DATE) + interval '1 month')::date",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#199e70"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Where money goes (transfers excluded)",
+      "description": "Matched bills are grouped by the expected series they pay (from the pairing TUI); unmatched rows fall back to the card category or bank transaction type. Transfers are excluded — including card payoffs recognized through transfer-flagged series.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n),\nlive_matches AS (\n  SELECT m.txn_account_id, m.txn_post_date, m.txn_description, m.txn_amount,\n         m.txn_occurrence, coalesce(m.matched_amount, m.txn_amount) AS claimed,\n         s.name AS series_name, s.is_transfer, c.flow\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.expected_occurrences o ON o.id = m.occurrence_id\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  JOIN classified c ON c.account_id = m.txn_account_id AND c.post_date = m.txn_post_date\n    AND c.description = m.txn_description AND c.amount = m.txn_amount\n    AND c.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n)\nSELECT label AS category, sum(v)::float8 AS \"Spend\" FROM (\n  SELECT lm.series_name AS label, -lm.claimed AS v\n  FROM live_matches lm\n  WHERE lm.flow = 'expense' AND NOT lm.is_transfer\n    AND $__timeFilter(lm.txn_post_date::timestamptz)\n  UNION ALL\n  SELECT CASE WHEN c.account_kind = 'credit' THEN coalesce(nullif(c.category,''),'Card - uncategorized')\n      ELSE CASE c.txn_type\n        WHEN 'DEBIT_CARD' THEN 'Debit card' WHEN 'CHECK_PAID' THEN 'Checks'\n        WHEN 'LOAN_PMT' THEN 'Loan payments' WHEN 'ACH_DEBIT' THEN 'ACH / bill pay'\n        WHEN 'MISC_DEBIT' THEN 'Misc debits' WHEN 'FEE_TRANSACTION' THEN 'Fees'\n        WHEN 'ATM' THEN 'ATM' ELSE coalesce(c.txn_type,'Other bank') END END, -c.amount\n  FROM classified c\n  WHERE c.flow = 'expense' AND $__timeFilter(c.post_date::timestamptz)\n    AND NOT EXISTS (SELECT 1 FROM live_matches lm WHERE lm.txn_account_id = c.account_id\n      AND lm.txn_post_date = c.post_date AND lm.txn_description = c.description\n      AND lm.txn_amount = c.amount AND lm.txn_occurrence = c.occurrence)\n) x GROUP BY 1 ORDER BY 2 DESC LIMIT 15",
           "refId": "A"
         }
       ],
@@ -337,7 +715,7 @@
     {
       "type": "barchart",
       "title": "Income sources",
-      "description": "External inflows grouped by the first words of the bank description.",
+      "description": "Matched income grouped by payer (the income series' sub_category, falling back to the series name) — one employer is one bar however many series and bank descriptions it spans. Unmatched inflows fall back to the first words of the description.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${DS_CASH_FLOW_COMMANDER}"
@@ -346,7 +724,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 40
       },
       "targets": [
         {
@@ -357,7 +735,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n)\nSELECT array_to_string((string_to_array(description, ' '))[1:3], ' ') AS source,\n       sum(amount)::float8 AS \"Income\"\nFROM classified\nWHERE flow = 'income' AND $__timeFilter(post_date::timestamptz)\nGROUP BY 1 ORDER BY 2 DESC LIMIT 12",
+          "rawSql": "WITH classified AS (\n  SELECT t.*,\n    CASE\n      WHEN account_kind = 'credit' AND txn_type = 'Payment' THEN 'transfer'\n      WHEN account_kind = 'bank' AND txn_type IN ('ACCT_XFER','PARTNERFI_TO_CHASE','CHASE_TO_PARTNERFI') THEN 'transfer'\n      WHEN account_kind = 'bank' AND description ILIKE 'CHASE CREDIT CRD AUTOPAY%' THEN 'transfer'\n      WHEN account_kind = 'bank' AND substring(description FROM 'Payment to Chase card ending in (\\d\\d\\d\\d)') IN\n           (SELECT DISTINCT account_id FROM cash_flow_commander.transactions WHERE account_kind = 'credit') THEN 'transfer'\n      WHEN account_kind = 'credit' THEN 'expense'\n      WHEN amount >= 0 THEN 'income'\n      ELSE 'expense'\n    END AS flow\n  FROM cash_flow_commander.transactions t\n),\nlive_matches AS (\n  SELECT m.txn_account_id, m.txn_post_date, m.txn_description, m.txn_amount,\n         m.txn_occurrence, coalesce(m.matched_amount, m.txn_amount) AS claimed,\n         s.name AS series_name, s.sub_category AS payer, s.category AS series_category,\n         s.is_transfer, c.flow\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.expected_occurrences o ON o.id = m.occurrence_id\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  JOIN classified c ON c.account_id = m.txn_account_id AND c.post_date = m.txn_post_date\n    AND c.description = m.txn_description AND c.amount = m.txn_amount\n    AND c.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n)\nSELECT label AS source, sum(v)::float8 AS \"Income\" FROM (\n  SELECT CASE WHEN lm.series_category = 'Income'\n         THEN coalesce(nullif(lm.payer, ''), lm.series_name)\n         ELSE lm.series_name END AS label, lm.claimed AS v\n  FROM live_matches lm\n  WHERE lm.flow = 'income' AND NOT lm.is_transfer\n    AND $__timeFilter(lm.txn_post_date::timestamptz)\n  UNION ALL\n  SELECT array_to_string((string_to_array(c.description, ' '))[1:3], ' '), c.amount\n  FROM classified c\n  WHERE c.flow = 'income' AND $__timeFilter(c.post_date::timestamptz)\n    AND NOT EXISTS (SELECT 1 FROM live_matches lm WHERE lm.txn_account_id = c.account_id\n      AND lm.txn_post_date = c.post_date AND lm.txn_description = c.description\n      AND lm.txn_amount = c.amount AND lm.txn_occurrence = c.occurrence)\n) x GROUP BY 1 ORDER BY 2 DESC LIMIT 12",
           "refId": "A"
         }
       ],
@@ -397,7 +775,7 @@
         "h": 10,
         "w": 10,
         "x": 0,
-        "y": 24
+        "y": 50
       },
       "targets": [
         {
@@ -448,7 +826,7 @@
         "h": 10,
         "w": 14,
         "x": 10,
-        "y": 24
+        "y": 50
       },
       "targets": [
         {
@@ -494,7 +872,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 60
       },
       "panels": [
         {
@@ -515,7 +893,7 @@
             "h": 6,
             "w": 6,
             "x": 0,
-            "y": 35
+            "y": 61
           },
           "id": 1,
           "options": {
@@ -593,7 +971,7 @@
             "h": 6,
             "w": 6,
             "x": 6,
-            "y": 35
+            "y": 61
           },
           "id": 2,
           "options": {
@@ -636,7 +1014,7 @@
             "h": 6,
             "w": 6,
             "x": 12,
-            "y": 35
+            "y": 61
           },
           "id": 3,
           "options": {
@@ -692,7 +1070,7 @@
             "h": 6,
             "w": 24,
             "x": 18,
-            "y": 36
+            "y": 62
           },
           "id": 12,
           "options": {
@@ -711,7 +1089,7 @@
               "refId": "A"
             }
           ],
-          "title": "Months held per account \u2014 gaps are the point",
+          "title": "Months held per account — gaps are the point",
           "type": "table"
         }
       ]
@@ -728,7 +1106,7 @@
     "to": "now"
   },
   "timezone": "America/Chicago",
-  "title": "Cash Flow Commander \u2014 Transactions",
+  "title": "Cash Flow Commander — Transactions",
   "uid": "cfc-transactions",
   "version": 1
 }
