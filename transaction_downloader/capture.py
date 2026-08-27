@@ -14,7 +14,7 @@ restated transaction stays traceable to the day it appeared.
 Usage:
 
     uv run python transaction_downloader/capture.py file \
-        --account 7676 --start 2026-08-01 --end 2026-08-22 ~/Downloads/Chase7676_Activity.CSV
+        --account 7676 --start 2026-08-01 --end 2026-08-22 <download_dir>/Chase7676_Activity.CSV
     uv run python transaction_downloader/capture.py --provider citi file \
         --account 0000 --start 2026-08-01 --end 2026-08-24 "Date range.CSV"
     uv run python transaction_downloader/capture.py reindex
@@ -36,8 +36,12 @@ import yaml
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
+_SRC_DIR = os.path.join(os.path.dirname(_THIS_DIR), "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 import store  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -58,6 +62,7 @@ class TruncatedExport(Exception):
 
 def _provider_entry(provider: str) -> dict[str, Any]:
     """The provider's entry from providers.local.yaml; {} when missing or unreadable."""
+    user_paths.check_config_readable(PROVIDERS_YAML_PATH)
     if not os.path.isfile(PROVIDERS_YAML_PATH):
         return {}
     try:
@@ -65,6 +70,7 @@ def _provider_entry(provider: str) -> dict[str, Any]:
             loaded = yaml.safe_load(handle)
     except (OSError, yaml.YAMLError):
         return {}
+    user_paths.check_not_desymlinked(PROVIDERS_YAML_PATH, loaded)
     if not isinstance(loaded, dict):
         return {}
     entry = loaded.get(provider)
@@ -77,11 +83,11 @@ def _resolve_repo_relative(path: str) -> str:
     Staging lives inside the repo (data/, gitignored), so the configured value is
     relative. Resolving against the repo rather than the cwd means the tools work
     from anywhere, and nothing outside the repo is ever written.
+
+    Goes through user_paths so a config written as `${ONEDRIVE_DOCS}/...`
+    resolves to whichever machine this is running on.
     """
-    expanded = os.path.expanduser(str(path))
-    if os.path.isabs(expanded):
-        return expanded
-    return os.path.normpath(os.path.join(_REPO_ROOT, expanded))
+    return user_paths.expand_config_path(path, _REPO_ROOT)
 
 
 def _load_raw_dir(override: str | None, provider: str) -> str | None:
@@ -95,16 +101,17 @@ def _load_raw_dir(override: str | None, provider: str) -> str | None:
 def resolve_download(path: str, provider: str = DEFAULT_PROVIDER) -> str:
     """Resolve a download path, falling back to the configured download_dir.
 
-    Browsers do not always save where you expect — this Mac's Chrome drops
-    exports in a cloud-synced Documents folder, not ~/Downloads. Recording that
-    once in providers.local.yaml means a bare filename is enough here.
+    Browsers do not always save where you expect — Chrome here drops exports in
+    a cloud-synced Documents folder, not ~/Downloads. Recording that once in
+    providers.local.yaml means a bare filename is enough, and writing it as
+    `${ONEDRIVE_DOCS}/...` keeps it correct on every machine that syncs it.
     """
     expanded = os.path.expanduser(path)
     if os.path.isfile(expanded):
         return expanded
     download_dir = _provider_entry(provider).get("download_dir")
     if download_dir and not os.path.isabs(expanded):
-        candidate = os.path.join(os.path.expanduser(str(download_dir)), path)
+        candidate = os.path.join(user_paths.expand_config_path(download_dir), path)
         if os.path.isfile(candidate):
             return candidate
     return expanded

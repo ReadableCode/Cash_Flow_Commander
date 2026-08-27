@@ -35,7 +35,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # .env is a symlink to a private env file; load it read-only into os.environ.
 # Values must never be printed or embedded anywhere.
-load_dotenv(REPO_ROOT / ".env", override=False)
+#
+# A dangling link is checked first: load_dotenv on a missing file is a silent
+# no-op, and DATABASE_URL below would then fall back to the local dev SQLite
+# file. A run against "the database" would quietly hit an empty one instead.
+_ENV_PATH = REPO_ROOT / ".env"
+if _ENV_PATH.is_symlink() and not _ENV_PATH.exists():
+    raise RuntimeError(
+        f"{_ENV_PATH} is a symlink to '{os.readlink(_ENV_PATH)}', which does not exist. "
+        "The personal_credentials clone is missing or moved - without it CFC_DATABASE_URL is "
+        "unset and this would silently use the local dev SQLite file."
+    )
+load_dotenv(_ENV_PATH, override=False)
 
 DEFAULT_DATABASE_URL = "sqlite:///data/cash_flow_commander.db"
 

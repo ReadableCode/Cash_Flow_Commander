@@ -45,8 +45,12 @@ import yaml
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
+_SRC_DIR = os.path.join(os.path.dirname(_THIS_DIR), "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 import store  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -110,6 +114,7 @@ MAX_MONTHS_PER_RUN = 24
 
 def _load_providers_config(path: str) -> dict[str, Any]:
     """Load providers.local.yaml; {} when missing, unreadable, or not a mapping."""
+    user_paths.check_config_readable(path)
     if not os.path.isfile(path):
         return {}
     try:
@@ -117,15 +122,17 @@ def _load_providers_config(path: str) -> dict[str, Any]:
             loaded = yaml.safe_load(handle)
     except (OSError, yaml.YAMLError):
         return {}
+    user_paths.check_not_desymlinked(path, loaded)
     return loaded if isinstance(loaded, dict) else {}
 
 
 def _resolve_repo_relative(path: str) -> str:
-    """Expand a config path, resolving a relative one against the repo root."""
-    expanded = os.path.expanduser(str(path))
-    if os.path.isabs(expanded):
-        return expanded
-    return os.path.normpath(os.path.join(_REPO_ROOT, expanded))
+    """Expand a config path, resolving a relative one against the repo root.
+
+    Goes through user_paths so a config written as `${ONEDRIVE_DOCS}/...`
+    resolves to whichever machine this is running on.
+    """
+    return user_paths.expand_config_path(path, _REPO_ROOT)
 
 
 def provider_entry(config: dict[str, Any], provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:

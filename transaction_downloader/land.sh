@@ -50,9 +50,12 @@ missing = [k for k in ("raw_dir", "data_dir") if not entry.get(k)]
 if missing:
     sys.exit("chase entry is missing: " + ", ".join(missing))
 repo = os.getcwd()
+sys.path.insert(0, os.path.join(repo, "src"))
+import user_paths
 def resolve(v):
-    v = os.path.expanduser(str(v))
-    return v if os.path.isabs(v) else os.path.normpath(os.path.join(repo, v))
+    # user_paths also expands ${ONEDRIVE_DOCS}, so a config path stays correct
+    # on every machine the sync folder lands on.
+    return user_paths.expand_config_path(v, repo)
 # archive_dir is optional: Chase has no bill PDFs to file, and pointing it at a
 # correspondence folder makes ingest re-walk unrelated documents every run.
 print(resolve(entry["archive_dir"]) if entry.get("archive_dir") else "")

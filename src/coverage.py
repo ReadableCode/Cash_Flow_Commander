@@ -36,6 +36,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 import db  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -71,10 +72,12 @@ MAX_LOOKBACK_DAYS = 60
 
 def _load_providers_config(path: str) -> dict[str, Any]:
     """Load providers.local.yaml; {} when missing or not a mapping."""
+    user_paths.check_config_readable(path)
     if not os.path.isfile(path):
         return {}
     with open(path, "r", encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle)
+    user_paths.check_not_desymlinked(path, loaded)
     return loaded if isinstance(loaded, dict) else {}
 
 

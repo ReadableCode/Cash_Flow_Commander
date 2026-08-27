@@ -41,6 +41,7 @@ import bill_store  # noqa: E402
 import db  # noqa: E402
 import providers  # noqa: E402
 import raw_store  # noqa: E402
+import user_paths  # noqa: E402
 import transaction_store  # noqa: E402
 import usage_store  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -84,10 +85,12 @@ DERIVES_OWN_ACCOUNT_ID = frozenset({"chase", "citi", "elan"})
 
 def _load_account_config(path: str) -> dict[str, Any]:
     """Load providers.local.yaml; returns {} when the file is missing or not a mapping."""
+    user_paths.check_config_readable(path)
     if not os.path.isfile(path):
         return {}
     with open(path, "r", encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle)
+    user_paths.check_not_desymlinked(path, loaded)
     return loaded if isinstance(loaded, dict) else {}
 
 

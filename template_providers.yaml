@@ -9,6 +9,17 @@
 # One top-level key per provider. The key is the provider slug: lowercase
 # (a-z, 0-9, '_', '-'), and it must match both the ingest CLI's --provider
 # value and the /bills-<slug> command name.
+#
+# Path fields (archive_dir, raw_dir, data_dir, download_dir) accept:
+#   - a repo-relative path      "data/chase/incoming"
+#   - an absolute path          "/srv/bills"
+#   - "~/..." for your home directory
+#   - "${ONEDRIVE_DOCS}/..." for a folder inside your OneDrive personal
+#     Documents tree. src/user_paths.py resolves that per machine (macOS
+#     discovery; set $ONEDRIVE_DOCS anywhere else), so the same config works on
+#     every Mac the folder syncs to. Prefer this over an absolute cloud path: a
+#     literal "/Users/<you>/Library/CloudStorage/..." pins the whole workflow to
+#     one machine and silently finds nothing on any other.
 
 rhythm:
   # Category of service this provider bills for

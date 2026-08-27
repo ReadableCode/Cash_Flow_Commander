@@ -16,6 +16,7 @@ if _SRC_DIR not in sys.path:
 
 import db  # noqa: E402
 import raw_store  # noqa: E402
+import user_paths  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
 
 # %%
@@ -294,7 +295,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.provider is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.provider):
         parser.error("--provider must be a lowercase slug (a-z, 0-9, '_', '-')")
     if not args.paths:
-        args.paths = [p for p in os.environ.get("CFC_RAW_INGEST_DIRS", "").split(":") if p]
+        # Entries go through expand_config_path so $ONEDRIVE_DOCS resolves; an
+        # unexpanded one raises rather than becoming a literal "$..." directory.
+        raw_dirs = os.environ.get("CFC_RAW_INGEST_DIRS", "").split(":")
+        args.paths = [user_paths.expand_config_path(p) for p in raw_dirs if p]
         if not args.paths:
             parser.error("no paths given and CFC_RAW_INGEST_DIRS is not set")
     return args

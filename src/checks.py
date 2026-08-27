@@ -47,6 +47,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 import db  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -64,6 +65,7 @@ ENERGY_CATEGORY = "energy"
 
 def _load_providers_config(path: str) -> dict[str, Any]:
     """Load providers.local.yaml; {} when missing or unreadable."""
+    user_paths.check_config_readable(path)
     if not os.path.isfile(path):
         return {}
     try:
@@ -71,6 +73,7 @@ def _load_providers_config(path: str) -> dict[str, Any]:
             loaded = yaml.safe_load(handle)
     except (OSError, yaml.YAMLError):
         return {}
+    user_paths.check_not_desymlinked(path, loaded)
     return loaded if isinstance(loaded, dict) else {}
 
 
