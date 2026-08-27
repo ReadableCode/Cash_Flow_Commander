@@ -170,7 +170,7 @@ uv run python transaction_downloader/plan.py --overlap-days 10
 
 # file what was downloaded (--provider before the subcommand)
 uv run python transaction_downloader/capture.py file \
-    --account <last4> --start 2026-08-01 --end 2026-08-22 ~/Downloads/<file>.CSV
+    --account <last4> --start 2026-08-01 --end 2026-08-22 <download_dir>/<file>.CSV
 uv run python transaction_downloader/capture.py --provider citi file \
     --account <last4> --start 2026-08-01 --end 2026-08-24 "Date range.CSV"
 uv run python transaction_downloader/capture.py status

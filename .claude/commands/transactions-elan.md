@@ -88,6 +88,11 @@ backfill plan look like a 2-month refresh.
     **View → Developer → Allow JavaScript from Apple Events** in Chrome (have
     the user click it) plus macOS Automation consent on first use. Find the tab
     by URL match on every call — never by index, tabs move.
+  - **Off macOS** (Windows or Linux), neither AppleScript nor any osascript
+    equivalent exists. If Claude in Chrome is not in the session, stop and say
+    so rather than improvising an automation profile — a fresh profile has no
+    password manager, which puts the user back to typing credentials. Either
+    run this from a Mac, or bring Claude in Chrome into the session first.
 - The user signs in themselves — **never type, store, or echo credentials**,
   and never read them out of the password manager. Hand control over for MFA
   and wait. If Elan offers "remember this device," accept it.
