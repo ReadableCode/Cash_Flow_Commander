@@ -38,6 +38,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 import bill_store  # noqa: E402
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 import providers  # noqa: E402
 import raw_store  # noqa: E402
@@ -363,7 +364,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     engine = db.get_engine()
-    db.create_tables(engine)
+    bootstrap.ensure_schema(engine)
     config = {} if args.account_id else _load_account_config(PROVIDERS_YAML_PATH)
     status_filter = None if args.status == "all" else args.status
     counts: dict[str, Counter[str]] = defaultdict(Counter)

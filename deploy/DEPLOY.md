@@ -11,17 +11,29 @@ adds only the `cash_flow_commander` schema and its dedicated role — nothing in
    Creates the `cash_flow_commander_user` login role and the
    `cash_flow_commander` schema it owns. Idempotent; safe to re-run to rotate
    the password.
-2. **App-side `create_tables()`** — runs as `cash_flow_commander_user` via
-   `CFC_DATABASE_URL`, from the repo root:
 
-   ```bash
-   export CFC_DATABASE_URL="postgresql+psycopg://cash_flow_commander_user:PASSWORD@HOST:5432/apps"
-   export CFC_DB_SCHEMA="cash_flow_commander"
-   uv run python -c "import sys; sys.path.insert(0,'src'); import db; db.create_tables()"
-   ```
+   This step needs a superuser because creating a schema requires `CREATE` on
+   the database, which the app role deliberately does not have. It is the only
+   manual step.
 
-3. **Ingest CLI** — with the same two env vars set, run the normal ingest
-   commands; they operate entirely inside the `cash_flow_commander` schema.
+2. **Everything else is automatic.** Set the two env vars below and run any
+   entry point — the TUI, `ingest_raw`, `parse_raw`, whatever. `src/bootstrap.py`
+   creates missing tables and stamps `cash_flow_commander.deploy_meta` with its
+   `SCHEMA_VERSION`. It is additive only (`CREATE TABLE` for what is absent,
+   never `DROP`/`TRUNCATE`/`ALTER COLUMN`) and version-gated, so after the first
+   run it costs one `SELECT`.
+
+   If the schema from step 1 is missing, bootstrap says so and names this file
+   rather than failing with `relation does not exist`.
+
+### Changing a table definition
+
+Edit the `Table` in `src/db.py` and bump `SCHEMA_VERSION` in `src/bootstrap.py`.
+A bump makes new *tables* appear. It does **not** add a column to an existing
+table, drop anything, or change a type — `create_all` is create-if-missing, so
+an altered definition silently does nothing against a table that already exists
+and then breaks a write later. Any change to an existing table is its own
+reviewed migration against a backup, never something a boot does by surprise.
 
 ## Step 1 in detail: create_role.sql
 
@@ -80,13 +92,30 @@ Note: run the `load_log` count as the superuser. `information_schema` only
 shows tables the current role has privileges on, so `cash_flow_commander_user`
 correctly sees 0 there — that is the isolation working, not a missing schema.
 
-## NO PostgREST changes in this step
+## Why this app does not use PostgREST
 
-Cash Flow Commander speaks SQL directly over `CFC_DATABASE_URL`; PostgREST is
-not involved and its configuration must not be modified here. If the
-`cash_flow_commander` schema is ever exposed via PostgREST later, it must be
-**appended** to `PGRST_DB_SCHEMAS`, and `load_log` must remain **first** in
-that list.
+The other self-built apps on this cluster reach their data through PostgREST
+(see `dotfiles/docs/postgres_app_conventions.md`). This one deliberately does
+not, decided 2026-08-28:
+
+- **PostgREST cannot serve SQLite.** Anyone cloning this repo must be able to
+  run it against their own database, including a local file, so the data-access
+  seam has to span both backends. That seam is SQLAlchemy. Adding PostgREST
+  would mean maintaining two access paths to the same tables.
+- **There is no multi-user story.** Each person runs their own database at
+  their own URL. RLS with one account filters nothing, and a `users` table would
+  exist only to mint a token.
+- **It is not internet-facing.** The TUI and CLIs run on the LAN or over
+  Tailscale, so the `LOGIN` role is not exposed the way a web app's would be.
+
+Consequences, so they are not mistaken for oversights: `cash_flow_commander` is
+absent from `PGRST_DB_SCHEMAS` on purpose, `cash_flow_commander_user` keeps
+`LOGIN` and a password on purpose, and there is no RLS on purpose. If the
+schema is ever exposed via PostgREST, it must be **appended** to
+`PGRST_DB_SCHEMAS` with `load_log` remaining **first**.
+
+Grafana (below) reads the tables directly as `grafana_ro`, which stays correct
+under this decision.
 
 ## Safety rules recap
 

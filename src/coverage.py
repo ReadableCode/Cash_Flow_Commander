@@ -35,6 +35,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 import user_paths  # noqa: E402
 
@@ -381,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     engine = db.get_engine()
+    bootstrap.ensure_schema(engine)
     reports = [
         analyze_series(
             engine,

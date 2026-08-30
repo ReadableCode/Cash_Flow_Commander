@@ -10,9 +10,10 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.engine import Engine, RowMapping
 
+import bootstrap
 import db
 import ingest_raw
 import raw_store
@@ -24,9 +25,6 @@ FAKE_PDF = b"%PDF-1.4 fake synthetic bill\n%%EOF"
 FAKE_PDF_OTHER = b"%PDF-1.4 fake synthetic bill number two\n%%EOF"
 FAKE_CSV = b"month,total\n2025-01,123.45\n"
 FAKE_JSON = b'{"synthetic": true, "rows": []}'
-
-# Opt-in Postgres URL for the integration test; never a hardcoded connection string.
-POSTGRES_TEST_URL = os.environ.get("CFC_TEST_DATABASE_URL")
 
 
 # %%
@@ -367,35 +365,54 @@ def test_metadata_schema_from_env() -> None:
 
 
 # %%
-# Postgres opt-in integration #
+# Real-backend integration #
 
 
-@pytest.mark.skipif(not POSTGRES_TEST_URL, reason="CFC_TEST_DATABASE_URL not set; Postgres test is opt-in")
-def test_postgres_ingest_and_dedup() -> None:
-    """Runs ingest+dedup against a real Postgres when CFC_TEST_DATABASE_URL is set.
+def _real_engine() -> Engine:
+    """The backend this checkout is actually configured for.
 
-    Cleans up only the rows it created, deleting by the exact content_sha256
-    values it inserted -- never a bare DELETE.
+    There is no separate test database: Postgres on a configured checkout,
+    SQLite on a fresh clone, whatever CFC_DATABASE_URL names. An unreachable
+    one is a red test, never a skip -- a skipped database test reports green
+    while proving nothing.
     """
-    assert POSTGRES_TEST_URL is not None
-    if POSTGRES_TEST_URL.startswith("postgresql") and not os.environ.get("CFC_DB_SCHEMA"):
-        pytest.skip("CFC_DB_SCHEMA must be set for the Postgres opt-in test (schema-scoped safety)")
-    engine = create_engine(POSTGRES_TEST_URL)
+    engine = db.get_engine()
+    if engine.dialect.name == "postgresql":
+        # Without a schema the tables would land in `public`. Assert rather than
+        # skip: on Postgres this is a misconfiguration, not an absent optional.
+        assert db.DB_SCHEMA, "CFC_DB_SCHEMA must be set on Postgres (schema-scoped safety)"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 - any connection failure is the same verdict
+        raise AssertionError(
+            f"database unreachable - this test must be red, not skipped: {exc}"
+        ) from exc
+    return engine
+
+
+def test_real_backend_ingest_and_dedup() -> None:
+    """Ingest + dedup against the real configured database.
+
+    Writes to the same tables the app uses, so it cleans up only the rows it
+    created, deleting by the exact content_sha256 values it inserted -- never a
+    bare DELETE.
+    """
+    engine = _real_engine()
+    bootstrap.ensure_schema(engine)
     # Per-run unique payloads so this test never collides with existing rows.
     unique = uuid.uuid4().hex.encode()
-    content_a = b"%PDF-1.4 fake pg doc A " + unique
-    content_b = b"%PDF-1.4 fake pg doc B " + unique
+    content_a = b"%PDF-1.4 fake real-backend doc A " + unique
+    content_b = b"%PDF-1.4 fake real-backend doc B " + unique
     created_shas = [hashlib.sha256(c).hexdigest() for c in (content_a, content_b)]
     try:
-        db.create_tables(engine)
-
         first = raw_store.ingest_bytes(
             engine,
             provider="rhythm",
             doc_type="bill_pdf",
             source="pytest",
             content=content_a,
-            original_name="synthetic_pg_bill_a.pdf",
+            original_name="synthetic_real_bill_a.pdf",
             mime="application/pdf",
         )
         assert first["deduped"] is False
@@ -406,7 +423,7 @@ def test_postgres_ingest_and_dedup() -> None:
             doc_type="bill_pdf",
             source="pytest",
             content=content_a,
-            original_name="synthetic_pg_bill_a_copy.pdf",
+            original_name="synthetic_real_bill_a_copy.pdf",
             mime="application/pdf",
         )
         assert again["deduped"] is True
@@ -418,7 +435,7 @@ def test_postgres_ingest_and_dedup() -> None:
             doc_type="bill_pdf",
             source="pytest",
             content=content_b,
-            original_name="synthetic_pg_bill_b.pdf",
+            original_name="synthetic_real_bill_b.pdf",
             mime="application/pdf",
         )
         assert other["deduped"] is False

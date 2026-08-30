@@ -2,6 +2,7 @@
 # Imports #
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -46,12 +47,48 @@ if _ENV_PATH.is_symlink() and not _ENV_PATH.exists():
         "The personal_credentials clone is missing or moved - without it CFC_DATABASE_URL is "
         "unset and this would silently use the local dev SQLite file."
     )
+_ENV_FILE_PRESENT = _ENV_PATH.is_file()
 load_dotenv(_ENV_PATH, override=False)
 
-DEFAULT_DATABASE_URL = "sqlite:///data/cash_flow_commander.db"
+DEFAULT_SQLITE_URL = "sqlite:///data/cash_flow_commander.db"
+
+
+def _resolve_database_url() -> str:
+    """Pick the backend from CFC_DATABASE_URL.
+
+    SQLite is a supported backend, never a silent fallback for a configured one.
+    A fresh clone with no .env gets it deliberately, with a warning; a checkout
+    that HAS a .env and still has no CFC_DATABASE_URL is misconfigured, and the
+    failure mode there is a run against "the database" that quietly reads and
+    writes an empty local file instead. That has happened here before, which is
+    what the dangling-symlink guard above is for. This is the same guard for the
+    case where the link resolves but the variable is gone.
+    """
+    configured = os.environ.get("CFC_DATABASE_URL", "").strip()
+    if configured:
+        return configured
+    if _ENV_FILE_PRESENT:
+        raise RuntimeError(
+            f"CFC_DATABASE_URL is unset, but {_ENV_PATH} exists. Refusing to fall back to "
+            f"the local SQLite file ({DEFAULT_SQLITE_URL}) - a configured checkout that "
+            "silently reads an empty database looks like it worked. Set CFC_DATABASE_URL "
+            "in the env file (see template.env), or remove the env file to run on SQLite."
+        )
+    print(
+        "\n"
+        "  Cash Flow Commander: no .env and no CFC_DATABASE_URL, so this run uses SQLite\n"
+        f"  at {DEFAULT_SQLITE_URL} (relative to the repo root).\n"
+        "\n"
+        "  That file is your only copy of this data. Nothing backs it up - not this repo\n"
+        "  (data/ is gitignored) and not the server. Back it up yourself, or set\n"
+        "  CFC_DATABASE_URL to a Postgres URL. See README.md.\n",
+        file=sys.stderr,
+    )
+    return DEFAULT_SQLITE_URL
+
 
 # Read at import time; tests monkeypatch env and importlib.reload this module.
-DATABASE_URL: str = os.environ.get("CFC_DATABASE_URL") or DEFAULT_DATABASE_URL
+DATABASE_URL: str = _resolve_database_url()
 DB_SCHEMA: str | None = os.environ.get("CFC_DB_SCHEMA", "").strip() or None
 
 
@@ -422,6 +459,17 @@ forecast_days = Table(
     # the personal number living in the committed dashboard JSON.
     Column("emergency_fund", Numeric(12, 2), nullable=False, server_default=text("0")),
     Column("generated_at", DateTime, nullable=False),
+)
+
+
+# Which version of the table definitions above has been applied. Read by
+# bootstrap.ensure_schema on every entry point so the common case is one cheap
+# SELECT instead of a reflection round-trip per table. Exactly one row.
+deploy_meta = Table(
+    "deploy_meta",
+    metadata,
+    Column("version", Integer, primary_key=True),
+    Column("applied_at", DateTime(timezone=True), nullable=False),
 )
 
 

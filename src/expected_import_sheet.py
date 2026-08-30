@@ -44,6 +44,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 import expected_store  # noqa: E402
 
@@ -419,7 +420,7 @@ def main() -> int:
     args = parser.parse_args()
 
     engine = db.get_engine()
-    db.create_tables(engine)
+    bootstrap.ensure_schema(engine)
 
     if args.wipe:
         wipe_expected_tables(engine)

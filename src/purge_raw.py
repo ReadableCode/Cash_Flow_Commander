@@ -30,6 +30,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 
 # %%
@@ -107,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point; returns a process exit code."""
     args = build_arg_parser().parse_args(argv)
     engine = db.get_engine()
+    bootstrap.ensure_schema(engine)
 
     docs = find(engine, args.provider, args.doc_type)
     if not docs:

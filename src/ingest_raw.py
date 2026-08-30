@@ -14,6 +14,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 import raw_store  # noqa: E402
 import user_paths  # noqa: E402
@@ -310,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     engine: Engine | None = None
     if not args.dry_run:
         engine = db.get_engine()
-        db.create_tables(engine)
+        bootstrap.ensure_schema(engine)
     counts: dict[str, Counter[str]] = defaultdict(Counter)
     skips: list[tuple[str, str]] = []
     for skipped_name, skip_reason in path_skips:

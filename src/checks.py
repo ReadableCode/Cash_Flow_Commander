@@ -46,6 +46,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import bootstrap  # noqa: E402
 import db  # noqa: E402
 import user_paths  # noqa: E402
 
@@ -231,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         account_id = account_id_for_provider(args.provider, _load_providers_config(PROVIDERS_YAML_PATH))
 
     engine = db.get_engine()
+    bootstrap.ensure_schema(engine)
     results = run_checks(engine, account_id)
 
     if args.json:
