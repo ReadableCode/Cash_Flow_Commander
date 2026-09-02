@@ -34,7 +34,3 @@ sheet_ids.yaml
 
 # Bill-provider local config (real accounts; template_providers.yaml is the committed shape)
 providers.local.yaml
-# this repo tracks its own commands (the global ignore dotfiles deploys hides
-# .claude/commands everywhere); the personal_* files are deploy-time links
-!.claude/commands/
-.claude/commands/personal_*.md
