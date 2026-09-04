@@ -366,6 +366,10 @@
   ],
   "refresh": "",
   "schemaVersion": 39,
+  "tags": [
+    "cash-flow-commander",
+    "energy"
+  ],
   "time": {
     "from": "now-2y",
     "to": "now"

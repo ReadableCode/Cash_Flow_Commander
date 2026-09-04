@@ -389,7 +389,8 @@
   "refresh": "",
   "schemaVersion": 39,
   "tags": [
-    "cash-flow-commander"
+    "cash-flow-commander",
+    "forecast"
   ],
   "time": {
     "from": "now-7d",
