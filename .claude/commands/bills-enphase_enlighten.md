@@ -176,6 +176,14 @@ directly, and the electricity-provider cross-reference becomes a check rather th
 uv run python src/ingest_raw.py --provider enphase_enlighten <archive_dir> <raw_dir> <data_dir>
 ```
 
+**Never omit the directory arguments.** With `--provider` set and no paths,
+`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
+onto every file it finds there — including other providers' documents, whose
+`provider` column is then simply wrong. It happened on 2026-09-04: an
+argument-less `--provider elan` filed five Rhythm documents under `elan`, and
+they had to be reassigned by hand afterwards. Always pass the directory
+explicitly, even when you think the default is set to something harmless.
+
 - Add `--dry-run` first to confirm captures classify as `api_usage_json`, not `other`.
 - Note that `raw_dir` sits inside `archive_dir`, so the walk visits each file twice; the second
   visit dedups. Expect ingested and deduped counts to be equal on a first run — that is correct,

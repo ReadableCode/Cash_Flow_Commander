@@ -294,8 +294,20 @@ the request window from the dates inside and stamps it
 ## 5. Land into raw_documents
 
 ```sh
-uv run python src/ingest_raw.py --provider citi <archive_dir> <raw_dir> <data_dir>
+uv run python src/ingest_raw.py --provider citi data/citi/incoming
 ```
+
+That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
+is deliberately empty here and `data_dir` is a work directory holding no
+captures — `raw_dir` is the only directory with anything to ingest.
+
+**Never omit the directory arguments.** With `--provider` set and no paths,
+`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
+onto every file it finds there — including other providers' documents, whose
+`provider` column is then simply wrong. It happened on 2026-09-04: an
+argument-less `--provider elan` filed five Rhythm documents under `elan`, and
+they had to be reassigned by hand afterwards. Always pass the directory
+explicitly, even when you think the default is set to something harmless.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs

@@ -183,7 +183,7 @@ uv run python transaction_downloader/capture.py reindex
 uv run python transaction_downloader/capture.py import-legacy <old files>
 
 # land it, then normalize it
-uv run python src/ingest_raw.py --provider chase <archive_dir> <raw_dir> <data_dir>
+uv run python src/ingest_raw.py --provider chase <raw_dir>
 uv run python src/parse_raw.py --provider chase
 ```
 

@@ -117,10 +117,11 @@ user. If a modal has no visible dismissal, re-navigate to the dashboard
 rather than clicking through it.
 
 No marketing interstitials or nag modals were seen on the 2026-08-24
-discovery session — login landed straight on the dashboard. Expect them
-anyway; when one appears, add it here with the date first seen.
+discovery session or the 2026-09-04 run — login landed straight on the
+dashboard both times. Expect them anyway; when one appears, add it here with
+the date first seen.
 
-## 3. The export flow — as last observed 2026-08-24
+## 3. The export flow — as last observed 2026-09-04
 
 Verified live against the real portal on that date. Elan will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -224,9 +225,12 @@ Wherever the browser profile says — record the real location in
 `providers.local.yaml` notes. The filename pattern is
 `<account label> - <last4>_<MM-DD-YYYY start>_<MM-DD-YYYY end>.csv`, with
 ` (1)` appended on collision — **but the end segment is NOT the requested
-end date** (both 2026-08-24 downloads were named `..._08-28-2026.csv`, four
-days past the requested end). Detect a completed download ONLY by a
-marker-timestamp watch on the download folder; never trust the name.
+end date**: it has run exactly four days past the requested end in every
+download so far (both 2026-08-24 downloads, requested end 08/24, were named
+`..._08-28-2026.csv`; the 2026-09-04 download, requested end 09/04, came back
+`..._09-08-2026.csv`). Do not lean on that offset — it is an observation, not
+a documented contract. Detect a completed download ONLY by a marker-timestamp
+watch on the download folder; never trust the name.
 
 Chrome's multiple-download block applies: the second download of a session
 silently produces no file until the user clicks Allow on the
@@ -288,8 +292,20 @@ Recovery paths, both feeding `capture.py --provider elan import-legacy`
 ## 5. Land into raw_documents
 
 ```sh
-uv run python src/ingest_raw.py --provider elan <archive_dir> <raw_dir> <data_dir>
+uv run python src/ingest_raw.py --provider elan data/elan/incoming
 ```
+
+That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
+is deliberately empty here and `data_dir` is a work directory holding no
+captures — `raw_dir` is the only directory with anything to ingest.
+
+**Never omit the directory arguments.** With `--provider` set and no paths,
+`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
+onto every file it finds there — including other providers' documents, whose
+`provider` column is then simply wrong. It happened on 2026-09-04: an
+argument-less `--provider elan` filed five Rhythm documents under `elan`, and
+they had to be reassigned by hand afterwards. Always pass the directory
+explicitly, even when you think the default is set to something harmless.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs

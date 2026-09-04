@@ -112,6 +112,14 @@ Save each matched message's **full body verbatim** into `raw_dir` as
 uv run python src/ingest_raw.py --provider rhythm <archive_dir> <raw_dir> <data_dir>
 ```
 
+**Never omit the directory arguments.** With `--provider` set and no paths,
+`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
+onto every file it finds there — including other providers' documents, whose
+`provider` column is then simply wrong. It happened on 2026-09-04: an
+argument-less `--provider elan` filed five Rhythm documents under `elan`, and
+they had to be reassigned by hand afterwards. Always pass the directory
+explicitly, even when you think the default is set to something harmless.
+
 Classification (bill_pdf, api_*_json, *_email, csv_export) is the CLI's job. Report ingested
 vs deduped counts per doc_type. Re-runs are safe — sha256 dedup makes ingestion idempotent.
 

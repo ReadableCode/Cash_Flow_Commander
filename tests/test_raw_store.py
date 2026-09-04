@@ -226,6 +226,39 @@ def test_classify(name: str, expected: tuple[str, dt.date | None]) -> None:
     assert ingest_raw.classify(name) == expected
 
 
+def test_provider_without_paths_is_refused(monkeypatch: Any) -> None:
+    """--provider must not ride the shared env fallback.
+
+    CFC_RAW_INGEST_DIRS spans providers, so combining it with --provider stamps
+    that one slug onto every other provider's documents too. Once mislabelled
+    five rhythm documents as elan, hence the guard.
+    """
+    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
+
+    with pytest.raises(SystemExit):
+        ingest_raw._parse_args(["--provider", "elan"])
+
+
+def test_provider_with_explicit_path_is_allowed(monkeypatch: Any, tmp_path: Any) -> None:
+    """Naming the directory is what makes --provider safe; the env is then unused."""
+    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
+
+    args = ingest_raw._parse_args(["--provider", "elan", str(tmp_path)])
+
+    assert args.provider == "elan"
+    assert args.paths == [str(tmp_path)]
+
+
+def test_env_fallback_still_works_without_provider(monkeypatch: Any) -> None:
+    """The bills workflow infers provider per file, so the fallback stays available."""
+    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
+
+    args = ingest_raw._parse_args([])
+
+    assert args.provider is None
+    assert args.paths == ["/some/shared/dir"]
+
+
 def test_gather_files_skips_hidden_and_underscore_dirs(tmp_path: Any) -> None:
     """Staging dirs like _to_delete and hidden dirs must be excluded from the walk."""
     (tmp_path / "keep").mkdir()

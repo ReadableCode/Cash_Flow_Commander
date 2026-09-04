@@ -104,11 +104,18 @@ One row per endpoint you pull:
 ## 6. Land it (ingest CLI)
 
 ```sh
-uv run python src/ingest_raw.py --provider {{slug}} <archive_dir> <raw_dir> <data_dir>
+uv run python src/ingest_raw.py --provider {{slug}} <raw_dir>
 ```
 
-- Substitute the real paths from `providers.local.yaml`; omit `<data_dir>` if
-  unset. Add `--dry-run` first if unsure how files will classify.
+Pass the directory explicitly. `ingest_raw.py` refuses `--provider` with no
+path, because its `$CFC_RAW_INGEST_DIRS` fallback spans providers and would
+stamp this slug onto every other provider's documents sitting there. Pass the
+other configured directories too only if they actually hold captures — for a
+transaction provider, `archive_dir` is usually empty and `data_dir` is a work
+directory, leaving `raw_dir` as the only one worth walking.
+
+- Substitute the real paths from `providers.local.yaml`. Add `--dry-run` first
+  if unsure how files will classify.
 - Report the counts per doc_type: how many ingested, how many deduped as
   already-known.
 - Re-runs are safe: content is deduplicated by sha256, so overlapping pulls and

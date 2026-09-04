@@ -78,7 +78,7 @@ Everything lands in the provider's `raw_dir` before ingestion. For browser-fetch
 From the repo root:
 
 ```
-uv run python src/ingest_raw.py --provider <slug> <archive_dir> <raw_dir> <data_dir>
+uv run python src/ingest_raw.py --provider <slug> <dirs that hold captures>
 ```
 
 sha256 dedup makes re-runs free — when in doubt, over-capture and re-ingest. The CLI can also infer the provider from first-level folder names when `--provider` is omitted, but provider commands always pass it explicitly.

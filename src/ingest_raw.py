@@ -276,7 +276,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "paths",
         nargs="*",
         metavar="DIR_OR_FILE",
-        help="files or directories to ingest; defaults to CFC_RAW_INGEST_DIRS (colon-separated) when omitted",
+        help="files or directories to ingest; when omitted, defaults to CFC_RAW_INGEST_DIRS "
+        "(colon-separated) -- but only if --provider is not set, since that fallback spans providers",
     )
     parser.add_argument(
         "--provider",
@@ -296,6 +297,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.provider is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.provider):
         parser.error("--provider must be a lowercase slug (a-z, 0-9, '_', '-')")
     if not args.paths:
+        # --provider forces that slug onto EVERY file ingested, while
+        # CFC_RAW_INGEST_DIRS is a shared, multi-provider set of directories.
+        # Combining them silently mislabels whatever else happens to be sitting
+        # there -- once observed filing five rhythm documents under elan. The
+        # env fallback is only safe when provider is inferred per file, so make
+        # the caller name the directory whenever they override it.
+        if args.provider is not None:
+            parser.error(
+                f"--provider {args.provider} needs an explicit DIR_OR_FILE: it labels every "
+                "file ingested, and the CFC_RAW_INGEST_DIRS fallback spans providers, so it "
+                f"would stamp '{args.provider}' onto other providers' documents. Pass that "
+                "provider's raw_dir (e.g. data/<provider>/incoming), or drop --provider to "
+                "infer each file's provider from its folder."
+            )
         # Entries go through expand_config_path so $ONEDRIVE_DOCS resolves; an
         # unexpanded one raises rather than becoming a literal "$..." directory.
         raw_dirs = os.environ.get("CFC_RAW_INGEST_DIRS", "").split(":")
