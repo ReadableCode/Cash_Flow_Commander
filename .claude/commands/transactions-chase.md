@@ -146,7 +146,7 @@ Profile & settings to "fix" it.
 If a modal has no visible dismissal, re-navigate to the download URL rather
 than clicking through it.
 
-## 3. The download form — as last observed 2026-08-22
+## 3. The download form — as last observed 2026-09-04
 
 Verified live against the real portal on that date. Chase still moves this page,
 so if what you see disagrees, believe the page and then update this section (§8).
@@ -207,6 +207,13 @@ option:
   `error-messages` attribute (a JSON array; `[]` means valid).
 - After every step, **verify state by reading attributes back** rather than
   assuming the click landed.
+- **The account selector's `value` attribute settles LATE.** Read immediately
+  after clicking the option it is still `null`, while the selection has in fact
+  landed (verified 2026-09-04 — the attribute was present a moment later). Do
+  not read that `null` as a failed click and re-click. Verify with the DOM
+  property `sel.value` and the shadow button's text
+  (`sel.shadowRoot.querySelector('button').innerText`), both of which are
+  correct immediately.
 
 ### The two account kinds behave differently
 
@@ -289,6 +296,10 @@ account** rather than reusing coordinates from the previous account.
    (`.../confirmDownloadAccountActivity;params=<TYPE>,<SUBTYPE>,<internal id>`)
    with "Download other activity" and "Go back to accounts". Click "Download
    other activity" to queue the next window without re-navigating.
+   Both are `mds-button` elements whose label lives in a **`text` attribute**,
+   not in `innerText` — matching on text content alone finds nothing (hit
+   2026-09-04). Match on the attribute, and click the button inside the
+   element's shadow root (`el.shadowRoot.querySelector('button')`).
 6. Repeat per account, per window. **One download per planner window** — never
    merge two windows into one wider download, because the requested window is
    what marks a month covered.
@@ -349,6 +360,13 @@ month fetched and found empty is covered, a month never fetched is not.
 `capture.py` refuses anything that is not a recognizable Chase export, copies
 the bytes unchanged into `raw_dir` under a canonical name, and records the
 window. Identical bytes filed twice are a no-op. Nothing is ever overwritten.
+
+**Every download is consumed exactly once**: a new one is MOVED into the repo,
+and an identical re-download is discarded once its bytes are confirmed already
+filed. So a clean run leaves the browser's download folder empty, and anything
+still sitting there afterwards is real unfiled work — check it rather than
+assuming it is clutter. (Archived exports passed to `import-legacy` are copied
+and never removed; they are the user's own files.)
 
 Check the user's `notes` in `providers.local.yaml` for their browser download
 location before hunting for files.

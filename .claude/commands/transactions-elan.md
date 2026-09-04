@@ -265,6 +265,10 @@ uv run python transaction_downloader/capture.py --provider elan record-empty \
 
 Check the user's `notes` in `providers.local.yaml` for their browser download
 location before hunting for files. Identical bytes filed twice are a no-op.
+Every download is consumed exactly once — a new one is moved into the repo,
+an identical re-download is discarded once its bytes are confirmed already
+filed — so a clean run leaves the download folder empty and anything left
+there is real unfiled work.
 Nothing is ever overwritten.
 
 ## 4.1 Months Elan will not serve

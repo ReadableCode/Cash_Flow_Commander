@@ -372,6 +372,65 @@ def test_refiling_identical_bytes_is_a_no_op(tmp_path: Any) -> None:
     assert len(store.read_manifest(raw_dir)) == 1
 
 
+def test_an_identical_re_download_is_consumed_too(tmp_path: Any) -> None:
+    """A run that changed nothing must still leave the browser's folder empty.
+
+    Filing MOVES a download out; before this, the duplicate branch returned
+    early and left the file behind, so an unchanged account silently accrued
+    downloads the user had to clear by hand. A leftover there should always
+    mean real unfiled work.
+    """
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    window = {"start": dt.date(2026, 8, 1), "end": dt.date(2026, 8, 22), "captured": TODAY}
+
+    first = _write(tmp_path, "Chase7676_Activity_20260822.CSV", CHECKING_CSV)
+    capture.file_capture(first, raw_dir, account=ACCOUNT, **window)
+    again = _write(tmp_path, "Chase7676_Activity_20260822 (1).CSV", CHECKING_CSV)
+    second = capture.file_capture(again, raw_dir, account=ACCOUNT, **window)
+
+    assert second["status"] == "duplicate"
+    assert second["source_removed"] is True
+    assert not os.path.exists(again), "the redundant download should have been discarded"
+    assert len(store.read_manifest(raw_dir)) == 1
+
+
+def test_a_duplicate_archive_is_never_removed(tmp_path: Any) -> None:
+    """Archives are the user's own kept files — redundant is not disposable."""
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    window = {"start": dt.date(2026, 8, 1), "end": dt.date(2026, 8, 22), "captured": TODAY}
+
+    filed = _write(tmp_path, "Chase7676_Activity_20260822.CSV", CHECKING_CSV)
+    capture.file_capture(filed, raw_dir, account=ACCOUNT, **window)
+    archive = _write(tmp_path, "kept_copy.CSV", CHECKING_CSV)
+    entry = capture.file_capture(archive, raw_dir, account=ACCOUNT, move=False, **window)
+
+    assert entry["status"] == "duplicate"
+    assert entry["source_removed"] is False
+    assert os.path.exists(archive), "an archived export must survive being redundant"
+
+
+def test_a_stale_manifest_entry_does_not_discard_the_only_copy(tmp_path: Any) -> None:
+    """The manifest is a cache; the filed capture is the truth.
+
+    If the capture a manifest entry names has been deleted, the download is the
+    only surviving copy — it must be filed, never suppressed and discarded.
+    """
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    window = {"start": dt.date(2026, 8, 1), "end": dt.date(2026, 8, 22), "captured": TODAY}
+
+    first = _write(tmp_path, "Chase7676_Activity_20260822.CSV", CHECKING_CSV)
+    filed = capture.file_capture(first, raw_dir, account=ACCOUNT, **window)
+    os.remove(os.path.join(raw_dir, filed["file"]))  # manifest now points at nothing
+
+    again = _write(tmp_path, "Chase7676_Activity_20260822 (1).CSV", CHECKING_CSV)
+    entry = capture.file_capture(again, raw_dir, account=ACCOUNT, **window)
+
+    assert entry["status"] == "filed", "a stale entry must not suppress filing"
+    assert not os.path.exists(again)
+    with open(os.path.join(raw_dir, entry["file"]), "r", encoding="utf-8") as handle:
+        assert handle.read() == CHECKING_CSV
+
+
 def test_legacy_import_copies_rather_than_moving(tmp_path: Any) -> None:
     """Archived exports are kept files, not transient downloads — leave them alone."""
     raw_dir = os.path.join(str(tmp_path), "raw")
@@ -416,7 +475,7 @@ def test_filing_refuses_a_file_that_is_not_a_chase_export(tmp_path: Any) -> None
     with pytest.raises(store.NotAChaseExport):
         capture.file_capture(source, raw_dir, account=ACCOUNT, start=dt.date(2026, 8, 1),
                              end=dt.date(2026, 8, 22), captured=TODAY)
-    assert not os.path.exists(os.path.join(raw_dir, "_chase_captures.jsonl"))
+    assert not os.path.exists(store.manifest_path(raw_dir)), "a refused file must record nothing"
 
 
 def test_reindex_rebuilds_a_lost_manifest_from_the_files(tmp_path: Any) -> None:

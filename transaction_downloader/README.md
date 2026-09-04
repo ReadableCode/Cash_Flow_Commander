@@ -148,12 +148,15 @@ Everything lands in the `chase` entry's `raw_dir` from `providers.local.yaml`:
 raw_dir/
 ├── chase_csv_export_{account}_{start}_{end}_captured{date}.csv
 ├── chase_csv_export_...
-└── _chase_captures.jsonl        # manifest: one record per capture
+└── .chase_captures.jsonl        # manifest: one record per capture
 ```
 
 Captures are month-aligned, verbatim, and **never overwritten** — re-pulling a
 month adds a file rather than replacing one, so a restated transaction stays
-traceable to the day it appeared. The manifest is a cache; the files are the
+traceable to the day it appeared. A download is consumed exactly once either
+way: filing moves it out of the browser's folder, and a re-download whose bytes
+are already filed is discarded rather than left behind, so a successful run
+leaves nothing to clean up by hand. The manifest is a cache; the files are the
 truth, and `capture.py reindex` rebuilds it from them. `plan.py` falls back to
 scanning the files automatically if the manifest is missing, so losing it never
 triggers a full re-download.

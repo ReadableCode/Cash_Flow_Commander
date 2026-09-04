@@ -161,8 +161,23 @@ def file_capture(
     already = [
         entry for entry in store.read_manifest(raw_dir, provider) if entry.get("sha256") == digest
     ]
-    if already:
-        return {**already[0], "status": "duplicate"}
+    # The manifest is a cache; the filed capture is the truth. Only treat this
+    # download as redundant when the capture the manifest names is STILL on disk
+    # and still holds these bytes. A stale entry pointing at a deleted capture
+    # must fall through and file normally — otherwise it would both suppress
+    # filing and (below) discard the download, leaving the bytes stored nowhere.
+    for entry in already:
+        held = os.path.join(raw_dir, str(entry.get("file") or ""))
+        if not os.path.isfile(held) or store.sha256_file(held) != digest:
+            continue
+        # A download is consumed exactly once, whether or not it turned out to
+        # be new: filing MOVES it, and an identical re-download is discarded
+        # here. That is what lets a successful run leave the browser's folder
+        # empty, so a leftover there always means real unfiled work.
+        # Archives (move=False) are the user's own kept files — never removed.
+        if move:
+            os.remove(source_path)
+        return {**entry, "status": "duplicate", "source_removed": bool(move)}
 
     name = store.capture_name(account, start, end, captured, provider)
     target = os.path.join(raw_dir, name)
@@ -251,7 +266,11 @@ def cmd_file(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
             continue
 
         if entry["status"] == "duplicate":
-            print(f"  = {os.path.basename(source)}: identical to {entry['file']}, not filed again")
+            note = ", download discarded" if entry.get("source_removed") else ""
+            print(
+                f"  = {os.path.basename(source)}: identical to {entry['file']}, "
+                f"not filed again{note}"
+            )
             continue
         print(
             f"  + {entry['file']}  ({entry['layout']}, {entry['rows']} row(s), "
