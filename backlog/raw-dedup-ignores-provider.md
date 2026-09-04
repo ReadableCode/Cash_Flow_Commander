@@ -18,8 +18,9 @@ ever UPDATEs `parse_status` (`mark_parsed`, line 135).
 
 **Scope note.** The bug that originally *caused* mislabelling — `--provider`
 riding the shared `CFC_RAW_INGEST_DIRS` fallback — was fixed separately on
-2026-09-04 in `src/ingest_raw.py` (`_parse_args` now refuses `--provider`
-without an explicit `DIR_OR_FILE`). That closes the path that produced the
+2026-09-04 in commit `6d7930b` ("refuse --provider without an explicit path so
+the ingest fallback cannot mislabel"): `_parse_args` now refuses `--provider`
+without an explicit `DIR_OR_FILE`. That closes the path that produced the
 incident below. What remains open, and what this entry is about, is narrower:
 **when a row does end up mislabelled, re-ingesting under the correct provider is
 a silent no-op rather than a repair.** Recovery requires `purge_raw.py` plus a
