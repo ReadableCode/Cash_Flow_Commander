@@ -119,7 +119,9 @@ Observed at least once (2026-08-24):
 
 - **Post-login marketing interstitial** — login lands on a "Special Offers For
   You" page (`/US/nga/offerintr-nga`), not the dashboard. Do not click
-  through it; navigate to the card dashboard instead.
+  through it; navigate to the card dashboard instead. **Intermittent**: on
+  2026-09-04 login went straight to the card dashboard and no interstitial
+  appeared. Read where you actually landed rather than assuming either way.
 - **A card-conversion notice modal** ("We're Converting Your Card") exists in
   the page's modal stack. It is an account-lifecycle notice, not marketing —
   never click through it, and tell the user it exists: a conversion changes
@@ -129,7 +131,7 @@ Observed at least once (2026-08-24):
   screen-share-with-rep, cookie settings). A `[role=dialog]` existing in the
   DOM does not mean a dialog is open — check visibility.
 
-## 3. The export flow — as last observed 2026-08-24
+## 3. The export flow — as last observed 2026-09-04
 
 Verified live against the real portal on that date. Citi will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -145,6 +147,11 @@ facts that bite:
   dashboard lands at `/US/ag/dashboard/credit-card?accountId=<internal guid>`.
   The guid is an internal id; the last 4 appears only in the link text. Both
   belong in `providers.local.yaml`, neither in this file.
+- **The guid is not stable across sessions.** It differed between 2026-08-24
+  and 2026-09-04 for the same unchanged card. Never treat a stored guid as
+  the account's identity or use it to decide which card you are on — **match
+  on the last 4 in the link text**, and treat the stored guid as a stale
+  hint at best.
 - Give the SPA ~6–10 seconds after navigation; the shell renders before the
   content, and the Transactions tile lazy-loads.
 
@@ -166,9 +173,10 @@ is no separate download page.
   "Aug 5, 2024 - Aug 24, 2026" above the results) after every search — a
   search clicked while the panel is half-rendered does nothing and leaves the
   previous range silently active.
-- **Search errors do render** (an inline `Error.` message near the fields),
-  but only when the Search actually fires. Never conclude a range was
-  accepted without reading the chip back.
+- **Do not count on an error rendering.** An inline `Error.` message near the
+  fields was observed 2026-08-24, but on 2026-09-04 a refused range produced
+  no message of any kind (see *Retention* below). Never conclude a range was
+  accepted without reading the chip back — that is the only reliable signal.
 
 ### Export dialog
 
@@ -189,13 +197,27 @@ is no separate download page.
 
 ### Retention — the hard limit
 
-The range search enforces a window and says so explicitly when violated:
-*"You can only search from <floor> to <today>. For older transactions, you
-can request statements for download."*
+The range search enforces a window. **It no longer says so** — verified
+2026-09-04: an out-of-range From is refused **silently**. The Search button
+does nothing at all, no message renders anywhere, the Filter By panel stays
+open, and the previously applied range stays active. The 2026-08-24 refusal
+text (*"You can only search from <floor> to <today>. For older transactions,
+you can request statements for download."*) did not appear once.
+
+**So the range chip is the ONLY signal that a search fired.** Read it back
+after every search and compare it to what you asked for; treat "chip
+unchanged" as refusal, not as success. Do not wait for an error message —
+there is none. If you need to tell "refused" apart from "raced the
+half-rendered panel", re-run the same search with a known-good From as a
+control: the form working proves the date was the problem.
 
 - Observed floor: **the statement-close date ~24 months back** — a
   statement-cycle boundary, not Chase's rolling daily floor. A From at
-  exactly the floor is accepted.
+  exactly the floor is accepted. Bracketed live 2026-09-04: **2024-09-05
+  accepted, 2024-08-05 refused** — and 2024-08-05 was the accepted floor on
+  2026-08-24, so the floor does move a full statement cycle at a time.
+  `plan.py`'s conservative rolling 24-month computation produced exactly the
+  accepted floor on that date.
 - Months past the floor are **statement-PDF-only** (see §4.1); the CSV export
   cannot reach them.
 - Record the exact observed floor and its observation date in
@@ -375,7 +397,15 @@ transactions upserted, and any popup or flow change you had to work around.
 - [ ] re-run `parse_raw.py --status all` → same row count in `transactions`
       (reprocessing must be idempotent)
 - [ ] a spot-checked month's transaction count and net total match what the
-      Citi UI shows for that account and period
+      Citi UI shows for that account and period — **but the on-screen list is
+      not authoritative.** Verified 2026-09-04: for the range Aug 1 - Sep 4
+      2026 the CSV exported 11 rows and the dashboard list rendered only 10,
+      silently omitting an autopay credit. Widening the range did not bring
+      it back, and there was no pagination or "show more" control. The row
+      was present in the CSV and in two independent earlier exports, so the
+      **export is right and the list under-reports**. When the two disagree,
+      corroborate the row against another capture of an overlapping window
+      rather than "fixing" the data to match the screen.
 - [ ] sign spot-check: payments/credits land POSITIVE in `transactions`
       (money in), charges negative — Citi's negative-Credit quirk flipped
       every payment once, and a card with zero positive rows is the tell
