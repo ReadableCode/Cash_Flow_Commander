@@ -176,6 +176,23 @@ triggers a full re-download.
 
 ## Commands
 
+`land.sh` wraps the file/ingest/parse/plan tail of the pipeline for one
+provider, reading `raw_dir` from `providers.local.yaml` so the paths are never
+retyped — prefer it over hand-typing `ingest_raw.py`, which is the step that
+goes wrong. It defaults to chase and finds the repo from its own path, so it
+runs from anywhere:
+
+```sh
+bash transaction_downloader/land.sh                       # chase: ingest + parse + plan
+bash transaction_downloader/land.sh --provider elan
+bash transaction_downloader/land.sh --provider citi \
+    <last4>:2026-08-01:2026-08-24:"Date range.CSV"        # file first, then land
+bash transaction_downloader/land.sh --provider chase --legacy <archived files>
+bash transaction_downloader/land.sh --provider elan --dry-run    # show what it would touch
+```
+
+The individual steps, when you need one on its own:
+
 ```sh
 # what's missing (default provider is chase; add --provider citi for Citi)
 uv run python transaction_downloader/plan.py

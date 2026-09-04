@@ -114,10 +114,21 @@ citi:
   # from the filename — always pass --account when filing.
   download_dir: ""
 
+  # Only raw_dir holds captures, and it is the only one ingest_raw walks —
+  # transaction_downloader/land.sh passes it and nothing else. Setting the other
+  # two does not add anything to ingest; they are here for layout parity with
+  # the bill providers, where all three are real folders.
+  #
+  # Where downloaded statements/PDFs are filed long-term. Optional — this
+  # provider has no bill PDFs to file, and pointing it at a correspondence
+  # folder makes ingest re-walk unrelated documents every run.
+  archive_dir: ""
+
   # Where verbatim CSV captures land. Required — this is the capture store
   # plan.py reads to work out what is still missing.
-  archive_dir: ""
   raw_dir: ""
+
+  # Unused here; derived output lives in the database, not a CSV dir.
   data_dir: ""
 
   # Earliest month to backfill, YYYY-MM. Set it explicitly when the goal is
@@ -152,10 +163,21 @@ elan:
   # marker timestamp, never by name.
   download_dir: ""
 
+  # Only raw_dir holds captures, and it is the only one ingest_raw walks —
+  # transaction_downloader/land.sh passes it and nothing else. Setting the other
+  # two does not add anything to ingest; they are here for layout parity with
+  # the bill providers, where all three are real folders.
+  #
+  # Where downloaded statements/PDFs are filed long-term. Optional — this
+  # provider has no bill PDFs to file, and pointing it at a correspondence
+  # folder makes ingest re-walk unrelated documents every run.
+  archive_dir: ""
+
   # Where verbatim CSV captures land. Required — this is the capture store
   # plan.py reads to work out what is still missing.
-  archive_dir: ""
   raw_dir: ""
+
+  # Unused here; derived output lives in the database, not a CSV dir.
   data_dir: ""
 
   # Earliest month to backfill, YYYY-MM. Set it explicitly when the goal is

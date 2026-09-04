@@ -400,6 +400,24 @@ the same window later.
 
 ## 5. Land into raw_documents
 
+Prefer `land.sh` — it reads `raw_dir` from `providers.local.yaml`, so the paths
+are never retyped, and it runs the ingest, the parse (§6) and a closing plan in
+one go:
+
+```sh
+bash transaction_downloader/land.sh --provider chase
+```
+
+It also files downloads for you, replacing the §4 `capture.py` calls, one
+`ACCT:START:END:FILE` spec per planner window:
+
+```sh
+bash transaction_downloader/land.sh --provider chase \
+    <last4>:<YYYY-MM-DD start>:<YYYY-MM-DD end>:<downloaded file>
+```
+
+To run the ingest step alone:
+
 ```sh
 uv run python src/ingest_raw.py --provider chase data/chase/incoming
 ```
@@ -413,8 +431,8 @@ captures — `raw_dir` is the only directory with anything to ingest.
 onto every file it finds there — including other providers' documents, whose
 `provider` column is then simply wrong. It happened on 2026-09-04: an
 argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. Always pass the directory
-explicitly, even when you think the default is set to something harmless.
+they had to be reassigned by hand afterwards. `land.sh` avoids this whole class
+of mistake, which is why it is the first option above.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs
