@@ -904,6 +904,625 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "text",
+      "title": "Production only \u2014 renders without the electricity provider",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "id": 40,
+      "datasource": null,
+      "options": {
+        "mode": "markdown",
+        "content": "Everything above compares solar against the retailer's metered import/export, so a panel there goes blank for any day the electricity provider hasn't been captured yet \u2014 the line just ends early rather than gapping.\n\n**These panels read `metric = 'production'` alone.** They stay current the moment an Enphase run lands, whether or not the retailer side has caught up, so a short line up top plus a current line down here means *the electricity data is behind*, not that solar stopped.\n\n*Lifetime, per-year and freshness panels ignore the time picker on purpose.*"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Lifetime production",
+      "description": "All-time gross production at the inverters. Ignores the time picker.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 55
+      },
+      "id": 41,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "mwatth",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(value) / 1000.0 AS \"Lifetime production\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Production in range",
+      "description": "Gross production summed over the selected time range.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 55
+      },
+      "id": 42,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(value) AS \"Production in range\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\n  AND $__timeFilter(ts)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Average day in range",
+      "description": "Mean daily production across days in the selected range.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 55
+      },
+      "id": 43,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT AVG(kwh) AS \"Average day\"\nFROM (\n  SELECT SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min' AND metric = 'production'\n    AND $__timeFilter(ts)\n  GROUP BY date_trunc('day', timezone('America/Chicago', ts))\n) x",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Best day in range",
+      "description": "Highest single-day production in the selected range.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 55
+      },
+      "id": 44,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(kwh) AS \"Best day\"\nFROM (\n  SELECT SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min' AND metric = 'production'\n    AND $__timeFilter(ts)\n  GROUP BY date_trunc('day', timezone('America/Chicago', ts))\n) x",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Peak power in range",
+      "description": "Highest 15-minute average power. Interval kWh x 4 = kW sustained over that interval, so this is a 15-minute average and reads below true instantaneous peak.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 55
+      },
+      "id": 45,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(value) * 4 AS \"Peak power\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\n  AND $__timeFilter(ts)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Days since last production",
+      "description": "Freshness of the Enphase feed, ignoring the time picker. 1 is normal (yesterday is the last complete day). Sustained 3+ means the gateway stopped reporting or a run is overdue.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 55
+      },
+      "id": 46,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (CURRENT_DATE - MAX((timezone('America/Chicago', ts))::date))::int AS \"Days since last production\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily production",
+      "description": "Gross production per local day, from the 15-minute series. Depends on Enphase only, so this runs to the last captured day regardless of the electricity provider.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "id": 47,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', timezone('America/Chicago', ts)) AS time,\n       SUM(value) AS \"Daily production\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\n  AND $__timeFilter(ts)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Monthly production",
+      "description": "Production per calendar month. The seasonal swing is the signal; compare the same month across years to see year-over-year drift.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "id": 48,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('month', timezone('America/Chicago', ts)) AS time,\n       SUM(value) AS \"Monthly production\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\n  AND $__timeFilter(ts)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "title": "Production by calendar year",
+      "description": "Annual totals across the whole series, ignoring the time picker. The first and last years are partial (system started mid-December 2021, and the current year is still running), so read only the complete years against each other when judging degradation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "id": 49,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "mwatth",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(timezone('America/Chicago', ts), 'YYYY') AS \"Year\",\n       SUM(value) / 1000.0 AS \"Production (MWh)\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "title": "Average day shape, by hour",
+      "description": "Mean power for each hour of the day across the selected range, including nights as zero. A dented or lopsided curve points at shading or a string that stopped reporting.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "id": 50,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(timezone('America/Chicago', ts), 'HH24') AS \"Hour\",\n       AVG(value) * 4 AS \"Average power\"\nFROM cash_flow_commander.usage_intervals\nWHERE granularity = '15min' AND metric = 'production'\n  AND $__timeFilter(ts)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Days well below their seasonal baseline",
+      "description": "Days that produced under half of the average of the 31-day window centred on them. The baseline moves with the season, so this is not just 'winter'. Most hits are weather; a run of them, or an isolated near-zero day in clear weather, is worth checking against Enlighten's per-panel view.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 75
+      },
+      "id": 51,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% of baseline"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 25
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 40
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "WITH daily AS (\n  SELECT (timezone('America/Chicago', ts))::date AS d,\n         SUM(value) AS kwh\n  FROM cash_flow_commander.usage_intervals\n  WHERE granularity = '15min' AND metric = 'production'\n    AND $__timeFilter(ts)\n  GROUP BY 1\n),\nscored AS (\n  SELECT d,\n         kwh,\n         AVG(kwh) OVER (ORDER BY d ROWS BETWEEN 15 PRECEDING AND 15 FOLLOWING) AS baseline\n  FROM daily\n)\nSELECT to_char(d, 'YYYY-MM-DD')                  AS \"Day\",\n       ROUND(kwh, 1)                             AS \"Produced (kWh)\",\n       ROUND(baseline, 1)                        AS \"Seasonal baseline (kWh)\",\n       ROUND(100.0 * kwh / NULLIF(baseline, 0))  AS \"% of baseline\"\nFROM scored\nWHERE baseline > 0\n  AND kwh < 0.5 * baseline\nORDER BY d DESC\nLIMIT 50"
+        }
+      ]
     }
   ],
   "preload": false,
@@ -923,7 +1542,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Energy \u2014 Solar Value & Net Metering",
+  "title": "Cash Flow Commander \u2014 Solar & Net Metering",
   "uid": "cfc-solar-net-metering",
   "version": 1,
   "weekStart": ""
