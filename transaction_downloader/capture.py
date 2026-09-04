@@ -121,6 +121,71 @@ def resolve_download(path: str, provider: str = DEFAULT_PROVIDER) -> str:
 # Filing #
 
 
+def _record_refetched_window(
+    raw_dir: str,
+    *,
+    account: str,
+    start: datetime.date,
+    end: datetime.date,
+    captured: datetime.date,
+    held_file: str,
+    provider: str,
+) -> str | None:
+    """Record that `start..end` was fetched and returned bytes already filed.
+
+    A dormant account re-downloaded on the overlap rule comes back byte-identical,
+    and `raw_documents` dedups on content_sha256 ALONE — so those bytes can never
+    produce a second row, and the newly-requested window would go unrecorded no
+    matter what the file were named. Coverage is rebuilt from recorded windows,
+    so without this the window stays "never fetched" and the planner asks for it
+    forever even though the answer is already on disk.
+
+    Returns the marker filename, or None when this exact window is already
+    recorded for this account (by a capture or a marker) and there is nothing
+    new to say.
+    """
+    for entry in store.read_manifest(raw_dir, provider):
+        if (
+            str(entry.get("account")) == str(account)
+            and entry.get("requested_start") == start.isoformat()
+            and entry.get("requested_end") == end.isoformat()
+        ):
+            return None
+
+    name = store.refetched_name(account, start, end, captured, provider)
+    path = os.path.join(raw_dir, name)
+    os.makedirs(raw_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(
+            f"{provider} served this window as an export whose bytes were already filed.\n"
+            f"account (last 4): {account}\n"
+            f"requested window: {start.isoformat()} .. {end.isoformat()}\n"
+            f"observed: {captured.isoformat()}\n"
+            f"identical to: {held_file}\n"
+            "The window was fetched; its contents are recorded under that capture.\n"
+        )
+    store.append_manifest(
+        raw_dir,
+        {
+            "file": name,
+            "provider": provider,
+            "account": account,
+            "requested_start": start.isoformat(),
+            "requested_end": end.isoformat(),
+            "captured_at": captured.isoformat(),
+            "sha256": store.sha256_file(path),
+            "window_source": "requested",
+            "refetched": True,
+            "identical_to": held_file,
+            "rows": 0,
+            "min_date": None,
+            "max_date": None,
+        },
+        provider,
+    )
+    return name
+
+
 def file_capture(
     source_path: str,
     raw_dir: str,
@@ -177,7 +242,19 @@ def file_capture(
         # Archives (move=False) are the user's own kept files — never removed.
         if move:
             os.remove(source_path)
-        return {**entry, "status": "duplicate", "source_removed": bool(move)}
+        # The bytes are already held, but the WINDOW just requested may reach
+        # past anything recorded. Coverage is tracked by requested window, so
+        # record the fetch or the planner re-asks for it forever.
+        marker = _record_refetched_window(
+            raw_dir, account=account, start=start, end=end, captured=captured,
+            held_file=str(entry.get("file") or ""), provider=provider,
+        )
+        return {
+            **entry,
+            "status": "duplicate",
+            "source_removed": bool(move),
+            "window_recorded": marker,
+        }
 
     name = store.capture_name(account, start, end, captured, provider)
     target = os.path.join(raw_dir, name)
@@ -267,6 +344,8 @@ def cmd_file(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
 
         if entry["status"] == "duplicate":
             note = ", download discarded" if entry.get("source_removed") else ""
+            if entry.get("window_recorded"):
+                note += f"; window {args.start}..{args.end} recorded as fetched"
             print(
                 f"  = {os.path.basename(source)}: identical to {entry['file']}, "
                 f"not filed again{note}"

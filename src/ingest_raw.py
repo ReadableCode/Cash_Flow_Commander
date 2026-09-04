@@ -67,6 +67,14 @@ _TXN_EMPTY_RE = re.compile(
     r"^[a-z0-9_]+?_empty_window_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.txt$"
 )
 
+# Refetched-window markers from transaction_downloader/capture.py: a window was
+# re-requested and came back with bytes already filed. raw_documents dedups on
+# content_sha256 alone, so the re-served export can never record the new window
+# itself — this marker is what carries it into coverage.
+_TXN_REFETCH_RE = re.compile(
+    r"^[a-z0-9_]+?_refetched_window_[A-Za-z0-9\-]+_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}(?:\(\d+\))?\.txt$"
+)
+
 # Folder-name slugs that should map onto an established provider slug (the
 # archive folder keeps the provider's own 'Rythm' spelling; rows use 'rhythm').
 PROVIDER_ALIASES = {"rythm": "rhythm"}
@@ -113,6 +121,12 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
     txn_empty = _TXN_EMPTY_RE.match(name)
     if txn_empty is not None:
         return ("empty_window", datetime.date(int(txn_empty.group(1)), int(txn_empty.group(2)), 1))
+    txn_refetch = _TXN_REFETCH_RE.match(name)
+    if txn_refetch is not None:
+        return (
+            "refetched_window",
+            datetime.date(int(txn_refetch.group(1)), int(txn_refetch.group(2)), 1),
+        )
     if name in CSV_EXPORT_NAMES:
         return ("csv_export", None)
     lowered = name.lower()

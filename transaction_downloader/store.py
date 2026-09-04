@@ -53,6 +53,17 @@ EMPTY_RE = re.compile(
     r"(?:\(\d+\))?\.txt$"
 )
 
+# Refetched-window markers. A window can be re-requested and come back with
+# bytes already filed — a dormant account re-downloaded on the overlap rule.
+# raw_documents dedups on content_sha256 ALONE, so those bytes can never make a
+# second row, and the newly-requested window would otherwise go unrecorded and
+# be asked for again forever. The marker is the only way to record that fetch.
+REFETCH_RE = re.compile(
+    r"^(?P<provider>[a-z0-9_]+?)_refetched_window_(?P<account>[A-Za-z0-9\-]+)"
+    r"_(?P<start>\d{8})_(?P<end>\d{8})_captured(?P<captured>\d{8})"
+    r"(?:\(\d+\))?\.txt$"
+)
+
 _DATE_FORMATS = ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y")
 
 
@@ -326,6 +337,21 @@ def empty_name(
     )
 
 
+def refetched_name(
+    account: str,
+    start: datetime.date,
+    end: datetime.date,
+    captured: datetime.date,
+    provider: str = DEFAULT_PROVIDER,
+) -> str:
+    """Canonical marker filename for a window re-fetched into bytes already held."""
+    return (
+        f"{provider}_refetched_window_{account}"
+        f"_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}"
+        f"_captured{captured.strftime('%Y%m%d')}.txt"
+    )
+
+
 def parse_capture_name(name: str, provider: str | None = None) -> dict[str, Any] | None:
     """Inverse of capture_name/empty_name; None when the filename is neither.
 
@@ -333,15 +359,24 @@ def parse_capture_name(name: str, provider: str | None = None) -> dict[str, Any]
     returns None — a raw_dir is per-provider, but a stray file must not count
     toward the wrong source's coverage.
 
-    Empty-window markers come back with `"empty": True` and represent a
-    requested window that held zero transactions — covered, with nothing in it.
+    Both marker kinds carry `"marker": True` — they hold a note rather than a
+    CSV, so there are no rows to read out of them. They differ in what they
+    assert about the window:
+
+    - `"empty": True` — the source served no file: the window held zero
+      transactions. Covered, with nothing in it.
+    - `"refetched": True` — the source served a file whose bytes were already
+      filed. Covered, with its contents recorded under an earlier capture.
     """
     base = os.path.basename(name)
     match = CAPTURE_RE.match(base)
-    empty = False
+    empty = refetched = False
     if match is None:
         match = EMPTY_RE.match(base)
-        empty = True
+        empty = match is not None
+    if match is None:
+        match = REFETCH_RE.match(base)
+        refetched = match is not None
     if match is None:
         return None
     if provider is not None and match.group("provider") != provider:
@@ -355,6 +390,10 @@ def parse_capture_name(name: str, provider: str | None = None) -> dict[str, Any]
     }
     if empty:
         parsed["empty"] = True
+    if refetched:
+        parsed["refetched"] = True
+    if empty or refetched:
+        parsed["marker"] = True
     return parsed
 
 
@@ -431,9 +470,10 @@ def scan_captures(raw_dir: str, provider: str = DEFAULT_PROVIDER) -> list[dict[s
         entry = dict(meta)
         entry["file"] = name
         entry["sha256"] = sha256_file(path)
-        if entry.get("empty"):
-            # An empty-window marker holds a refusal note, not a CSV; the
-            # window in its name is the whole record.
+        if entry.get("marker"):
+            # A marker holds a note, not a CSV; the window in its name is the
+            # whole record. True of both kinds — a refusal, or a re-fetch whose
+            # bytes were already filed.
             entry.update({"rows": 0, "min_date": None, "max_date": None})
         else:
             try:

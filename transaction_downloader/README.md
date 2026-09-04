@@ -37,6 +37,19 @@ So coverage here is tracked by **requested window**, recorded at capture time:
   empty month.
 - A month you never asked for is **not covered**, however much data surrounds it.
 
+Two fetches leave no `csv_export` behind and so record their window as a marker
+file instead — both are coverage evidence, and both are what stop the planner
+re-asking forever:
+
+- **`empty_window`** — the source served no file at all (written by
+  `capture.py record-empty`).
+- **`refetched_window`** — the source served an export whose bytes were already
+  filed, which `raw_documents` then dedups away. Written automatically by
+  `capture.py file`. It matters because that table's uniqueness is on
+  `content_sha256` ALONE: identical bytes can never produce a second row, so a
+  re-download reaching further than any recorded window has no other way to say
+  so. A dormant account re-pulled on the overlap rule hits this every run.
+
 That distinction is why `capture.py file` requires `--start` and `--end` — the
 window you asked for, not the dates inside the file. Without it, every
 genuinely-empty month gets re-downloaded forever.

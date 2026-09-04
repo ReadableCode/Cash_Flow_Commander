@@ -394,6 +394,73 @@ def test_an_identical_re_download_is_consumed_too(tmp_path: Any) -> None:
     assert len(store.read_manifest(raw_dir)) == 1
 
 
+def test_a_duplicate_records_the_newly_requested_window(tmp_path: Any) -> None:
+    """A re-fetch that changed nothing still proves the window was fetched.
+
+    raw_documents dedups on content_sha256 alone, so identical bytes can never
+    record the wider window themselves — without a marker the planner would ask
+    for it forever even though the answer is already on disk.
+    """
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    first = _write(tmp_path, "Chase7676_Activity_20260822.CSV", CHECKING_CSV)
+    capture.file_capture(first, raw_dir, account=ACCOUNT, start=dt.date(2026, 8, 1),
+                         end=dt.date(2026, 8, 24), captured=TODAY)
+
+    # Same bytes come back, but the window asked for reaches further.
+    again = _write(tmp_path, "Chase7676_Activity_20260904.CSV", CHECKING_CSV)
+    entry = capture.file_capture(again, raw_dir, account=ACCOUNT, start=dt.date(2026, 8, 1),
+                                 end=dt.date(2026, 9, 4), captured=dt.date(2026, 9, 4))
+
+    assert entry["status"] == "duplicate"
+    marker = entry["window_recorded"]
+    assert marker and os.path.isfile(os.path.join(raw_dir, marker))
+
+    windows = {
+        (e["requested_start"], e["requested_end"]) for e in store.read_manifest(raw_dir)
+    }
+    assert ("2026-08-01", "2026-09-04") in windows, "the wider window must be recorded"
+
+
+def test_a_duplicate_of_an_already_recorded_window_records_nothing(tmp_path: Any) -> None:
+    """Re-running an unchanged account must not pile up identical markers."""
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    window = {"start": dt.date(2026, 8, 1), "end": dt.date(2026, 8, 24)}
+
+    first = _write(tmp_path, "Chase7676_Activity_20260824.CSV", CHECKING_CSV)
+    capture.file_capture(first, raw_dir, account=ACCOUNT, captured=TODAY, **window)
+    again = _write(tmp_path, "Chase7676_Activity_20260824 (1).CSV", CHECKING_CSV)
+    entry = capture.file_capture(again, raw_dir, account=ACCOUNT, captured=TODAY, **window)
+
+    assert entry["window_recorded"] is None, "nothing new to say about this window"
+    assert len(store.read_manifest(raw_dir)) == 1
+
+
+def test_a_refetched_marker_reads_back_as_coverage(tmp_path: Any) -> None:
+    """The marker must parse as a window with no rows, and survive a reindex."""
+    raw_dir = os.path.join(str(tmp_path), "raw")
+    first = _write(tmp_path, "Chase7676_Activity_20260822.CSV", CHECKING_CSV)
+    capture.file_capture(first, raw_dir, account=ACCOUNT, start=dt.date(2026, 8, 1),
+                         end=dt.date(2026, 8, 24), captured=TODAY)
+    again = _write(tmp_path, "Chase7676_Activity_20260904.CSV", CHECKING_CSV)
+    marker = capture.file_capture(again, raw_dir, account=ACCOUNT, start=dt.date(2026, 8, 1),
+                                  end=dt.date(2026, 9, 4),
+                                  captured=dt.date(2026, 9, 4))["window_recorded"]
+
+    parsed = store.parse_capture_name(marker, "chase")
+    assert parsed is not None
+    assert parsed["refetched"] is True and parsed["marker"] is True
+    assert parsed.get("empty") is None, "a re-fetch is not an empty window"
+    assert parsed["requested_end"] == "2026-09-04"
+
+    # The manifest is a cache; a rebuild from the files must keep the window.
+    os.remove(store.manifest_path(raw_dir))
+    rebuilt = store.scan_captures(raw_dir, "chase")
+    assert ("2026-08-01", "2026-09-04") in {
+        (e["requested_start"], e["requested_end"]) for e in rebuilt
+    }
+    assert all(e["rows"] == 0 for e in rebuilt if e.get("refetched"))
+
+
 def test_a_duplicate_archive_is_never_removed(tmp_path: Any) -> None:
     """Archives are the user's own kept files — redundant is not disposable."""
     raw_dir = os.path.join(str(tmp_path), "raw")
@@ -871,6 +938,34 @@ def test_empty_window_documents_have_a_registered_parser() -> None:
     assert parser is not None
     parse_fn, _version = parser
     assert parse_fn(b"whatever the marker says", {"original_name": name}) == {}
+
+
+def test_ingest_classifies_a_refetched_window_marker() -> None:
+    name = store.refetched_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    assert ingest_raw.classify(name) == ("refetched_window", dt.date(2026, 3, 1))
+
+
+def test_refetched_window_documents_have_a_registered_parser() -> None:
+    """A permanent no_parser alarm would train you to ignore the real one."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+    import providers
+    name = store.refetched_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    for provider in ("chase", "citi", "elan"):
+        parser = providers.get_parser(provider, "refetched_window", name)
+        assert parser is not None, provider
+        parse_fn, _version = parser
+        assert parse_fn(b"whatever the marker says", {"original_name": name}) == {}
+
+
+def test_a_refetched_marker_is_not_mistaken_for_an_empty_one() -> None:
+    """The two markers assert different things; ingest must not conflate them."""
+    empty = store.empty_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    refetched = store.refetched_name(ACCOUNT, dt.date(2026, 3, 1), dt.date(2026, 5, 31), TODAY)
+    assert empty != refetched
+    assert ingest_raw.classify(empty)[0] == "empty_window"
+    assert ingest_raw.classify(refetched)[0] == "refetched_window"
+    assert store.parse_capture_name(empty, "chase").get("refetched") is None
+    assert store.parse_capture_name(refetched, "chase").get("empty") is None
 
 
 # %%

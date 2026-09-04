@@ -226,11 +226,15 @@ def captures_from_database(provider: str = DEFAULT_PROVIDER) -> list[dict[str, A
                 for row in conn.execute(
                     select(db.raw_documents.c.original_name).where(
                         db.raw_documents.c.provider == provider,
-                        # empty_window markers are coverage evidence: the
-                        # portal serves no CSV for a window with no activity,
-                        # so the recorded refusal is what proves the month was
-                        # fetched.
-                        db.raw_documents.c.doc_type.in_(("csv_export", "empty_window")),
+                        # Both marker kinds are coverage evidence, for the
+                        # same reason: neither fetch can leave a csv_export row
+                        # behind. empty_window records a window the portal
+                        # served no file for; refetched_window records one it
+                        # served bytes already filed, which content_sha256
+                        # dedup then collapses onto the existing row.
+                        db.raw_documents.c.doc_type.in_(
+                            ("csv_export", "empty_window", "refetched_window")
+                        ),
                     )
                 )
             ]

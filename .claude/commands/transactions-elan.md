@@ -272,7 +272,9 @@ location before hunting for files. Identical bytes filed twice are a no-op.
 Every download is consumed exactly once — a new one is moved into the repo,
 an identical re-download is discarded once its bytes are confirmed already
 filed — so a clean run leaves the download folder empty and anything left
-there is real unfiled work.
+there is real unfiled work. A discarded re-download still records the window it
+was requested for, as a `refetched_window` marker, because coverage is tracked
+by requested window and identical bytes can never record it themselves.
 Nothing is ever overwritten.
 
 ## 4.1 Months Elan will not serve
@@ -358,8 +360,9 @@ Report: windows planned vs downloaded, per-account row counts, anything Elan
 refused to export, captures filed vs deduped, ingest ingested/deduped counts,
 transactions upserted, and any popup or flow change you had to work around.
 
-- [ ] every planned window has a capture, a `record-empty` marker, or an
-      explicit reason it has neither
+- [ ] every planned window has a capture, a `record-empty` marker, a
+      `refetched_window` marker (written automatically when a re-download comes
+      back byte-identical), or an explicit reason it has none of those
 - [ ] the planner re-run shows the fetched months covered
 - [ ] no capture came back at the export row cap (silent truncation)
 - [ ] re-run `ingest_raw.py` → 100% dedup, zero new rows

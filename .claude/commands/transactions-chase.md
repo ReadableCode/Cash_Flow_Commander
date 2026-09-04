@@ -368,6 +368,12 @@ still sitting there afterwards is real unfiled work — check it rather than
 assuming it is clutter. (Archived exports passed to `import-legacy` are copied
 and never removed; they are the user's own files.)
 
+A discarded re-download still records the window it was requested for, as a
+`refetched_window` marker filed alongside the captures. `raw_documents` dedups
+on content sha256 alone, so identical bytes can never record a wider window
+themselves — without the marker the month would stay "never fetched" and the
+planner would ask for it on every run forever.
+
 Check the user's `notes` in `providers.local.yaml` for their browser download
 location before hunting for files.
 
@@ -471,8 +477,9 @@ Report: windows planned vs downloaded, per-account row counts, anything Chase
 refused to export, captures filed vs deduped, ingest ingested/deduped counts,
 transactions upserted, and any popup or flow change you had to work around.
 
-- [ ] every planned window has a capture, a `record-empty` marker, or an
-      explicit reason it has neither
+- [ ] every planned window has a capture, a `record-empty` marker, a
+      `refetched_window` marker (written automatically when a re-download comes
+      back byte-identical), or an explicit reason it has none of those
 - [ ] `transaction_downloader/plan.py` re-run shows the fetched months covered
       (only `[current month]` lines remaining means fully covered)
 - [ ] no capture came back with exactly 1,000 rows (silent truncation)
