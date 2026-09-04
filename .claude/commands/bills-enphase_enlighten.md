@@ -76,6 +76,12 @@ not capture failures. Expect these to be listed every run and do not chase them:
 
 `--full` retries them; there is no reason to expect a different answer.
 
+**The current day is not a gap.** `end_date = today` always returns a final `stats` entry for
+today, and its `production` array is empty until the panels start producing (and partial all
+day after that). The parser skips it, so a run made before sunrise simply lands nothing for
+today — confirmed 2026-09-04, run at ~06:00 local with `production: []` for that date. Do not
+add today to the persistent-gap list; the next run picks it up.
+
 Because this provider has no retention limit and serves the whole lifetime in one call, `full`
 in `$ARGUMENTS` is always safe — it costs one request.
 
@@ -185,7 +191,10 @@ uv run python src/parse_raw.py --provider enphase_enlighten
 `src/providers/enphase_enlighten.py` handles both captures, routed by filename:
 `daily_energy` → 15-minute interval rows, `lifetime_energy` → `day` rollup rows. The
 `api_system_today` capture has no parser by design (system metadata, not measurements) and
-will report as `no_parser 1` every run — that is expected, not a failure.
+will report as `no_parser` every run — that is expected, not a failure. The count is
+**one per `api_system_today` capture held**, so it grows by one each run (2 as of
+2026-09-04). Check that the no_parser documents are all `api_system_today`; any other
+filename in that bucket is a real missing parser.
 
 Facts the parser encodes, repeated here because they are the ones that bite:
 
@@ -269,14 +278,25 @@ the reconciliation against the electricity provider. Verify:
 - [ ] every API call this run has a matching verbatim .json in `raw_dir`
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
 - [ ] captures classified as `api_usage_json`, not `other`
-- [ ] `parse_raw.py` reports zero errored (`no_parser 1` for the system-metadata capture is
-      expected)
+- [ ] `parse_raw.py` reports zero errored (`no_parser` == the number of
+      `api_system_today` captures held is expected; it grows by one per run)
 - [ ] `coverage.py` re-run shows the fetched window now covered, no new thin days, and no new
       persistent gaps beyond the three known ones
 - [ ] interval counts per day are only ever 92 / 96 / 100, and the off-96 days land on DST
       transition dates
-- [ ] a spot-checked day's `totals.production` matches what Enlighten's own UI shows for that day
+- [ ] a spot-checked day's `totals.production` matches what Enlighten's own UI shows for that
+      day. **The UI has no date-addressable URL** — `/web/{system_id}/{YYYY-MM-DD}/graph/hours`
+      silently redirects to `/today` (confirmed 2026-09-04). Use the **Energy** nav item
+      (`/web/{system_id}/history/graph/hours`), which lands on the DAY view and prints the
+      last two days plus the year-ago day as rounded kWh totals — compare against those.
 - [ ] consumption/import/export channels still empty (see section 3)
+- [ ] the two captures agree: sum the `15min` rows per local day and compare against the `day`
+      rollup rows. They come from independent endpoints, so agreement is a real check — expect
+      differences under ~0.01 kWh/day (Enphase rounds each endpoint separately). **Group the
+      `day` rows by their UTC date, not a local-time conversion**: they are stamped at UTC
+      midnight as a *label* for the local calendar date, so converting them to
+      `America/Chicago` shifts every one back a day and fakes a one-day offset against the
+      interval series.
 - [ ] for any billing period where electricity-provider intervals also exist:
       `gross_production − exported_kWh ≥ 0`, and derived self-consumption is neither negative
       nor larger than gross production
