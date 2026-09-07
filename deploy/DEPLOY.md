@@ -95,7 +95,7 @@ correctly sees 0 there — that is the isolation working, not a missing schema.
 ## Why this app does not use PostgREST
 
 The other self-built apps on this cluster reach their data through PostgREST
-(see `dotfiles/docs/postgres_app_conventions.md`). This one deliberately does
+(see `dotfiles/docs/homelab_postgres_app_conventions.md`). This one deliberately does
 not, decided 2026-08-28:
 
 - **PostgREST cannot serve SQLite.** Anyone cloning this repo must be able to
