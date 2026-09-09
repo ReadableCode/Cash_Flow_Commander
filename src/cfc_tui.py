@@ -1180,6 +1180,11 @@ class ExpectedApp(App):
     """
 
     def on_mount(self) -> None:
+        # The terminal-navy design system, from the one definition every TUI shares.
+        from readable_utils.design_tokens import terminal_navy_textual_theme
+
+        self.register_theme(terminal_navy_textual_theme())
+        self.theme = "terminal-navy"
         self.push_screen(MenuScreen(AppState()))
 
 
