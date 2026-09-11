@@ -65,12 +65,37 @@ publishes 15-minute data ~2 days in arrears, and the `hour` series only extends 
 *billed* day, because it comes from the per-invoice usage endpoint. Both close on the next
 run.
 
+The `hour` window only closes while Rhythm keeps billing (added 2026-09-11). After a switch to
+another retail provider the last invoice is a short-cycle closing bill: on 2026-09-11 it was a
+7-day service period, and the portal home showed a "Re-enroll with Rhythm" banner. Once that
+invoice's usage is captured, the `hour` `FETCH:` window stays open for good; stop chasing it.
+The `15min` series does not end, because Smart Meter Texas keeps the meter's data whoever the
+retail provider is.
+
 ## 1. Portal session
 
 - Portal: `https://app.gotrhythm.com` · API: `https://api.gotrhythm.com`.
 - Open the portal in the user's Chrome (Claude-in-Chrome). If it sits on the loading
   animation, go to `/sign-in`. The browser autofills credentials — **ask the user before
-  clicking Log In**.
+  clicking Log In**. The session may already be live: on 2026-09-11 `/sign-in` redirected
+  through `api.gotrhythm.com/api/portal/authn/login-via-token` straight to `/home` with no
+  click. That redirect URL carries a one-time token; never echo it.
+- **Without Claude in Chrome, drive the real Chrome over AppleScript** as described in
+  `transactions-chase.md` section 1 (proven here 2026-09-11). Quirks met on this portal and SMT:
+  - `open location` opens in the frontmost window, which can belong to a different Chrome
+    profile with no saved logins, no download allowances and Apple Events JavaScript off. The
+    tell is `Executing JavaScript through AppleScript is turned off` although the setting is on
+    in the right profile. Close that tab, open with `make new tab at end of tabs of window id
+    <id>` in a window where `execute javascript` works, and scope later lookups to that window.
+  - `execute javascript` does not await promises. Start the async work, record progress on a
+    `window.` property, and poll it with `delay`. Pass the script as an argument
+    (`osascript - "$JS"` with `on run argv`) instead of escaping quotes, and avoid `st` as an
+    AppleScript variable name (reserved).
+  - The script runs in an isolated world, so a native setter borrowed from
+    `HTMLInputElement.prototype` throws `Illegal invocation`. Assign `el.value` and dispatch
+    `input`/`change` events instead.
+  - Auto mode's classifier may refuse the step that points the logged-in tab at the API origin.
+    Stop and ask the user to allow `osascript`; do not route around it.
 - Decline any "switch to paperless" or marketing modals. As of 2026-09-04 the one that
   fires on every login is a dialog headed **ACTION REQUIRED — "We are moving from eBill to
   fully Paperless"**; dismiss it with the **"No, I prefer to stay on eBill."** button below
@@ -145,6 +170,10 @@ service period.
 - ⚠️ Clicking or setting either date field opens a calendar overlay that **covers the "Export
   My Report" button**. Press Escape or click neutral page space first, or the click lands on
   the calendar and silently does nothing.
+- Driven by script (2026-09-11), the controls are `select#reporttype_input` (value `INTERVAL`),
+  `input#startdatefield` and `input#enddatefield`. They have ids but no `name` attribute, so a
+  `[name=...]` selector finds nothing. Assigning `.value` and dispatching `input`/`change`, then
+  Escape, was enough for the export to honour the dates; the file arithmetic below confirmed it.
 - **Export My Report** downloads immediately — there is no queue, no email, and no
   "Report Request Status" round trip. The file is always named `IntervalData.csv`; a second
   click yields `IntervalData (1).csv`, so it is easy to fire two identical exports without
@@ -163,8 +192,8 @@ Verify the export before filing — a silent clamp is the failure to watch for:
 Columns are `ESIID,USAGE_DATE,REVISION_DATE,USAGE_START_TIME,USAGE_END_TIME,USAGE_KWH,
 ESTIMATED_ACTUAL,CONSUMPTION_SURPLUSGENERATION`. Both series are interleaved in one file, so a
 complete export has **days x 96 x 2 + 1** lines. The 2026-07-01..2026-09-02 pull was 12,289
-lines = 64 x 96 x 2 + 1, with no clamp. Check the arithmetic rather than trusting the range you
-typed.
+lines = 64 x 96 x 2 + 1, with no clamp; 2026-08-26..2026-09-09 was 2,881 = 15 x 96 x 2 + 1.
+Check the arithmetic rather than trusting the range you typed.
 
 ## 3.5 Verify attribution after ingest, not just the counts
 
@@ -351,15 +380,18 @@ and unpaid bills. Verify:
 - [ ] every API call made this run has a matching verbatim .json in raw_dir
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
 - [ ] `parse_raw.py` reports zero errored
-- [ ] `no_parser` is **28 and no higher** — the known baseline as of 2026-09-04: 21
-      `api_orders_json` (no parser; needs a `plans` sink decision first) + 5 legacy
-      `csv_export` + 2 `other`, all tracked in `backlog/rhythm-orders-json-no-parser.md`.
-      Zero is not currently reachable, so treat *any increase* as this run's regression and
-      investigate that, rather than reading a non-zero total as normal.
+- [ ] `no_parser` grows only by this run's new `api_orders_json` documents. Every new invoice
+      adds one orders capture with no parser (a `plans` sink decision comes first), so a fixed
+      baseline goes stale each month. As of 2026-09-11 it is 29: 22 `api_orders_json` + 5
+      legacy `csv_export` + 2 `other`, all tracked in `backlog/rhythm-orders-json-no-parser.md`.
+      Zero is not currently reachable, so treat any increase outside `api_orders_json` as this
+      run's regression and investigate it, rather than reading a non-zero total as normal.
 - [ ] `coverage.py` re-run shows the fetched window now covered, and no new thin days
 - [ ] PDF totals reconcile with API `amount` to the cent
 - [ ] billed kWh on the latest bill matches the summed 15-minute `consumption` over the same
-      service period (the reconciliation table in `solar_net_metering.json` shows this directly)
+      service period (the reconciliation table in `solar_net_metering.json` shows this directly).
+      Expect agreement within a fraction of a kWh, not to the unit: 2026-09-11 summed 443.646
+      kWh of SMT consumption against 443.313 billed over 2026-08-28..2026-09-03.
 - [ ] new PDFs named `Rythm YYYY-MM.pdf` and filed in archive_dir
 
 Note: for interval data older than the portal's ~12-month window, Smart Meter Texas has ~24

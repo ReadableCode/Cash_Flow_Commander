@@ -1,13 +1,14 @@
-# parse: rhythm api_orders_json has no parser; 28 docs permanently no_parser
+# parse: rhythm api_orders_json has no parser; no_parser grows one per invoice
 
     found:  2026-09-04
     status: open
     verify: uv run python src/parse_raw.py --provider rhythm | grep no_parser
 
 `src/providers/__init__.py::_REGISTRY` has no `("rhythm", "api_orders_json", ...)`
-entry, so those documents can never be parsed and are reported on every run. The
-`/bills-rhythm` verification checklist requires **zero** `no_parser`, so that box
-can never be ticked as things stand.
+entry, so those documents can never be parsed and are reported on every run. Each
+new invoice adds one more: 28 on 2026-09-04, 29 on 2026-09-11 (22 orders + the 7
+junk docs below). The `/bills-rhythm` checklist therefore can only check that
+`no_parser` grew by this run's orders captures and nothing else.
 
 ## Evidence
 
