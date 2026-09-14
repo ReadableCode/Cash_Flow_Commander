@@ -695,6 +695,142 @@ class ForecastScreen(Screen):
 
 
 # %%
+# Transactions screen #
+
+
+# View filters, cycled with v.
+TXN_VIEWS = ["all", "matched", "unmatched"]
+
+
+class TransactionsScreen(Screen):
+    """Every held transaction — the whole two years at once — with the series
+    it pays. Newest first.
+
+    Read-only. Press v to cycle all / matched / unmatched: 'matched' is the
+    audit view of everything the sheet import (and you) have paired so far;
+    'unmatched' is money the plan doesn't know about yet, where reversals and
+    stray subscriptions stand out. / focuses a filter box that narrows the
+    list as you type — every space-separated word must appear somewhere in
+    the row. PageUp/PageDown and Home/End move fast.
+    """
+
+    BINDINGS = [
+        ("v", "cycle_view", "All/Matched/Unmatched"),
+        ("r", "refresh", "Refresh"),
+        ("slash", "focus_filter", "Filter"),
+        ("escape", "back", "Back"),
+    ]
+
+    def __init__(self, app_state) -> None:
+        super().__init__()
+        self.app_state = app_state
+        self.view = "all"
+        self.df_all = pd.DataFrame()
+        self.filter_text = ""
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static("", id="txn_view_label")
+        yield Input(placeholder="/ filter — words match date, account, amount, series, description", id="txn_filter")
+        yield DataTable(id="transactions_table")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#transactions_table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        table.add_columns("date", "account", "amount", "pays", "description")
+        self.action_refresh()
+        table.focus()
+
+    def action_refresh(self) -> None:
+        # All of history in one load; a few thousand rows is nothing.
+        self.df_all = expected_store.get_transactions_with_matches_df(
+            self.app_state.engine, datetime.date(2000, 1, 1), datetime.date(2100, 1, 1)
+        )
+        self.df_all = self.df_all.sort_values(
+            ["post_date", "account_id"], ascending=[False, True]
+        )
+        self.render_transactions()
+
+    def render_transactions(self) -> None:
+        is_matched = self.df_all["matched_series"] != ""
+        if self.view == "matched":
+            df_view = self.df_all[is_matched]
+        elif self.view == "unmatched":
+            df_view = self.df_all[~is_matched]
+        else:
+            df_view = self.df_all
+
+        words = self.filter_text.lower().split()
+        filter_note = ""
+        if words:
+            labels = self.app_state.account_labels
+            haystacks = (
+                df_view["post_date"].astype(str)
+                + " "
+                + df_view["account_id"].astype(str).map(
+                    lambda account: str(labels.get(account, account))
+                )
+                + " "
+                + df_view["amount"].astype(float).map("{:.2f}".format)
+                + " "
+                + df_view["matched_series"].astype(str)
+                + " "
+                + df_view["description"].astype(str)
+            ).str.lower()
+            keep = pd.Series(True, index=df_view.index)
+            for word in words:
+                keep &= haystacks.str.contains(word, regex=False)
+            df_view = df_view[keep]
+            filter_note = f"   filter: {self.filter_text!r}"
+
+        self.query_one("#txn_view_label", Static).update(
+            f" view: {self.view} ({len(df_view)} rows)   "
+            f"all {len(self.df_all)} / matched {int(is_matched.sum())} / "
+            f"unmatched {int((~is_matched).sum())}{filter_note}   "
+            "(v to switch, / to filter, PgUp/PgDn/Home/End to move)"
+        )
+        table = self.query_one("#transactions_table", DataTable)
+        table.clear()
+        for _, txn_row in df_view.iterrows():
+            account_label = self.app_state.account_labels.get(
+                str(txn_row["account_id"]), str(txn_row["account_id"])
+            )
+            table.add_row(
+                str(txn_row["post_date"]),
+                account_label,
+                f"{float(txn_row['amount']):.2f}",
+                str(txn_row["matched_series"])[:30],
+                str(txn_row["description"])[:70],
+            )
+
+    def action_cycle_view(self) -> None:
+        self.view = TXN_VIEWS[(TXN_VIEWS.index(self.view) + 1) % len(TXN_VIEWS)]
+        self.render_transactions()
+
+    def action_focus_filter(self) -> None:
+        self.query_one("#txn_filter", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "txn_filter":
+            self.filter_text = event.value
+            self.render_transactions()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "txn_filter":
+            self.query_one("#transactions_table", DataTable).focus()
+
+    def action_back(self) -> None:
+        # Escape from the filter box returns to the table (keeping the
+        # filter); escape from the table leaves the screen.
+        if self.focused is not None and self.focused.id == "txn_filter":
+            self.query_one("#transactions_table", DataTable).focus()
+            return
+        self.app.pop_screen()
+
+
+# %%
 # Series form #
 
 # (field name, label, required)
