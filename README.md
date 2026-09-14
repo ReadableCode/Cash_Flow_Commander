@@ -93,6 +93,14 @@ looks exactly like a run that worked, and that has happened here before.
   uv tree
   ```
 
+## Running the TUI
+
+- From the repo root:
+
+  ```bash
+  uv run python src/cfc_tui.py
+  ```
+
 ## Bill providers: /bills-<company> commands
 
 - Billing artifacts (portal API JSON, bill PDFs, emails) are acquired by per-company Claude Code slash commands committed in `.claude/commands/` (e.g. `/bills-rhythm`).
