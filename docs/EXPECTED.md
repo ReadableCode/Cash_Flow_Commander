@@ -35,7 +35,14 @@ a row a person wrote.
   its reversal nets to zero → status `net_zero`. Both come back to the pairing
   queue by themselves.
 - **Matching is suggest-then-confirm.** `expected_suggest` ranks candidates;
-  only a person pressing a key in the TUI creates a match. A transaction that
+  only a person pressing a key in the TUI creates a match. A card payoff's
+  expected amount is a placeholder (the minimum payment, never what is
+  paid), so for transfer series the ranking ignores amount entirely and
+  scores what identifies a payoff: it sits on the series' bank or card
+  account moving the right way, the memo names the card, the series'
+  match_pattern hits, and the other leg (equal, opposite, other account)
+  posts within a few days. That last signal is what tells apart Chase's
+  identically worded autopays to different cards. A transaction that
   merely looks like your mortgage (a friend's mortgage at the same company)
   can never attach itself — pair it to its own series instead.
 - **One transaction belongs to one occurrence — unless every claim states its
@@ -55,6 +62,7 @@ a row a person wrote.
 
 ```
 uv run python src/cfc_tui.py        # one app: pairing + forecast, t = transactions, e = series
+uv run python src/pairing_web.py    # the pairing board: two columns in the browser, drag to pair
 uv run python src/expected_checks.py     # broken / past-due / net-zero / drift report
 uv run python src/expected_discover.py   # recurring transactions no series accounts for
 uv run python src/expected_forecast.py   # cash forecast preview; --publish writes the sheet
@@ -90,6 +98,18 @@ would otherwise hide — and `end_balance` is where the day closes.
 In the pairing screen's match view: space claims a whole transaction, x claims
 a stated share of one (splits). Closing a series deletes its untouched
 generated future occurrences; matched, skipped, or hand-added ones survive.
+
+The pairing board (`pairing_web.py`) is the same pairing with lines instead
+of a list: occurrences on the left, transactions on the right, one date axis,
+every active match drawn across the gutter. Drag a row to a row on the other
+side and confirm whole-or-share; the match is written on Enter, and the
+board redraws from the database, so what is on screen is always what is
+stored. Unpairing voids the line, skipping a bill (with a note) marks its
+occurrence skipped, and undo is the inverse write. Every match line is one
+color and there is no "late" state: companies draft when they draft, so an
+unpaid bill past its date is just unpaid. It runs from the CLI on localhost
+and exits when the tab closes. Same store, same rules: a suggestion is only
+a dashed line until a person clicks it.
 
 Occurrences are generated to a 2-year horizon by `generate_occurrences`
 (idempotent; runs after the import and whenever a series is added in the TUI).

@@ -101,6 +101,17 @@ looks exactly like a run that worked, and that has happened here before.
   uv run python src/cfc_tui.py
   ```
 
+## Running the pairing board
+
+- A browser view of the same pairing: expected occurrences on the left,
+  transactions on the right, matches as lines. It starts a localhost server,
+  opens the page, and exits when the tab closes.
+
+  ```bash
+  uv run python src/pairing_web.py                 # 45 days back, 45 forward
+  uv run python src/pairing_web.py --days-back 90  # wider window
+  ```
+
 ## Bill providers: /bills-<company> commands
 
 - Billing artifacts (portal API JSON, bill PDFs, emails) are acquired by per-company Claude Code slash commands committed in `.claude/commands/` (e.g. `/bills-rhythm`).

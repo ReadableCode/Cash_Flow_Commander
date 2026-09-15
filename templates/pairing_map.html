@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pairing.map — expected ↔ transactions</title>
+<style>
+  :root{
+    --bg:#060a11;
+    --bg-2:#0a1019;
+    --panel:rgba(13,20,31,.86);
+    --line:#1b2635;
+    --ink:#dfe9f6;
+    --ink-dim:#7f93ab;
+    --ink-faint:#4d5f76;
+    --blue:#5b9dff;
+    --good:#39d98a;
+    --warn:#ffb454;
+    --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --row:40px;
+    --gutter:220px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 700px at 22% 8%, #0d1726 0%, transparent 60%),
+      radial-gradient(900px 600px at 84% 82%, #0b1a22 0%, transparent 62%),
+      var(--bg);
+    color:var(--ink);font-family:var(--mono);font-size:16px;
+    -webkit-font-smoothing:antialiased;overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100vh}
+
+  /* ---------- chrome (the deploy.map vocabulary) ---------- */
+  .topbar{
+    display:flex;align-items:center;gap:18px;padding:12px 20px 10px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(10,16,25,.9),rgba(6,10,17,.4));
+  }
+  .brand{font-size:15px;letter-spacing:.06em;color:var(--ink);white-space:nowrap}
+  .brand b{font-weight:600}
+  .brand .dim{color:var(--ink-faint)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--good);display:inline-block;
+    box-shadow:0 0 10px var(--good);animation:pulse 2.4s ease-in-out infinite;margin:0 6px 0 2px}
+  .pulse.dead{background:var(--bad);box-shadow:0 0 10px var(--bad);animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .stats{display:flex;gap:16px;margin-left:auto;color:var(--ink-faint);font-size:13px;letter-spacing:.04em}
+  .stats b{color:var(--ink-dim);font-weight:500}
+  .toolbar{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 20px;
+    border-bottom:1px solid var(--line);background:rgba(8,13,21,.55);
+  }
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border-radius:999px;
+    border:1px solid #223047;background:rgba(20,30,45,.5);color:var(--ink-dim);
+    font-size:12.5px;letter-spacing:.05em;cursor:pointer;transition:.16s;font-family:inherit;white-space:nowrap;
+  }
+  .chip:hover{border-color:#33507a;color:var(--ink)}
+  .chip.off{opacity:.32}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+  .chip .n{color:var(--ink-faint);font-size:11px}
+  .chip.danger:hover{border-color:var(--bad);color:var(--bad)}
+  .chip.danger.off{opacity:.32;cursor:default}
+  .chip.danger.off:hover{border-color:#223047;color:var(--ink-dim)}
+  .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+  .hint{color:var(--ink-faint);font-size:12px;margin-left:auto;letter-spacing:.03em}
+  input.search,input.date{
+    background:rgba(12,19,30,.8);border:1px solid #223047;border-radius:999px;color:var(--ink);
+    font-family:inherit;font-size:13px;padding:5px 12px;outline:none;
+  }
+  input.search{width:250px}
+  input.date{width:118px;padding:4px 10px;color-scheme:dark}
+  input.search:focus,input.date:focus{border-color:#3a5f95;box-shadow:0 0 0 3px rgba(58,95,149,.15)}
+  input.search::placeholder{color:var(--ink-faint)}
+
+  /* ---------- board ---------- */
+  .stage{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+  .colhead{
+    flex:none;z-index:5;display:flex;align-items:flex-start;
+    border-bottom:1px solid var(--line);background:rgba(8,13,21,.85);backdrop-filter:blur(6px);
+  }
+  .colhead .l,.colhead .r{flex:1;min-width:0;padding:8px 14px;display:flex;flex-direction:column;gap:7px}
+  .colhead .g{width:var(--gutter);flex:none;padding:8px 6px;text-align:center;align-self:stretch;display:flex;align-items:flex-start;justify-content:center}
+  .colhead .title{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#cfe0f5;display:flex;align-items:center;gap:10px}
+  .colhead .g .title{color:var(--ink-faint)}
+  .colhead .r .title{justify-content:flex-end}
+  .colhead .rowf{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .colhead .r .rowf{justify-content:flex-end}
+  .colhead .rowf .lbl{color:var(--ink-faint);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-right:2px}
+  .board{flex:1;min-height:0;position:relative;overflow:auto;cursor:default}
+  .board::-webkit-scrollbar{width:10px;height:10px}
+  .board::-webkit-scrollbar-thumb{background:#1e2b3d;border-radius:6px}
+  .canvas{position:relative;width:100%;min-height:100%}
+  .col{position:absolute;top:0;bottom:0}
+  .col.left{left:0;width:calc(50% - var(--gutter) / 2)}
+  .col.right{right:0;width:calc(50% - var(--gutter) / 2)}
+  .band{position:absolute;left:0;right:0;border-top:1px solid rgba(27,38,53,.7);pointer-events:none}
+  .band .d{
+    position:absolute;left:50%;top:-1px;transform:translate(-50%,-50%);padding:1px 9px;border-radius:999px;
+    background:var(--bg-2);border:1px solid var(--line);color:var(--ink-faint);font-size:11.5px;letter-spacing:.12em;
+  }
+  .band.today{border-top:1px dashed rgba(91,157,255,.55)}
+  .band.today .d{color:var(--blue);border-color:rgba(91,157,255,.5);background:#0b1526}
+  .band.past .d{color:#3f4f64}
+  .band.stale{border-top-color:rgba(255,180,84,.18)}
+  .band.stale .d{color:#c9964a;border-color:rgba(255,180,84,.35)}
+  .band.edge{border-top:1px dashed rgba(255,180,84,.6)}
+  .band.edge .d{color:var(--warn);border-color:rgba(255,180,84,.6);background:#1a140b;letter-spacing:.16em}
+
+  .row{
+    position:absolute;left:10px;right:10px;height:calc(var(--row) - 4px);display:flex;align-items:center;gap:8px;
+    padding:0 10px;border-radius:7px;border:1px solid transparent;user-select:none;cursor:grab;
+    font-size:15.5px;line-height:1;transition:background .12s,border-color .12s,opacity .18s;white-space:nowrap;
+  }
+  .row:hover{background:rgba(20,30,45,.7);border-color:#223047}
+  .row.near{background:rgba(20,30,45,.55);border-color:#2b3d55}
+  .row.on{background:rgba(91,157,255,.10);border-color:#3a5f95}
+  .row.target{background:rgba(57,217,138,.12);border-color:var(--good);box-shadow:0 0 0 3px rgba(57,217,138,.12)}
+  .row.mute{opacity:.28}
+  .row.unpaid{border-color:rgba(255,180,84,.28);background:rgba(255,180,84,.045);border-left:3px solid var(--warn)}
+  .row.unpaid:hover,.row.unpaid.near{background:rgba(255,180,84,.10);border-color:rgba(255,180,84,.45);border-left-color:var(--warn)}
+  .row.unpaid.on{background:rgba(255,180,84,.14);border-color:var(--warn)}
+  .row.unpaid .name{color:#ffd59a}
+  .row.unpaid .amt{color:#ffd59a}
+  .row.unpaid .port{border-color:var(--warn)}
+  .row.paid .name,.row.paid .amt{color:#9fb0c3}
+  .row.skipped{opacity:.42}
+  .row.skipped:hover{opacity:.8}
+  .row .name{color:#e3edf9;font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .row .cat{color:var(--ink-faint);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase}
+  .row .amt{margin-left:auto;font-variant-numeric:tabular-nums;color:#cfe0f5}
+  .row .amt.in{color:var(--good)}
+  .row .acct{color:var(--ink-dim);font-size:13.5px;flex:none}
+  .row .desc{color:#9fb4cc;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+  .row .st{width:7px;height:7px;border-radius:50%;flex:none}
+  .st.paid{background:var(--good);box-shadow:0 0 6px rgba(57,217,138,.6)}
+  .st.unpaid{width:9px;height:9px;background:var(--warn);box-shadow:0 0 8px rgba(255,180,84,.7);animation:pulse 2.4s ease-in-out infinite}
+  .st.skipped{background:transparent;border:1px dashed var(--ink-faint)}
+  .st.broken,.st.net_zero{background:var(--bad);box-shadow:0 0 6px rgba(255,107,107,.6)}
+  .row .badge{
+    flex:none;font-size:12px;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
+    border:1px solid #223047;color:var(--ink-dim);
+  }
+  .row .badge.bad{color:var(--bad);border-color:rgba(255,107,107,.4);cursor:pointer}
+  .row .badge.far{color:#8fb8ff;border-color:rgba(91,157,255,.35)}
+  .row .badge.n{color:var(--ink-faint)}
+  .row .badge.skip{color:var(--ink-dim);border-style:dashed;cursor:pointer}
+  .row .badge.skip:hover{color:var(--ink);border-color:#3a5f95}
+  .row .badge.act{color:var(--ink-faint);opacity:0;cursor:pointer;transition:opacity .12s}
+  .row:hover .badge.act,.row.on .badge.act{opacity:1}
+  .row .badge.act:hover{color:var(--ink);border-color:#3a5f95}
+  .card textarea{
+    width:100%;min-height:58px;resize:vertical;background:rgba(12,19,30,.8);border:1px solid #223047;border-radius:7px;
+    color:var(--ink);font-family:inherit;font-size:13.5px;padding:7px 9px;outline:none;
+  }
+  .card textarea:focus{border-color:#3a5f95}
+  .port{
+    position:absolute;top:50%;width:13px;height:13px;border-radius:50%;transform:translateY(-50%);
+    background:var(--bg-2);border:1.5px solid #2b3d55;transition:.14s;flex:none;
+  }
+  .col.left .port{right:-7px}
+  .col.right .port{left:-7px}
+  .row:hover .port,.row.on .port{border-color:var(--blue);box-shadow:0 0 8px rgba(91,157,255,.6);transform:translateY(-50%) scale(1.15)}
+  .row.linked .port{background:#1b2d45;border-color:#3a5f95}
+  .row.target .port{border-color:var(--good);box-shadow:0 0 10px rgba(57,217,138,.8)}
+  body.dragging .row{cursor:copy}
+  body.dragging .col .row:not(.target):hover{background:transparent;border-color:transparent}
+
+  svg.wires{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+  svg.wires path.wire{fill:none;stroke-width:1.4;stroke-linecap:round;opacity:.7;pointer-events:stroke;cursor:pointer;transition:opacity .16s}
+  svg.wires path.wire:hover{stroke-width:2.2;opacity:1}
+  svg.wires path.wire.on{stroke-width:2.2;opacity:1;filter:drop-shadow(0 0 4px currentColor)}
+  svg.wires path.wire.mute{opacity:.12}
+  svg.wires path.wire.sel{stroke-width:2.6;opacity:1;stroke-dasharray:5 9;animation:flow 1.1s linear infinite;filter:drop-shadow(0 0 5px currentColor)}
+  svg.wires path.hit{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
+  @keyframes flow{to{stroke-dashoffset:-14}}
+  svg.wires path.sug{fill:none;stroke:var(--blue);stroke-width:1.2;stroke-dasharray:3 6;opacity:.55;pointer-events:stroke;cursor:pointer}
+  svg.wires path.sug:hover{opacity:1;stroke-width:2}
+  svg.wires path.rubber{fill:none;stroke:var(--good);stroke-width:2;stroke-dasharray:6 6;opacity:.95;pointer-events:none;
+    filter:drop-shadow(0 0 5px rgba(57,217,138,.7))}
+  svg.wires text.lbl{font-size:12.5px;fill:var(--ink-dim);text-anchor:middle;pointer-events:none;font-family:var(--mono);paint-order:stroke;stroke:#060a11;stroke-width:3px}
+  svg.wires text.lbl.share{fill:var(--ink)}
+  svg.wires text.lbl.sug{fill:var(--blue)}
+  svg.wires g.knob{cursor:pointer;pointer-events:all}
+  svg.wires g.knob circle{fill:#0b1526;stroke:var(--bad);stroke-width:1.5}
+  svg.wires g.knob text{font-size:13px;fill:var(--bad);text-anchor:middle;font-family:var(--mono);pointer-events:none}
+  svg.wires g.knob:hover circle{fill:var(--bad)}
+  svg.wires g.knob:hover text{fill:#060a11}
+
+  .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:14px;letter-spacing:.06em}
+
+  /* ---------- floating card (the pair / unpair confirm) ---------- */
+  .card{
+    position:fixed;opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .16s,transform .16s;
+    width:500px;padding:16px 18px 14px;background:var(--panel);backdrop-filter:blur(14px);
+    border:1px solid #253449;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.04);z-index:40;
+  }
+  .card.show{opacity:1;pointer-events:auto;transform:translateY(0)}
+  .card h3{margin:0 0 10px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:9px;letter-spacing:.06em;text-transform:uppercase}
+  .card h3 .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .card .ent{display:grid;grid-template-columns:80px 1fr;gap:3px 12px;font-size:13.5px;line-height:1.5;padding:7px 10px;border-radius:9px;
+    background:rgba(20,30,45,.45);border:1px solid #1e2b3d}
+  .card .ent+.ent{margin-top:6px}
+  .card .ent .k{color:var(--ink-faint);letter-spacing:.04em}
+  .card .ent .v{color:var(--ink);word-break:break-word}
+  .card .ent .v b{color:#e3edf9;font-weight:600}
+  .card .link{text-align:center;color:var(--ink-faint);font-size:13px;margin:4px 0}
+  .card .link b{color:var(--ink-dim);font-weight:500}
+  .card .opts{margin:10px 0 4px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+  .card .opts label{display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink-dim)}
+  .card .opts label.on{color:var(--ink)}
+  .card .opts input[type=radio]{accent-color:var(--good);margin:0}
+  .card .opts input[type=text]{
+    background:rgba(12,19,30,.8);border:1px solid #223047;border-radius:7px;color:var(--ink);font-family:inherit;
+    font-size:13.5px;padding:5px 9px;width:140px;outline:none;font-variant-numeric:tabular-nums;
+  }
+  .card .opts input[type=text]:focus{border-color:#3a5f95}
+  .card .warn{margin:8px 0 0;font-size:13px;color:var(--warn);line-height:1.5}
+  .card .err{margin:8px 0 0;font-size:13px;color:var(--bad);line-height:1.5;white-space:pre-wrap}
+  .card .btns{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;align-items:center}
+  .card .btns .k{margin-right:auto;color:var(--ink-faint);font-size:12px}
+  .btn{
+    font-family:inherit;font-size:13.5px;letter-spacing:.06em;padding:7px 16px;border-radius:999px;cursor:pointer;
+    border:1px solid #223047;background:rgba(20,30,45,.5);color:var(--ink-dim);transition:.16s;
+  }
+  .btn:hover{border-color:#33507a;color:var(--ink)}
+  .btn.go{border-color:rgba(57,217,138,.5);color:var(--good);background:rgba(57,217,138,.08)}
+  .btn.go:hover{background:rgba(57,217,138,.18)}
+  .btn.rm{border-color:rgba(255,107,107,.5);color:var(--bad);background:rgba(255,107,107,.07)}
+  .btn.rm:hover{background:rgba(255,107,107,.18)}
+  .btn:disabled{opacity:.4;cursor:default}
+
+  /* ---------- tip, toast, about ---------- */
+  .tip{
+    position:fixed;pointer-events:none;z-index:60;background:var(--panel);border:1px solid #253449;border-radius:9px;
+    padding:9px 12px;font-size:13px;line-height:1.6;opacity:0;transition:opacity .12s;backdrop-filter:blur(10px);
+    box-shadow:0 16px 40px rgba(0,0,0,.55);max-width:420px;
+  }
+  .tip.show{opacity:1}
+  .tip b{color:#fff;font-weight:600}
+  .tip .p{color:#9fb4cc;word-break:break-word}
+  .tip .k{color:var(--ink-faint)}
+  .toast{
+    position:fixed;left:50%;bottom:22px;transform:translate(-50%,12px);opacity:0;transition:.2s;z-index:50;
+    display:flex;align-items:center;gap:14px;padding:9px 14px 9px 16px;border-radius:12px;
+    background:var(--panel);backdrop-filter:blur(14px);border:1px solid #253449;box-shadow:0 18px 50px rgba(0,0,0,.6);font-size:13.5px;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .toast b{color:#e3edf9;font-weight:500}
+  .toast .undo{color:var(--blue);cursor:pointer;letter-spacing:.06em;font-size:13px;border:1px solid rgba(91,157,255,.35);
+    border-radius:999px;padding:3px 10px}
+  .toast .undo:hover{background:rgba(91,157,255,.12)}
+  .about{
+    position:fixed;right:22px;top:112px;width:520px;max-height:76vh;overflow:auto;z-index:70;display:none;
+    background:var(--panel);backdrop-filter:blur(14px);border:1px solid #253449;border-radius:14px;padding:16px 18px;
+    box-shadow:0 24px 60px rgba(0,0,0,.6);font-size:13.5px;line-height:1.7;color:#9fb4cc;
+  }
+  .about.show{display:block}
+  .about h4{margin:0 0 10px;font-size:15px;color:#e3edf9;font-weight:600;letter-spacing:.02em}
+  .about b{color:#cfe0f5;font-weight:500}
+  .about code{color:#8fb8ff}
+  .about ul{margin:6px 0 12px;padding-left:16px}
+  .about li{margin:2px 0}
+  .about .close{float:right;cursor:pointer;color:var(--ink-faint)}
+  .legend{
+    position:absolute;left:20px;bottom:14px;display:flex;gap:14px;flex-wrap:wrap;z-index:6;
+    color:var(--ink-faint);font-size:12px;letter-spacing:.05em;pointer-events:none;
+  }
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:18px;height:0;border-top:2px solid;display:inline-block}
+  .legend i.dash{border-top-style:dashed}
+  .dead{
+    position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(6,10,17,.85);
+    color:var(--ink-dim);font-size:13px;letter-spacing:.06em;text-align:center;line-height:2;
+  }
+  .dead.show{display:flex}
+  .dead b{color:var(--ink);display:block;font-size:15px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><b>pairing.map</b> <span class="dim">·</span> <span id="winline" class="dim"></span>
+      <span class="dim">·</span><span class="pulse" id="pulse"></span><span id="backend" class="dim"></span></div>
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="toolbar">
+    <button class="chip" id="prev" title="30 days earlier">◀ 30d</button>
+    <input class="date" type="date" id="start"><span style="color:var(--ink-faint)">→</span><input class="date" type="date" id="end">
+    <button class="chip" id="next" title="30 days later">30d ▶</button>
+    <button class="chip" id="today" title="scroll to today (t)">today</button>
+    <button class="chip" id="oldestopen" title="select the oldest bill still to pair (o)"><span class="dot" style="color:var(--warn)"></span>▲ oldest unpaid</button>
+    <button class="chip" id="nextopen" title="select the next bill still to pair (n · shift+n for previous)"><span class="dot" style="color:var(--warn)"></span>next unpaid ▶</button>
+    <div class="sep"></div>
+    <button class="chip danger off" id="unpairbtn" title="unpair the selected line (click a line, then ⌫)"><span class="dot" style="color:var(--bad)"></span>unpair line</button>
+    <div class="sep"></div>
+    <button class="chip" id="sugtoggle"><span class="dot" style="color:var(--blue)"></span>suggestions</button>
+    <button class="chip" id="aboutbtn">how this works</button>
+    <button class="chip danger" id="quit" title="close the board and end the CLI process">quit</button>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div class="stage">
+    <div class="colhead">
+      <div class="l">
+        <div class="title">expected <input class="search" id="searchl" placeholder="filter bills — series, category, amount" spellcheck="false"></div>
+        <div class="rowf"><span class="lbl">status</span><span id="stchips" style="display:contents"></span></div>
+      </div>
+      <div class="g"><div class="title">drag across to pair</div></div>
+      <div class="r">
+        <div class="title"><input class="search" id="search" placeholder="/ filter transactions — memo, amount" spellcheck="false"> transactions</div>
+        <div class="rowf"><span class="lbl">show</span><span id="txchips" style="display:contents"></span></div>
+        <div class="rowf"><span class="lbl">account</span><span id="acchips" style="display:contents"></span></div>
+      </div>
+    </div>
+    <div class="board" id="board">
+      <div class="canvas" id="canvas">
+        <div class="col left" id="left"></div>
+        <div class="col right" id="right"></div>
+        <svg class="wires" id="wires"></svg>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="border-color:var(--good)"></i>match (a share shows its amount)</span>
+      <span><i class="dash" style="border-color:var(--blue)"></i>suggestion — click to pair</span>
+      <span>drag a row across · o oldest · n next unpaid · click a line then ⌫ to unpair · s skip a bill · ⌘Z undo</span>
+    </div>
+  </div>
+</div>
+<div class="card" id="card"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<div class="about" id="about"></div>
+<div class="dead" id="dead"></div>
+<script>
+/* ---------------- constants ---------------- */
+const ROW = 40, BAND_HEAD = 28, BAND_GAP = 10, TOP_PAD = 16, BOTTOM_PAD = 60, GUTTER = 220;
+const STATUS = {
+  unpaid:  {label:'unpaid',   color:'#7f93ab'},
+  paid:    {label:'paid',     color:'#39d98a'},
+  skipped: {label:'skipped',  color:'#4d5f76'},
+  broken:  {label:'broken',   color:'#ff6b6b'},
+  net_zero:{label:'net zero', color:'#ff6b6b'},
+};
+const ACCOUNT_COLORS = ['#5b9dff', '#a78bfa', '#2ad4b4', '#ff8fa3', '#7ee787', '#ffd166', '#8be9fd', '#f5b13d'];
+const TXVIEW = {unmatched:{label:'unmatched', color:'#cfe0f5'}, matched:{label:'matched', color:'#39d98a'}};
+const HEARTBEAT_MS = 5000, TOAST_MS = 9000;
+
+/* ---------------- state ---------------- */
+const url = new URL(location.href);
+const state = {
+  start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+  data: null, st: new Set(Object.keys(STATUS)), tx: new Set(Object.keys(TXVIEW)), qL: '', qR: '', ac: null, sug: true, keep: new Set(),
+  hover: null, sel: null, selMatch: null, drag: null, armed: null,
+  undo: [], busy: false, dead: false,
+  pos: {left:{}, right:{}}, occById: {}, txnByKey: {}, matchById: {},
+};
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+  const node = document.createElementNS(NS, tag);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+};
+const div = (cls, html, parent) => {
+  const node = document.createElement('div');
+  node.className = cls; if (html != null) node.innerHTML = html;
+  if (parent) parent.appendChild(node);
+  return node;
+};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => (n < 0 ? '-' : '') + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const shiftDays = (iso, days) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+const dayLabel = iso => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'}); };
+/* no 'late': companies draft when they draft, and an unpaid bill past its date is still just unpaid */
+const occStatus = o => o.status;
+const WIRE = '#39d98a';
+const txnOf = m => state.txnByKey[m.txn_key];
+const occOf = m => state.occById[m.occurrence_id];
+
+/* ---------------- server ---------------- */
+async function api(path, body){
+  let response;
+  try {
+    response = body === undefined
+      ? await fetch(path)
+      : await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  } catch (error) { markDead('the server is gone'); throw error; }
+  const payload = await response.json().catch(() => ({error:'bad response'}));
+  if (!response.ok) throw new Error(payload.error || response.statusText);
+  return payload;
+}
+function markDead(why){
+  if (state.dead) return;
+  state.dead = true;
+  $('pulse').classList.add('dead');
+  $('dead').innerHTML = `<div><b>board closed</b>${esc(why)}<br>relaunch it: <code>uv run python src/pairing_web.py</code></div>`;
+  $('dead').classList.add('show');
+}
+async function load(){
+  const payload = await api(`/api/state?start=${state.start}&end=${state.end}&keep=${[...state.keep].join(',')}`);
+  setData(payload);
+  render();
+}
+function setData(data){
+  state.data = data;
+  state.occById = Object.fromEntries(data.occurrences.map(o => [o.id, o]));
+  state.txnByKey = Object.fromEntries(data.transactions.map(t => [t.key, t]));
+  state.matchById = Object.fromEntries(data.matches.map(m => [m.id, m]));
+  if (state.selMatch && !state.matchById[state.selMatch]) state.selMatch = null;
+}
+setInterval(() => { if (!state.dead) api('/api/heartbeat', {}).catch(() => {}); }, HEARTBEAT_MS);
+api('/api/heartbeat', {}).catch(() => {});
+addEventListener('pagehide', () => { if (!state.dead) navigator.sendBeacon('/api/bye', '{}'); });
+
+/* ---------------- filters ---------------- */
+/* each side has its own filter, so narrowing the transactions to find a payment
+   never hides the bill you are pairing it to; a selected bill always stays visible */
+const isFocused = (side, id) => (state.sel && state.sel.side === side && state.sel.id === String(id)) ||
+  (state.armed && state.armed.side === side && state.armed.id === String(id));
+const words = q => q.split(/\s+/).filter(Boolean);
+const hasAll = (hay, q) => words(q).every(w => hay.includes(w));
+const visibleOcc = o => {
+  if (isFocused('left', o.id)) return true;
+  if (!state.st.has(occStatus(o))) return false;
+  if (!state.qL) return true;
+  return hasAll(`${o.series} ${o.category || ''} ${o.sub_category || ''} ${money(o.amount)} ${o.due_date} ${o.status} ${o.skip_note || ''}`.toLowerCase(), state.qL);
+};
+const visibleTxn = t => {
+  if (isFocused('right', t.key)) return true;
+  if (!state.tx.has(t.match_ids.length ? 'matched' : 'unmatched')) return false;
+  if (state.ac && !state.ac.has(t.account_id)) return false;
+  if (!state.qR) return true;
+  const pays = t.match_ids.map(id => state.matchById[id]?.series || '').join(' ');
+  return hasAll(`${t.description} ${t.account} ${money(t.amount)} ${t.post_date} ${pays}`.toLowerCase(), state.qR);
+};
+
+/* ---------------- layout: one date axis, both columns ----------------
+   Every date that has anything on either side gets a band; the band is as
+   tall as its fuller side, so a bill and the payment that covered it share
+   a line even when the other side of that day is empty. */
+function layout(){
+  const occ = state.data.occurrences.filter(visibleOcc);
+  const txn = state.data.transactions.filter(visibleTxn);
+  const byDate = {};
+  occ.forEach(o => ((byDate[o.due_date] = byDate[o.due_date] || {l:[], r:[]}).l.push(o)));
+  txn.forEach(t => ((byDate[t.post_date] = byDate[t.post_date] || {l:[], r:[]}).r.push(t)));
+  const today = state.data.window.today;
+  if (!byDate[today] && today >= state.start && today <= state.end) byDate[today] = {l:[], r:[]};
+  const dates = Object.keys(byDate).sort();
+  const bands = [];
+  let y = TOP_PAD;
+  state.pos = {left:{}, right:{}};
+  dates.forEach(date => {
+    const {l, r} = byDate[date];
+    l.sort((a, b) => a.series.localeCompare(b.series));
+    r.sort((a, b) => a.account.localeCompare(b.account) || a.amount - b.amount);
+    const n = Math.max(l.length, r.length, date === today ? 1 : 0);
+    bands.push({date, top:y, n});
+    const rowsTop = y + BAND_HEAD;
+    l.forEach((o, i) => (state.pos.left[o.id] = {top:rowsTop + i * ROW, cy:rowsTop + i * ROW + (ROW - 4) / 2}));
+    r.forEach((t, i) => (state.pos.right[t.key] = {top:rowsTop + i * ROW, cy:rowsTop + i * ROW + (ROW - 4) / 2}));
+    y = rowsTop + n * ROW + BAND_GAP;
+  });
+  return {occ, txn, bands, height:Math.max(y + BOTTOM_PAD, $('board').clientHeight)};
+}
+
+/* ---------------- render ---------------- */
+function render(){
+  const {occ, txn, bands, height} = layout();
+  const canvas = $('canvas'), left = $('left'), right = $('right');
+  canvas.style.height = height + 'px';
+  left.textContent = ''; right.textContent = '';
+  canvas.querySelectorAll('.band,.empty').forEach(n => n.remove());
+  const today = state.data.window.today;
+
+  /* bills carried in from before the window sit in a backlog block on top, then the window itself */
+  let edgeDrawn = false;
+  bands.forEach(b => {
+    const stale = b.date < state.start;
+    const band = div('band' + (b.date === today ? ' today' : b.date < today ? ' past' : '') + (stale ? ' stale' : ''), null, canvas);
+    band.style.top = b.top + BAND_HEAD / 2 + 'px';
+    div('d', b.date === today ? 'today · ' + dayLabel(b.date) : dayLabel(b.date), band);
+    if (!stale && !edgeDrawn){
+      edgeDrawn = true;
+      const staleCount = occ.filter(o => o.before_window).length;
+      if (staleCount){
+        const edge = div('band edge', null, canvas);
+        edge.style.top = b.top - BAND_GAP / 2 + 'px';
+        div('d', `${staleCount} still owed from before ${state.start} ↑ · shown back to ${state.data.window.effective_start} · window starts here`, edge);
+      }
+    }
+  });
+
+  occ.forEach(o => {
+    const status = occStatus(o);
+    const row = div('row ' + status + (o.match_ids.length ? ' linked' : ''), null, left);
+    row.dataset.side = 'left'; row.dataset.id = o.id;
+    row.style.top = state.pos.left[o.id].top + 'px';
+    let badges = '';
+    const far = o.match_ids.map(id => state.matchById[id]).filter(m => m && !m.txn_visible);
+    const broken = o.status === 'broken';
+    if (broken) badges += `<span class="badge bad" data-broken="${o.id}" title="a matched transaction no longer exists — click to unpair">broken ⨯</span>`;
+    else if (o.status === 'net_zero') badges += o.is_transfer
+      ? `<span class="badge bad" title="only the card-side leg is paired; a transfer counts as paid when the bank-side leg (money leaving your account) is paired too">card leg only · pair the bank side</span>`
+      : `<span class="badge bad" title="its lines cancel out or point the wrong way (a payment plus its reversal) — still owed">net zero</span>`;
+    else if (far.length) badges += `<span class="badge far" title="matched to a transaction outside this window">↗ ${esc(far[0].txn_post_date)}${far.length > 1 ? ' +' + (far.length - 1) : ''}</span>`;
+    if (o.status === 'skipped') badges += `<span class="badge skip" data-unskip="${o.id}" title="${esc(o.skip_note || '')} — click to unskip">skipped · ${esc((o.skip_note || '').slice(0, 28))}</span>`;
+    else if (!o.match_ids.length) badges += `<span class="badge act" data-skip="${o.id}" title="this bill is not going to happen (s)">skip</span>`;
+    if (o.is_transfer) badges += `<span class="badge n">transfer</span>`;
+    if (o.before_window) badges += `<span class="badge n" title="due before this window and still open">${esc(o.due_date)}</span>`;
+    row.innerHTML = `<i class="st ${status}"></i><span class="name">${esc(o.series)}</span>` +
+      `<span class="cat">${esc(o.category || '')}</span>${badges}` +
+      `<span class="amt${o.amount > 0 ? ' in' : ''}">${money(o.amount)}</span><b class="port"></b>`;
+  });
+
+  txn.forEach(t => {
+    const row = div('row' + (t.match_ids.length ? ' linked' : ''), null, right);
+    row.dataset.side = 'right'; row.dataset.id = t.key;
+    row.style.top = state.pos.right[t.key].top + 'px';
+    const far = t.match_ids.map(id => state.matchById[id]).filter(m => m && !m.occurrence_visible);
+    const badge = far.length
+      ? `<span class="badge far" title="pays an occurrence outside this window">↖ ${esc(far[0].series)} ${esc(far[0].due_date)}</span>` : '';
+    row.innerHTML = `<b class="port"></b><span class="amt${t.amount > 0 ? ' in' : ''}" style="margin-left:0">${money(t.amount)}</span>` +
+      `<span class="acct">${esc(t.account)}</span><span class="desc">${esc(t.description)}</span>${badge}`;
+  });
+
+  if (!occ.length && !txn.length) div('empty', 'nothing in this window passes the filters', canvas);
+  drawWires();
+  renderStats();
+}
+
+function pathBetween(y1, y2){
+  const x1 = $('left').offsetWidth, x2 = x1 + GUTTER, dx = GUTTER * 0.45;
+  return {d:`M${x1} ${y1}C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`, mx:(x1 + x2) / 2, my:(y1 + y2) / 2};
+}
+function drawWires(){
+  $('unpairbtn').classList.toggle('off', !state.selMatch);
+  const svg = $('wires');
+  svg.textContent = '';
+  svg.setAttribute('width', $('canvas').clientWidth);
+  svg.setAttribute('height', $('canvas').clientHeight);
+  const focus = state.sel || state.hover;
+  const focusIds = connectedIds(focus);
+  state.data.matches.forEach(m => {
+    const a = state.pos.left[m.occurrence_id], b = state.pos.right[m.txn_key];
+    if (!a || !b) return;
+    const {d, mx, my} = pathBetween(a.cy, b.cy);
+    const g = el('g', {'data-match':m.id}, svg);
+    let cls = 'wire';
+    if (state.selMatch === m.id) cls += ' sel';
+    else if (focus) cls += focusIds.matches.has(m.id) ? ' on' : ' mute';
+    el('path', {d, class:'hit'}, g);
+    el('path', {d, class:cls, stroke:WIRE, style:`color:${WIRE}`}, g);
+    if (m.matched_amount != null)
+      el('text', {x:mx, y:my - 7, class:'lbl share'}, g).textContent = `${money(m.matched_amount)} of ${money(m.txn_amount)}`;
+    if (state.selMatch === m.id){
+      const knob = el('g', {class:'knob', 'data-unpair':m.id}, g);
+      el('circle', {cx:mx, cy:my + (m.matched_amount != null ? 12 : 0), r:11}, knob);
+      el('text', {x:mx, y:my + (m.matched_amount != null ? 17 : 5)}, knob).textContent = '×';
+    }
+  });
+  /* suggestions for the focused unpaid occurrence: dashed, click to pair */
+  if (state.sug && focus && focus.side === 'left'){
+    const o = state.occById[focus.id];
+    const a = o && state.pos.left[o.id];
+    if (a) o.suggestions.forEach(s => {
+      const b = state.pos.right[s.txn_key];
+      if (!b || o.match_ids.some(id => state.matchById[id]?.txn_key === s.txn_key)) return;
+      const {d, mx, my} = pathBetween(a.cy, b.cy);
+      const g = el('g', {'data-sug':`${o.id}|${s.txn_key}`}, svg);
+      el('path', {d, class:'sug'}, g);
+      el('text', {x:mx, y:my - 5, class:'lbl sug'}, g).textContent = `score ${s.score.toFixed(1)}`;
+    });
+  }
+  if (state.drag && state.drag.live){
+    const {from, x, y} = state.drag;
+    const p = from.side === 'left' ? state.pos.left[from.id] : state.pos.right[from.id];
+    const x0 = from.side === 'left' ? $('left').offsetWidth : $('left').offsetWidth + GUTTER;
+    const dx = (x - x0) * 0.5;
+    el('path', {d:`M${x0} ${p.cy}C${x0 + dx} ${p.cy} ${x - dx} ${y} ${x} ${y}`, class:'rubber'}, svg);
+  }
+  applyFocus(focus, focusIds);
+}
+function connectedIds(focus){
+  const out = {matches:new Set(), left:new Set(), right:new Set()};
+  if (!focus) return out;
+  const own = focus.side === 'left' ? state.occById[focus.id] : state.txnByKey[focus.id];
+  if (!own) return out;
+  own.match_ids.forEach(id => {
+    const m = state.matchById[id]; if (!m) return;
+    out.matches.add(id); out.left.add(String(m.occurrence_id)); out.right.add(m.txn_key);
+  });
+  if (focus.side === 'left' && state.sug) own.suggestions.forEach(s => out.right.add(s.txn_key));
+  return out;
+}
+function applyFocus(focus, ids){
+  document.querySelectorAll('.row').forEach(row => {
+    const {side, id} = row.dataset;
+    row.classList.remove('on', 'near', 'mute');
+    if (!focus) return;
+    if (focus.side === side && focus.id === id) row.classList.add('on');
+    else if (ids[side].has(id)) row.classList.add('near');
+    else if (state.sel) row.classList.add('mute');
+  });
+}
+function renderStats(){
+  const d = state.data;
+  const n = k => d.occurrences.filter(o => occStatus(o) === k).length;
+  const unmatched = d.transactions.filter(t => !t.match_ids.length).length;
+  $('stats').innerHTML =
+    `<span><b>${n('unpaid')}</b> unpaid${d.occurrences.some(o => o.before_window) ? ' <span style="color:var(--warn)">(' + d.occurrences.filter(o => o.before_window).length + ' older)</span>' : ''}</span><span><b>${n('skipped')}</b> skipped</span>` +
+    `<span><b>${n('paid')}</b> paid</span><span><b>${n('broken') + n('net_zero')}</b> broken</span>` +
+    `<span><b>${unmatched}</b> / ${d.transactions.length} txns unclaimed</span><span><b>${d.matches.length}</b> lines</span>`;
+  $('winline').textContent = (d.window.effective_start < d.window.start ? `${d.window.effective_start} ⇠ ` : '') + `${d.window.start} → ${d.window.end}`;
+  $('backend').textContent = d.backend;
+  const stCounts = {}; d.occurrences.forEach(o => (stCounts[occStatus(o)] = (stCounts[occStatus(o)] || 0) + 1));
+  $('stchips').innerHTML = Object.entries(STATUS).map(([k, v]) =>
+    `<button class="chip${state.st.has(k) ? '' : ' off'}" data-st="${k}"><span class="dot" style="color:${v.color}"></span>${v.label}<span class="n">${stCounts[k] || 0}</span></button>`).join('');
+  const txCounts = {matched:d.transactions.length - unmatched, unmatched};
+  $('txchips').innerHTML = Object.entries(TXVIEW).map(([k, v]) =>
+    `<button class="chip${state.tx.has(k) ? '' : ' off'}" data-tx="${k}"><span class="dot" style="color:${v.color}"></span>${v.label}<span class="n">${txCounts[k]}</span></button>`).join('');
+  /* one chip per account seen in this window; "i pay this card from checking" is one click */
+  const accounts = {};
+  d.transactions.forEach(t => { accounts[t.account_id] = accounts[t.account_id] || {label:t.account, n:0}; accounts[t.account_id].n++; });
+  const accountIds = Object.keys(accounts).sort((a, b) => accounts[a].label.localeCompare(accounts[b].label));
+  if (!state.ac) state.ac = new Set(accountIds); else accountIds.forEach(id => { if (!state.acSeen?.has(id)) state.ac.add(id); });
+  state.acSeen = new Set([...(state.acSeen || []), ...accountIds]);
+  $('acchips').innerHTML = accountIds.map(id =>
+    `<button class="chip${state.ac.has(id) ? '' : ' off'}" data-ac="${esc(id)}" title="${esc(id)} · alt-click to show only this account"><span class="dot" style="color:${ACCOUNT_COLORS[accountIds.indexOf(id) % ACCOUNT_COLORS.length]}"></span>${esc(accounts[id].label)}<span class="n">${accounts[id].n}</span></button>`).join('') +
+    (accountIds.length > 1 && state.ac.size < accountIds.length ? `<button class="chip" data-ac="*">all</button>` : '');
+  $('sugtoggle').classList.toggle('off', !state.sug);
+  $('hint').textContent = state.undo.length ? `${state.undo.length} undoable · ⌘Z` : '';
+}
+
+/* ---------------- toolbar ---------------- */
+$('start').value = state.start; $('end').value = state.end;
+function setWindow(start, end){
+  if (!start || !end || end < start) return;
+  state.start = start; state.end = end;
+  $('start').value = start; $('end').value = end;
+  url.searchParams.set('start', start); url.searchParams.set('end', end);
+  history.replaceState(null, '', url);
+  state.sel = null; state.selMatch = null;
+  load().then(scrollToToday).catch(showError);
+}
+$('prev').onclick = () => setWindow(shiftDays(state.start, -30), shiftDays(state.end, -30));
+$('next').onclick = () => setWindow(shiftDays(state.start, 30), shiftDays(state.end, 30));
+$('start').onchange = () => setWindow($('start').value, state.end);
+$('end').onchange = () => setWindow(state.start, $('end').value);
+$('today').onclick = scrollToToday;
+$('search').oninput = e => { state.qR = e.target.value.trim().toLowerCase(); render(); };
+$('searchl').oninput = e => { state.qL = e.target.value.trim().toLowerCase(); render(); };
+$('stchips').onclick = e => { const b = e.target.closest('[data-st]'); if (!b) return; toggle(state.st, b.dataset.st); render(); };
+$('txchips').onclick = e => { const b = e.target.closest('[data-tx]'); if (!b) return; toggle(state.tx, b.dataset.tx); render(); };
+$('acchips').onclick = e => {
+  const b = e.target.closest('[data-ac]'); if (!b) return;
+  const id = b.dataset.ac;
+  if (id === '*') state.ac = new Set(state.acSeen);
+  else if (e.altKey) state.ac = new Set([id]);          /* alt-click: only this account */
+  else toggle(state.ac, id);
+  render();
+};
+$('sugtoggle').onclick = () => { state.sug = !state.sug; render(); };
+$('aboutbtn').onclick = () => $('about').classList.toggle('show');
+$('quit').onclick = async () => { try { await api('/api/quit', {}); } catch (e) {} markDead('quit from the page'); };
+const toggle = (set, k) => set.has(k) ? set.delete(k) : set.add(k);
+/* walk the open bills in board order; n goes down from the selection (or from the top), shift+n goes up */
+function openBillsInOrder(){
+  return [...document.querySelectorAll('#left .row')].map(r => state.occById[+r.dataset.id])
+    .filter(o => o && OPEN.has(o.status)).sort((a, b) => state.pos.left[a.id].top - state.pos.left[b.id].top);
+}
+function nextOpen(step = 1){
+  const open = openBillsInOrder();
+  if (!open.length){ toast('nothing left to pair in this view', STATUS.paid.color); return; }
+  let index = state.sel && state.sel.side === 'left' ? open.findIndex(o => String(o.id) === state.sel.id) : -1;
+  if (index === -1 && step < 0) index = open.length;
+  focusBill(open[(index + step + open.length) % open.length], open);
+}
+function oldestOpen(){
+  const open = openBillsInOrder();
+  if (!open.length){ toast('nothing left to pair in this view', STATUS.paid.color); return; }
+  focusBill(open[0], open);
+}
+/* select a bill, scroll to it, and say where it sits in the queue */
+function focusBill(target, open = openBillsInOrder()){
+  state.sel = {side:'left', id:String(target.id)}; state.armed = state.sel; state.selMatch = null;
+  drawWires();
+  const board = $('board');
+  board.scrollTo({top: Math.max(0, state.pos.left[target.id].top - board.clientHeight * 0.4), behavior: 'smooth'});
+  const at = open.indexOf(target);
+  $('hint').textContent = at >= 0 ? `${at + 1} / ${open.length} to pair · n next · shift+n previous · o oldest` : `${open.length} to pair · n next`;
+}
+const OPEN = new Set(['unpaid', 'broken', 'net_zero']);
+$('nextopen').onclick = () => nextOpen(1);
+$('unpairbtn').onclick = () => { if (state.selMatch) openUnpairCard(state.selMatch); };
+$('oldestopen').onclick = oldestOpen;
+function scrollToToday(){
+  const band = document.querySelector('.band.today');
+  const board = $('board');
+  if (band) board.scrollTop = Math.max(0, parseFloat(band.style.top) - board.clientHeight * 0.4);
+}
+addEventListener('resize', () => { if (state.data) render(); });
+
+/* ---------------- hover, select, drag ---------------- */
+const board = $('board');
+const rowAt = (x, y) => document.elementFromPoint(x, y)?.closest('.row');
+board.addEventListener('pointerover', e => {
+  const row = e.target.closest('.row');
+  if (!row || state.drag?.live) return;
+  state.hover = {side:row.dataset.side, id:row.dataset.id};
+  drawWires(); showTip(row, e);
+});
+board.addEventListener('pointerout', e => {
+  const row = e.target.closest('.row');
+  if (!row || row.contains(e.relatedTarget)) return;
+  state.hover = null; hideTip();
+  if (!state.drag?.live) drawWires();
+});
+board.addEventListener('pointermove', e => {
+  if (!state.drag) return;
+  const rect = $('canvas').getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  if (!state.drag.live){
+    if (Math.hypot(e.clientX - state.drag.sx, e.clientY - state.drag.sy) < 4) return;
+    state.drag.live = true; document.body.classList.add('dragging'); hideTip();
+  }
+  state.drag.x = x; state.drag.y = y;
+  const over = rowAt(e.clientX, e.clientY);
+  document.querySelectorAll('.row.target').forEach(r => r.classList.remove('target'));
+  if (over && over.dataset.side !== state.drag.from.side) over.classList.add('target');
+  drawWires();
+});
+board.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const row = e.target.closest('.row');
+  if (e.target.dataset.broken){ e.stopPropagation(); openBrokenCard(+e.target.dataset.broken, e); return; }
+  if (e.target.dataset.skip){ e.stopPropagation(); openSkipCard(+e.target.dataset.skip, e); return; }
+  if (e.target.dataset.unskip){ e.stopPropagation(); openUnskipCard(+e.target.dataset.unskip, e); return; }
+  if (!row) return;
+  state.drag = {from:{side:row.dataset.side, id:row.dataset.id}, sx:e.clientX, sy:e.clientY, live:false};
+  row.setPointerCapture(e.pointerId);
+});
+board.addEventListener('pointerup', e => {
+  const drag = state.drag; state.drag = null;
+  document.body.classList.remove('dragging');
+  document.querySelectorAll('.row.target').forEach(r => r.classList.remove('target'));
+  if (!drag) return;
+  if (drag.live){
+    const over = rowAt(e.clientX, e.clientY);
+    drawWires();
+    if (over && over.dataset.side !== drag.from.side) openPairCard(pairOf(drag.from, over.dataset), e);
+    return;
+  }
+  /* a plain click: arm-then-click pairs without dragging; otherwise select */
+  const here = {side:drag.from.side, id:drag.from.id};
+  if (state.armed && state.armed.side !== here.side){
+    const armed = state.armed; state.armed = null;
+    openPairCard(pairOf(armed, here), e); return;
+  }
+  state.selMatch = null;
+  state.sel = (state.sel && state.sel.side === here.side && state.sel.id === here.id) ? null : here;
+  state.armed = state.sel;
+  drawWires();
+});
+board.addEventListener('click', e => {
+  const knob = e.target.closest('[data-unpair]');
+  if (knob){ openUnpairCard(+knob.dataset.unpair, e); return; }
+  const wire = e.target.closest('[data-match]');
+  if (wire){ state.selMatch = +wire.dataset.match; state.sel = null; state.armed = null; drawWires(); return; }
+  const sug = e.target.closest('[data-sug]');
+  if (sug){
+    const [occId, key] = [sug.dataset.sug.slice(0, sug.dataset.sug.indexOf('|')), sug.dataset.sug.slice(sug.dataset.sug.indexOf('|') + 1)];
+    openPairCard({occ:state.occById[+occId], txn:state.txnByKey[key], suggested:true}, e); return;
+  }
+  if (!e.target.closest('.row')){ state.sel = null; state.armed = null; state.selMatch = null; drawWires(); }
+});
+function pairOf(a, b){
+  const left = a.side === 'left' ? a : b, right = a.side === 'left' ? b : a;
+  const occ = state.occById[+left.id], txn = state.txnByKey[right.id];
+  return {occ, txn, suggested:occ.suggestions.some(s => s.txn_key === txn.key)};
+}
+
+/* ---------------- tip ---------------- */
+function showTip(row, e){
+  const tip = $('tip');
+  if (row.dataset.side === 'left'){
+    const o = state.occById[+row.dataset.id];
+    const pays = o.match_ids.map(id => state.matchById[id]).filter(Boolean)
+      .map(m => `${m.txn_post_date} ${money(m.matched_amount ?? m.txn_amount)} ${esc(m.txn_description)}${m.txn_visible ? '' : ' (outside view)'}`);
+    tip.innerHTML = `<b>${esc(o.series)}</b> <span class="k">due ${o.due_date}</span><br>` +
+      `<span class="k">expected</span> ${money(o.amount)} · <span class="k">status</span> ${occStatus(o)}` +
+      (o.match_ids.length ? ` · <span class="k">net</span> ${money(o.net_amount)}` : '') + `<br>` +
+      `<span class="k">${esc(o.category || '')}${o.sub_category ? ' / ' + esc(o.sub_category) : ''}${o.auto_pay_account ? ' · from ' + esc(o.auto_pay_account) : ''}</span>` +
+      (pays.length ? `<div class="p">${pays.join('<br>')}</div>` : '') +
+      (o.skip_note ? `<div class="p">skip: ${esc(o.skip_note)}</div>` : '') +
+      (o.suggestions.length && !o.match_ids.length ? `<div class="k">${o.suggestions.length} suggestion(s) — dashed lines</div>` : '');
+  } else {
+    const t = state.txnByKey[row.dataset.id];
+    const pays = t.match_ids.map(id => state.matchById[id]).filter(Boolean)
+      .map(m => `${esc(m.series)} ${m.due_date}${m.matched_amount != null ? ' (' + money(m.matched_amount) + ')' : ''}${m.occurrence_visible ? '' : ' (outside view)'}`);
+    tip.innerHTML = `<b>${money(t.amount)}</b> <span class="k">${t.post_date} · ${esc(t.account)}</span>` +
+      `<div class="p">${esc(t.description)}</div>` +
+      (pays.length ? `<div class="p"><span class="k">pays</span> ${pays.join(', ')}</div>` : `<div class="k">unclaimed</div>`);
+  }
+  tip.classList.add('show');
+  moveTip(e);
+}
+function moveTip(e){
+  const tip = $('tip');
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 16, y = e.clientY + 14;
+  if (x + w > innerWidth - 12) x = e.clientX - w - 12;
+  if (y + h > innerHeight - 12) y = e.clientY - h - 12;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+board.addEventListener('pointermove', e => { if ($('tip').classList.contains('show')) moveTip(e); });
+const hideTip = () => $('tip').classList.remove('show');
+
+/* ---------------- cards: the one place a write is confirmed ---------------- */
+let cardState = null;
+function placeCard(e){
+  const card = $('card');
+  card.classList.add('show');
+  const w = card.offsetWidth, h = card.offsetHeight;
+  let x = (e?.clientX ?? innerWidth / 2) - w / 2, y = (e?.clientY ?? innerHeight / 2) + 18;
+  x = Math.max(12, Math.min(x, innerWidth - w - 12));
+  if (y + h > innerHeight - 12) y = Math.max(12, (e?.clientY ?? innerHeight / 2) - h - 18);
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+function closeCard(){ $('card').classList.remove('show'); cardState = null; }
+const entOcc = o => `<div class="ent"><div class="k">expected</div><div class="v"><b>${esc(o.series)}</b> · ${esc(o.category || '')}</div>` +
+  `<div class="k">due</div><div class="v">${o.due_date}</div><div class="k">amount</div><div class="v">${money(o.amount)} · ${occStatus(o)}</div></div>`;
+const entTxn = t => `<div class="ent"><div class="k">transaction</div><div class="v"><b>${money(t.amount)}</b> · ${esc(t.account)}</div>` +
+  `<div class="k">posted</div><div class="v">${t.post_date}</div><div class="k">memo</div><div class="v">${esc(t.description)}</div></div>`;
+
+function openPairCard({occ, txn, suggested}, e){
+  if (!occ || !txn) return;
+  const already = occ.match_ids.map(id => state.matchById[id]).find(m => m && m.txn_key === txn.key);
+  if (already){ openUnpairCard(already.id, e); return; }   /* the same pair again: offer to unpair it */
+  const claims = txn.match_ids.map(id => state.matchById[id]).filter(Boolean);
+  const wholeClaim = claims.find(m => m.matched_amount == null);
+  const sameAmount = Math.abs(txn.amount - occ.amount) < 0.005;
+  const diff = txn.amount - occ.amount;
+  let warn = '';
+  if (wholeClaim) return openShareCard({occ, txn, suggested, wholeClaim}, e);
+  else if (claims.length) warn = `Already shared with ${claims.map(m => esc(m.series) + ' ' + money(m.matched_amount)).join(', ')} — this claim must state its share too.`;
+  else if (occ.match_ids.length) warn = `${esc(occ.series)} already has ${occ.match_ids.length} line(s); this adds another (two charges on one bill is normal).`;
+  const shareDefault = claims.length > 0;
+  cardState = {kind:'pair', occ, txn, suggested};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--good)"></span>pair</h3>${entOcc(occ)}` +
+    `<div class="link">⇅ ${sameAmount ? '<b>same amount</b>' : 'differs by <b>' + money(diff) + '</b>'}${suggested ? ' · <b>suggested</b>' : ''}</div>${entTxn(txn)}` +
+    `<div class="opts">` +
+    `<label class="${shareDefault ? '' : 'on'}"><input type="radio" name="mode" value="whole"${shareDefault ? '' : ' checked'}${wholeClaim ? ' disabled' : ''}> whole transaction</label>` +
+    `<label class="${shareDefault ? 'on' : ''}"><input type="radio" name="mode" value="share"${shareDefault ? ' checked' : ''}> a share of it: ` +
+    `<input type="text" id="share" value="${money(occ.amount).replace(/,/g, '')}" spellcheck="false"> <span style="color:var(--ink-faint)">(signed)</span></label></div>` +
+    (warn ? `<div class="warn">${warn}</div>` : '') + `<div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">enter to pair · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn go" id="cgo">pair</button></div>`;
+  placeCard(e);
+  $('ccancel').onclick = closeCard;
+  $('cgo').onclick = submitCard;
+  $('card').querySelectorAll('input[name=mode]').forEach(r => r.onchange = () => {
+    $('card').querySelectorAll('.opts label').forEach(l => l.classList.toggle('on', l.querySelector('input').checked));
+    if (r.value === 'share' && r.checked) $('share').focus();
+  });
+  $('share').onfocus = () => { const r = $('card').querySelector('input[value=share]'); r.checked = true; r.dispatchEvent(new Event('change')); };
+  if (shareDefault) $('share').focus(); else $('cgo').focus();
+}
+/* one bill claims the whole transaction; a second bill wants part of it: split it here,
+   this bill's share and what the first bill keeps, in one confirm */
+function openShareCard({occ, txn, suggested, wholeClaim}, e){
+  const other = state.occById[wholeClaim.occurrence_id];
+  const mine = Number(occ.amount), keep = Math.round((txn.amount - mine) * 100) / 100;
+  cardState = {kind:'share', occ, txn, suggested, wholeClaim};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--warn)"></span>share this transaction</h3>${entTxn(txn)}` +
+    `<div class="warn" style="margin-top:8px">Claimed whole by <b>${esc(wholeClaim.series)} ${wholeClaim.due_date}</b>. Split it: that bill keeps its share and <b>${esc(occ.series)}</b> takes the rest. Both must add up to ${money(txn.amount)}.</div>` +
+    `<div class="opts">` +
+    `<label class="on"><span style="min-width:200px">${esc(occ.series)} ${occ.due_date} gets</span><input type="text" id="share" value="${money(mine).replace(/,/g, '')}" spellcheck="false"> <span style="color:var(--ink-faint)">(expected ${money(occ.amount)})</span></label>` +
+    `<label class="on"><span style="min-width:200px">${esc(wholeClaim.series)} ${wholeClaim.due_date} keeps</span><input type="text" id="keep" value="${money(keep).replace(/,/g, '')}" spellcheck="false"> <span style="color:var(--ink-faint)">${other ? '(expected ' + money(other.amount) + ')' : ''}</span></label>` +
+    `<div class="link" id="sharesum"></div></div><div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">enter to split · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn go" id="cgo">split &amp; pair</button></div>`;
+  placeCard(e);
+  const sum = () => {
+    const a = Number($('share').value.replace(/,/g, '')), b = Number($('keep').value.replace(/,/g, ''));
+    const ok = Number.isFinite(a) && Number.isFinite(b) && Math.abs(a + b - txn.amount) < 0.005;
+    $('sharesum').innerHTML = ok ? `<b>${money(a)}</b> + <b>${money(b)}</b> = ${money(txn.amount)} ✓` : `<span style="color:var(--bad)">${money(a || 0)} + ${money(b || 0)} ≠ ${money(txn.amount)}</span>`;
+    return ok;
+  };
+  $('share').oninput = () => { const a = Number($('share').value.replace(/,/g, '')); if (Number.isFinite(a)) $('keep').value = (Math.round((txn.amount - a) * 100) / 100).toFixed(2); sum(); };
+  $('keep').oninput = sum;
+  sum();
+  $('ccancel').onclick = closeCard; $('cgo').onclick = submitCard; $('share').focus(); $('share').select();
+}
+function openUnpairCard(matchId, e){
+  const m = state.matchById[matchId]; if (!m) return;
+  cardState = {kind:'unpair', m};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--bad)"></span>unpair</h3>` +
+    `<div class="ent"><div class="k">expected</div><div class="v"><b>${esc(m.series)}</b> due ${m.due_date}</div>` +
+    `<div class="k">transaction</div><div class="v"><b>${money(m.txn_amount)}</b> · ${m.txn_post_date} · ${esc(m.txn_account)}</div>` +
+    `<div class="k">memo</div><div class="v">${esc(m.txn_description)}</div>` +
+    (m.matched_amount != null ? `<div class="k">share</div><div class="v">${money(m.matched_amount)}</div>` : '') +
+    `<div class="k">since</div><div class="v">${esc(String(m.matched_at).slice(0, 16).replace('T', ' '))} · ${esc(m.source)}</div></div>` +
+    `<div class="warn">The match is voided, never deleted — history keeps it.</div><div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">enter to unpair · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn rm" id="cgo">unpair</button></div>`;
+  placeCard(e);
+  $('ccancel').onclick = closeCard; $('cgo').onclick = submitCard; $('cgo').focus();
+}
+function openSkipCard(occId, e){
+  const o = state.occById[occId]; if (!o) return;
+  if (o.match_ids.length){ toast('unpair its lines first — a paid bill is not skipped', STATUS.unpaid.color); return; }
+  if (o.status === 'skipped'){ openUnskipCard(occId, e); return; }
+  cardState = {kind:'skip', occ:o};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--ink-dim)"></span>skip</h3>${entOcc(o)}` +
+    `<div class="opts"><label class="on">why is this bill not going to happen?</label>` +
+    `<textarea id="skipnote" placeholder="covered by last month's double payment · waived · cancelled …" spellcheck="false"></textarea></div>` +
+    `<div class="warn">A skipped bill leaves the forecast and the pairing queue. The note is what future-you reads.</div><div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">⌘enter to skip · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn rm" id="cgo">skip</button></div>`;
+  placeCard(e);
+  $('ccancel').onclick = closeCard; $('cgo').onclick = submitCard; $('skipnote').focus();
+}
+function openUnskipCard(occId, e){
+  const o = state.occById[occId]; if (!o) return;
+  cardState = {kind:'unskip', occ:o};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--good)"></span>unskip</h3>${entOcc(o)}` +
+    `<div class="ent"><div class="k">skip note</div><div class="v">${esc(o.skip_note || '')}</div></div>` +
+    `<div class="warn">The bill returns to the queue and counts in the forecast again.</div><div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">enter to unskip · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn go" id="cgo">unskip</button></div>`;
+  placeCard(e);
+  $('ccancel').onclick = closeCard; $('cgo').onclick = submitCard; $('cgo').focus();
+}
+function openBrokenCard(occId, e){
+  const o = state.occById[occId]; if (!o) return;
+  const lines = o.match_ids.map(id => state.matchById[id]).filter(m => m && !m.txn_visible);
+  cardState = {kind:'unpair-many', ms:lines};
+  $('card').innerHTML = `<h3><span class="dot" style="background:var(--bad)"></span>broken match${lines.length > 1 ? 'es' : ''}</h3>${entOcc(o)}` +
+    lines.map(m => `<div class="ent"><div class="k">was</div><div class="v">${money(m.txn_amount)} · ${m.txn_post_date} · ${esc(m.txn_account)}</div>` +
+      `<div class="k">memo</div><div class="v">${esc(m.txn_description)}</div></div>`).join('') +
+    `<div class="warn">These transactions no longer exist (restated or re-downloaded). Unpair to send the occurrence back to the queue, then draw the right line.</div><div class="err" id="cerr"></div>` +
+    `<div class="btns"><span class="k">enter to unpair · esc to cancel</span><button class="btn" id="ccancel">cancel</button><button class="btn rm" id="cgo">unpair ${lines.length}</button></div>`;
+  placeCard(e);
+  $('ccancel').onclick = closeCard; $('cgo').onclick = submitCard; $('cgo').focus();
+}
+async function submitCard(){
+  if (!cardState || state.busy) return;
+  const cs = cardState;
+  try {
+    if (cs.kind === 'pair'){
+      const share = $('card').querySelector('input[name=mode]:checked')?.value === 'share';
+      let matched_amount = null;
+      if (share){
+        matched_amount = Number($('share').value.replace(/,/g, ''));
+        if (!Number.isFinite(matched_amount) || matched_amount === 0) throw new Error('the share must be a signed non-zero number');
+      }
+      const request = {
+        occurrence_id: cs.occ.id,
+        txn: {account_id:cs.txn.account_id, post_date:cs.txn.post_date, description:cs.txn.description, amount:cs.txn.amount, occurrence:cs.txn.occurrence},
+        matched_amount, source: cs.suggested ? 'confirmed_suggestion' : 'manual', note: null,
+      };
+      state.keep.add(cs.occ.id);
+      const r = await write('/api/match', request);
+      state.undo.push({kind:'match', match_id:r.match_id, request, label:`${cs.occ.series} ↔ ${money(cs.txn.amount)}`});
+      closeCard();
+      /* stay on this bill: a second charge (both gym payments) is dragged onto it the same way */
+      state.sel = {side:'left', id:String(cs.occ.id)}; state.armed = state.sel; drawWires();
+      toast(`paired <b>${esc(cs.occ.series)}</b> ↔ <b>${money(matched_amount ?? cs.txn.amount)}</b> ${esc(cs.txn.description.slice(0, 28))} · still selected, add another or press n`, STATUS.paid.color, true);
+    } else if (cs.kind === 'share'){
+      const mine = Number($('share').value.replace(/,/g, '')), keep = Number($('keep').value.replace(/,/g, ''));
+      if (!Number.isFinite(mine) || !Number.isFinite(keep) || mine === 0 || keep === 0) throw new Error('both shares must be signed non-zero numbers');
+      if (Math.abs(mine + keep - cs.txn.amount) >= 0.005) throw new Error(`the shares must add up to ${money(cs.txn.amount)}`);
+      state.keep.add(cs.occ.id); state.keep.add(cs.wholeClaim.occurrence_id);
+      const r = await write('/api/share', {match_id:cs.wholeClaim.id, keep_amount:keep, occurrence_id:cs.occ.id, matched_amount:mine, source:cs.suggested ? 'confirmed_suggestion' : 'manual'});
+      state.undo.push({kind:'share', result:r.result, whole:cs.wholeClaim, label:`${cs.occ.series} ↔ ${money(mine)} of ${money(cs.txn.amount)}`});
+      closeCard();
+      state.sel = {side:'left', id:String(cs.occ.id)}; state.armed = state.sel; drawWires();
+      toast(`split: <b>${esc(cs.wholeClaim.series)}</b> keeps ${money(keep)}, <b>${esc(cs.occ.series)}</b> takes ${money(mine)}`, STATUS.paid.color, true);
+    } else if (cs.kind === 'unpair'){
+      await unpair(cs.m, 'unpaired on the pairing board');
+      closeCard();
+      toast(`unpaired <b>${esc(cs.m.series)}</b> ↔ <b>${money(cs.m.txn_amount)}</b>`, STATUS.net_zero.color, true);
+    } else if (cs.kind === 'unpair-many'){
+      for (const m of cs.ms) await unpair(m, 'broken match unpaired on the pairing board');
+      closeCard();
+      toast(`unpaired ${cs.ms.length} broken line(s)`, STATUS.net_zero.color, true);
+    } else if (cs.kind === 'skip'){
+      const note = $('skipnote').value.trim();
+      if (!note) throw new Error('a skip needs a note saying why');
+      state.keep.add(cs.occ.id);
+      await write('/api/skip', {occurrence_id:cs.occ.id, note});
+      state.undo.push({kind:'skip', occ:cs.occ, label:`${cs.occ.series} ${cs.occ.due_date}`});
+      closeCard();
+      toast(`skipped <b>${esc(cs.occ.series)}</b> ${cs.occ.due_date}`, STATUS.unpaid.color, true);
+    } else if (cs.kind === 'unskip'){
+      state.keep.add(cs.occ.id);
+      await write('/api/unskip', {occurrence_id:cs.occ.id});
+      state.undo.push({kind:'unskip', occ:cs.occ, note:cs.occ.skip_note || '', label:`${cs.occ.series} ${cs.occ.due_date}`});
+      closeCard();
+      toast(`unskipped <b>${esc(cs.occ.series)}</b> ${cs.occ.due_date}`, STATUS.paid.color, true);
+    }
+  } catch (error){
+    const box = $('cerr'); if (box) box.textContent = error.message; else showError(error);
+  }
+}
+async function unpair(m, note){
+  await write('/api/void', {match_id:m.id, note});
+  state.undo.push({kind:'void', m, label:`${m.series} ↔ ${money(m.txn_amount)}`});
+}
+/* every write answers with the fresh state: what is drawn is what the database holds */
+async function write(path, body){
+  state.busy = true;
+  try {
+    const r = await api(path, {...body, window:{start:state.start, end:state.end, keep:[...state.keep].join(',')}});
+    setData(r.state); render();
+    return r;
+  } finally { state.busy = false; }
+}
+async function undo(){
+  const last = state.undo.pop();
+  if (!last || state.busy) return;
+  try {
+    if (last.kind === 'match'){
+      await write('/api/void', {match_id:last.match_id, note:'undone on the pairing board'});
+      toast(`undid pair <b>${esc(last.label)}</b>`, STATUS.unpaid.color);
+    } else if (last.kind === 'share'){
+      /* void both shares, then put the whole claim back as it was */
+      const w = last.whole;
+      await write('/api/void', {match_id:last.result.match_id, note:'undone on the pairing board'});
+      await write('/api/void', {match_id:last.result.kept_id, note:'undone on the pairing board'});
+      await write('/api/match', {
+        occurrence_id:w.occurrence_id,
+        txn:{account_id:w.txn_key.split('|')[0], post_date:w.txn_post_date, description:w.txn_description, amount:w.txn_amount, occurrence:+w.txn_key.split('|').pop()},
+        matched_amount:null, source:w.source === 'confirmed_suggestion' ? 'confirmed_suggestion' : 'manual', note:'whole claim restored by undo on the pairing board',
+      });
+      toast(`undid split <b>${esc(last.label)}</b>`, STATUS.unpaid.color);
+    } else if (last.kind === 'skip'){
+      await write('/api/unskip', {occurrence_id:last.occ.id});
+      toast(`undid skip <b>${esc(last.label)}</b>`, STATUS.paid.color);
+    } else if (last.kind === 'unskip'){
+      await write('/api/skip', {occurrence_id:last.occ.id, note:last.note || 'restored by undo on the pairing board'});
+      toast(`undid unskip <b>${esc(last.label)}</b>`, STATUS.unpaid.color);
+    } else {
+      const m = last.m;
+      await write('/api/match', {
+        occurrence_id:m.occurrence_id,
+        txn:{account_id:m.txn_key.split('|')[0], post_date:m.txn_post_date, description:m.txn_description, amount:m.txn_amount, occurrence:+m.txn_key.split('|').pop()},
+        matched_amount:m.matched_amount, source:m.source === 'confirmed_suggestion' ? 'confirmed_suggestion' : 'manual', note:'restored by undo on the pairing board',
+      });
+      toast(`restored <b>${esc(last.label)}</b>`, STATUS.paid.color);
+    }
+  } catch (error){ showError(error); }
+  renderStats();
+}
+
+/* ---------------- toast ---------------- */
+let toastTimer = null;
+function toast(html, color, undoable = false){
+  const t = $('toast');
+  t.innerHTML = `<span class="dot" style="background:${color}"></span><span>${html}</span>` + (undoable ? `<span class="undo" id="toastundo">undo</span>` : '');
+  t.classList.add('show');
+  if (undoable) $('toastundo').onclick = () => { t.classList.remove('show'); undo(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), TOAST_MS);
+}
+const showError = error => toast(esc(error.message || String(error)), STATUS.net_zero.color);
+
+/* ---------------- keys ---------------- */
+addEventListener('keydown', e => {
+  const typing = e.target instanceof Element && e.target.matches('input');
+  if (e.key === 'Escape'){
+    if (cardState) return closeCard();
+    if (state.drag){ state.drag = null; document.body.classList.remove('dragging'); }
+    if ($('about').classList.contains('show')) return $('about').classList.remove('show');
+    if (typing){ e.target.blur(); return; }
+    state.sel = null; state.armed = null; state.selMatch = null; drawWires(); return;
+  }
+  if (cardState){
+    const inNote = e.target instanceof Element && e.target.tagName === 'TEXTAREA';
+    if (e.key === 'Enter' && (!inNote || e.metaKey || e.ctrlKey)){ e.preventDefault(); submitCard(); }
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z'){ e.preventDefault(); undo(); return; }
+  if (typing) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selMatch){ e.preventDefault(); openUnpairCard(state.selMatch); return; }
+  if (e.key === '/'){ e.preventDefault(); $('search').focus(); return; }
+  if (e.key === 's' && state.sel && state.sel.side === 'left'){ e.preventDefault(); openSkipCard(+state.sel.id); return; }
+  if (e.key === 't') scrollToToday();
+  if (e.key === 'n') nextOpen(1);
+  if (e.key === 'o') oldestOpen();
+  if (e.key === 'N') nextOpen(-1);
+  if (e.key === '?') $('about').classList.toggle('show');
+});
+
+/* ---------------- about ---------------- */
+$('about').innerHTML = `<span class="close" onclick="this.parentNode.classList.remove('show')">✕</span><h4>how this works</h4>
+<p><b>One date axis.</b> Expected occurrences on the left, real transactions on the right; each day is a band as tall as its fuller side, so a bill and its payment sit on one line.</p>
+<ul>
+<li><b>Pair:</b> drag from any row to a row on the other side, or click a row then click one across. A card asks whole transaction or a stated share; <code>enter</code> writes the match immediately.</li>
+<li><b>Unpair:</b> click a line (it pulses), then the <code>unpair line</code> button, <code>⌫</code>, or the × on the line. Dragging the same bill onto the same transaction again also offers to unpair. Matches are voided, never deleted.</li>
+<li><b>One transaction, two bills:</b> drag the second bill onto a transaction another bill already claims whole and the card splits it right there: enter this bill's share, the first bill keeps the rest, one confirm. Undo restores the whole claim.</li>
+<li><b>Undo:</b> <code>⌘Z</code> or the toast. Undo of a pair voids it; undo of an unpair re-adds it. Every step is a real write.</li>
+<li><b>Suggestions:</b> hover or select an unpaid bill to see dashed candidate lines with a score; click one to pair it. They are ranked only, never applied.</li>
+<li><b>Many to many:</b> one bill may hold several lines (two gym charges); one transaction may pay several bills only when every line states its share (the PMI inside the mortgage).</li>
+<li><b>Skip:</b> hover a bill and click <code>skip</code>, or select it and press <code>s</code>; say why. A skipped bill leaves the forecast. Click its badge to unskip. Both are real writes and both undo.</li>
+<li><b>Nothing scrolls off:</b> the board reaches back to a month before the oldest unpaid, broken, or net-zero bill. From there it shows the open bills and every transaction, so an old bill always has its candidates beside it; paid and skipped bills from before the window are settled and stay off. The divider marks where the window you asked for begins.</li>
+<li><b>Oldest / next unpaid:</b> <code>o</code> jumps to the oldest bill still to pair, <code>n</code> to the next one, <code>shift+n</code> back; each is selected with its suggestions drawn. The count in the corner says how many are left in this view.</li>
+<li><b>Adding a second charge:</b> after a pair the bill stays selected and stays on the board (even if it was only there because it was unpaid), so drag or click the next transaction onto it. Move on with <code>n</code>.</li>
+<li><b>Filters live in the column they affect.</b> The expected side has its status chips and a text filter; the transactions side has matched/unmatched, an account chip per account (alt-click for only that one), and a text filter (<code>/</code>). A selected bill never disappears, so select it, then narrow the right side to find its payment. Words are ANDed.</li>
+<li><b>Badges:</b> ↗ a match whose other end is outside this window · <span style="color:var(--bad)">broken</span> a match to a transaction that no longer exists · <span style="color:var(--bad)">card leg only</span> a card payoff paired to the card's side but not the bank's; only the bank leg counts as paid, so pair it (or skip the bill if the payment came from an account not held here).</li>
+</ul>
+<p>Nothing is buffered: what you see after each action is the database re-read. Filters, the window, and the search only change what is drawn. The server runs on localhost from your terminal and exits when this tab closes.</p>`;
+
+/* ---------------- go ---------------- */
+if (!state.start || !state.end){
+  const t = new Date().toISOString().slice(0, 10);
+  setWindow(shiftDays(t, -45), shiftDays(t, 45));
+} else load().then(scrollToToday).catch(showError);
+</script>
+</body>
+</html>
