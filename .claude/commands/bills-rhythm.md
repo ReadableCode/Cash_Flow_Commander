@@ -77,7 +77,10 @@ retail provider is.
 - Portal: `https://app.gotrhythm.com` · API: `https://api.gotrhythm.com`.
 - Open the portal in the user's Chrome (Claude-in-Chrome). If it sits on the loading
   animation, go to `/sign-in`. The browser autofills credentials — **ask the user before
-  clicking Log In**. The session may already be live: on 2026-09-11 `/sign-in` redirected
+  clicking Log In**. On 2026-09-16 the form came up with the email filled and the password
+  empty (Chrome fills the password only on a user gesture), so a scripted click on Log In
+  cannot sign in anyway: leave the tab on the form and ask the user to log in. The session
+  may already be live: on 2026-09-11 `/sign-in` redirected
   through `api.gotrhythm.com/api/portal/authn/login-via-token` straight to `/home` with no
   click. That redirect URL carries a one-time token; never echo it.
 - **Without Claude in Chrome, drive the real Chrome over AppleScript** as described in
@@ -164,9 +167,11 @@ service period.
 - The dashboard shows `ESIID` and `Meter Number` — confirm they match `external_ids.esi_id`
   in providers.local.yaml before exporting.
 - Set **Report Type** = `Energy Data 15 Min Interval`, then **Start date** / **End date**
-  (`MM/DD/YYYY`). The default end date is the latest day published — SMT runs about **two days
-  in arrears**, so do not ask for today; a residual 2-day `FETCH:` window after a run is
-  expected, not a gap.
+  (`MM/DD/YYYY`). The default end date is the latest day published — SMT runs **one to two
+  days in arrears** (two on 2026-09-11, one on 2026-09-16: the dashboard's "Latest End of Day
+  Read" was 09/15 and the export carried 09/15 in full), so do not ask for today; a residual
+  1–2 day `FETCH:` window after a run is expected, not a gap. Both date fields default to that
+  latest day, so only the start date needs setting when the end date is the latest published.
 - ⚠️ Clicking or setting either date field opens a calendar overlay that **covers the "Export
   My Report" button**. Press Escape or click neutral page space first, or the click lands on
   the calendar and silently does nothing.
@@ -174,6 +179,9 @@ service period.
   `input#startdatefield` and `input#enddatefield`. They have ids but no `name` attribute, so a
   `[name=...]` selector finds nothing. Assigning `.value` and dispatching `input`/`change`, then
   Escape, was enough for the export to honour the dates; the file arithmetic below confirmed it.
+  Confirmed again 2026-09-16: dispatching `keydown`/`keyup` `Escape` on `document` plus a
+  `document.body.click()` clears the overlay; before clicking, `document.elementFromPoint` at
+  the button's centre tells you whether something still covers it.
 - **Export My Report** downloads immediately — there is no queue, no email, and no
   "Report Request Status" round trip. The file is always named `IntervalData.csv`; a second
   click yields `IntervalData (1).csv`, so it is easy to fire two identical exports without
