@@ -347,6 +347,33 @@ def rebuild_forecast_days(
 # Run #
 
 
+def rebuild_after(engine, event: str, config: dict | None = None) -> int | None:
+    """Rebuild forecast_days once, after something changed its inputs.
+
+    The pairing board and the TUI call this when they exit, and parse_raw
+    calls it after every real run, so the Grafana dashboard follows every
+    pairing session and every landed capture without a manual forecast run.
+    One line is printed either way. A store with no balance-bearing row on
+    the anchor account yet (a fresh or card-only database) has nothing to
+    anchor to, so that is reported on stderr instead of raised: the caller's
+    own job already succeeded.
+    """
+    try:
+        day_count = rebuild_forecast_days(engine, config=config)
+    except (FileNotFoundError, ValueError) as error:
+        print(
+            f"forecast_days not rebuilt after {event}: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+    print(
+        f"forecast_days rebuilt after {event}: {day_count} days (Grafana reads this)",
+        flush=True,
+    )
+    return day_count
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

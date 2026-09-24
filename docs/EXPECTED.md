@@ -79,6 +79,10 @@ Within a day the order money moves is unknowable, so the projection assumes
 the worst: every outflow leaves before any inflow arrives. `trough_balance`
 is that worst moment — the number that flags a bounce a same-day paycheck
 would otherwise hide — and `end_balance` is where the day closes.
+`forecast_days` is also rebuilt once, without a forecast run, each time its
+inputs change: when the pairing board or the TUI exits, and at the end of
+every real `parse_raw` run (so after every landing, which moves the anchor).
+The dashboard never waits on a manual run.
 
 ## Balance anchors
 

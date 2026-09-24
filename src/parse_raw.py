@@ -40,6 +40,7 @@ if _SRC_DIR not in sys.path:
 import bill_store  # noqa: E402
 import bootstrap  # noqa: E402
 import db  # noqa: E402
+import expected_forecast  # noqa: E402
 import providers  # noqa: E402
 import raw_store  # noqa: E402
 import user_paths  # noqa: E402
@@ -384,6 +385,11 @@ def main(argv: list[str] | None = None) -> int:
         if reason is not None:
             errors.append((doc["original_name"], reason))
     _print_summary(counts, rows_by_key, errors, args.dry_run)
+    if not args.dry_run:
+        # Landed rows move the anchor balance and can resolve or break
+        # matches, so the forecast follows every real parse; Grafana reads
+        # the table.
+        expected_forecast.rebuild_after(engine, "parse")
     return 1 if any(counter["error"] for counter in counts.values()) else 0
 
 

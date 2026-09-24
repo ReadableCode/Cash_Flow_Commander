@@ -1327,8 +1327,18 @@ class ExpectedApp(App):
 # %%
 # Run #
 
-if __name__ == "__main__":
+
+def main() -> int:
     ExpectedApp().run()
+    # The terminal is normal again here, so the one line prints where it can
+    # be read. One rebuild per session: pairing, skips and new series all
+    # changed what the forecast counts, and Grafana reads the table.
+    expected_forecast.rebuild_after(db.get_engine(), "the tui closed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 
 # %%

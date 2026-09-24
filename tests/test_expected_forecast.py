@@ -204,3 +204,18 @@ def test_anchor_uses_the_days_final_balance_regardless_of_row_order(engine):
     anchor_date, anchor_balance = expected_forecast.get_anchor(engine, "1234")
     assert anchor_date == dt.date(2026, 1, 8)
     assert anchor_balance == 3090.62  # after BOTH rows, not the paycheck's
+
+
+def test_rebuild_after_reports_a_missing_anchor_instead_of_raising(engine, capsys):
+    assert expected_forecast.rebuild_after(engine, "parse", config=CONFIG) is None
+    captured = capsys.readouterr()
+    assert "forecast_days not rebuilt after parse" in captured.err
+    assert "1234" in captured.err
+    assert captured.out == ""
+
+
+def test_rebuild_after_rebuilds_when_there_is_an_anchor(engine, capsys):
+    add_bank_transaction(engine, dt.date(2026, 1, 8), "NEW", -10.00, 890.00)
+    count = expected_forecast.rebuild_after(engine, "the tui closed", config=CONFIG)
+    assert count is not None and count > 0
+    assert "forecast_days rebuilt after the tui closed" in capsys.readouterr().out

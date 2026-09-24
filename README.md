@@ -101,11 +101,15 @@ looks exactly like a run that worked, and that has happened here before.
   uv run python src/cfc_tui.py
   ```
 
+- On exit it rebuilds `forecast_days` once, so the Grafana forecast follows
+  the session.
+
 ## Running the pairing board
 
 - A browser view of the same pairing: expected occurrences on the left,
   transactions on the right, matches as lines. It starts a localhost server,
-  opens the page, and exits when the tab closes.
+  opens the page, and exits when the tab closes, then rebuilds `forecast_days`
+  once so the Grafana forecast follows the session.
 
   ```bash
   uv run python src/pairing_web.py                 # 45 days back, 45 forward

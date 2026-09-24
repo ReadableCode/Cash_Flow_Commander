@@ -49,6 +49,7 @@ if _SRC_DIR not in sys.path:
 
 import bootstrap  # noqa: E402
 import db  # noqa: E402
+import expected_forecast  # noqa: E402
 import expected_store  # noqa: E402
 import expected_suggest  # noqa: E402
 from cfc_tui import load_account_labels  # noqa: E402
@@ -691,6 +692,10 @@ def main(argv=None) -> int:
         port=args.port,
         open_browser=not args.no_browser,
     )
+    # One rebuild per session, after the board is gone: every pair, split,
+    # skip and undo changed what the forecast counts, and Grafana reads the
+    # table, not the board.
+    expected_forecast.rebuild_after(engine, "the pairing board closed")
     return 0
 
 

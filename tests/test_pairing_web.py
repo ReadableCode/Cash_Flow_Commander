@@ -634,4 +634,21 @@ def test_server_exits_when_the_page_says_bye(engine):
     srv.server_close()
 
 
+def test_main_rebuilds_the_forecast_once_after_the_board_closes(engine, monkeypatch):
+    events: list[str] = []
+    monkeypatch.setattr(pairing_web, "load_account_labels", lambda: {})
+    monkeypatch.setattr(
+        pairing_web,
+        "serve",
+        lambda *args, **kwargs: events.append("serve") or "the page closed",
+    )
+    monkeypatch.setattr(
+        pairing_web.expected_forecast,
+        "rebuild_after",
+        lambda eng, event, config=None: events.append(f"rebuild:{event}") or 0,
+    )
+    assert pairing_web.main(["--no-browser"]) == 0
+    assert events == ["serve", "rebuild:the pairing board closed"]
+
+
 # %%
