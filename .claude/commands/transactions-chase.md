@@ -78,9 +78,13 @@ Two planner behaviors that look wrong and are not:
   will reject that. Two pathways that work:
   - **Claude in Chrome**, when its tools are available in the session.
   - **AppleScript on macOS**, when they are not (proven 2026-08-22 for a full
-    31-window backfill): open the page with
-    `osascript -e 'tell app "Google Chrome" to open location ...'`, then drive
-    it with `execute <tab> javascript "..."`. Requires the one-time toggle
+    31-window backfill): open the page in the user's PERSONAL profile
+    explicitly —
+    `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>`
+    (the directory name is in the user's local notes, never here) — then drive
+    it with `execute <tab> javascript "..."`. Never `tell app "Google Chrome"
+    to open location`: it lands in whichever window is frontmost, which can be
+    a work profile (seen 2026-09-24 on the Elan run). Requires the one-time toggle
     **View → Developer → Allow JavaScript from Apple Events** in Chrome (have
     the user click it) plus macOS Automation consent on first use. Find the tab
     by URL match on every call — never by index, tabs move.

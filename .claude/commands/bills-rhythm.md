@@ -85,11 +85,14 @@ retail provider is.
   click. That redirect URL carries a one-time token; never echo it.
 - **Without Claude in Chrome, drive the real Chrome over AppleScript** as described in
   `transactions-chase.md` section 1 (proven here 2026-09-11). Quirks met on this portal and SMT:
-  - `open location` opens in the frontmost window, which can belong to a different Chrome
-    profile with no saved logins, no download allowances and Apple Events JavaScript off. The
-    tell is `Executing JavaScript through AppleScript is turned off` although the setting is on
-    in the right profile. Close that tab, open with `make new tab at end of tabs of window id
-    <id>` in a window where `execute javascript` works, and scope later lookups to that window.
+  - **Never `open location`, and never a work profile.** `open location` opens in the
+    frontmost window, which can belong to a different Chrome profile with no saved logins, no
+    download allowances and Apple Events JavaScript off. The tell is `Executing JavaScript
+    through AppleScript is turned off` although the setting is on in the right profile. Open
+    the portal in the user's PERSONAL profile explicitly —
+    `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>` — with the
+    directory name taken from the user's local notes, never written here. If a tab has
+    landed in the wrong profile, close it and reopen this way.
   - `execute javascript` does not await promises. Start the async work, record progress on a
     `window.` property, and poll it with `delay`. Pass the script as an argument
     (`osascript - "$JS"` with `on run argv`) instead of escaping quotes, and avoid `st` as an

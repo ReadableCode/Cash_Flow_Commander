@@ -84,9 +84,13 @@ backfill plan look like a 2-month refresh.
   don't autofill, which forces manual credential entry — the user will reject
   that. Two pathways that work:
   - **Claude in Chrome**, when its tools are available in the session.
-  - **AppleScript on macOS**, when they are not: open the page with
-    `osascript -e 'tell app "Google Chrome" to open location ...'`, then drive
-    it with `execute <tab> javascript "..."`. Requires the one-time toggle
+  - **AppleScript on macOS**, when they are not: open the page in the
+    user's PERSONAL profile explicitly —
+    `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>`
+    (the directory name is in the user's local notes, never here) — then drive
+    it with `execute <tab> javascript "..."`. Never `tell app "Google Chrome"
+    to open location`: it lands in whichever window is frontmost, which can be
+    a work profile (seen 2026-09-24 on the Elan run). Requires the one-time toggle
     **View → Developer → Allow JavaScript from Apple Events** in Chrome (have
     the user click it) plus macOS Automation consent on first use. Find the tab
     by URL match on every call — never by index, tabs move.
@@ -124,7 +128,12 @@ Observed at least once (2026-08-24):
   You" page (`/US/nga/offerintr-nga`), not the dashboard. Do not click
   through it; navigate to the card dashboard instead. **Intermittent**: on
   2026-09-04 login went straight to the card dashboard and no interstitial
-  appeared. Read where you actually landed rather than assuming either way.
+  appeared; on 2026-09-24 it appeared again. Read where you actually landed
+  rather than assuming either way. **The way out is the SPA's own home link**
+  — the interstitial page has no account link, but its header carries
+  `a[href="/dashboard"]` (the Citi logo, "citi-Home"); clicking it routes to
+  the card dashboard in ~9s. Do not click the interstitial's "Continue" or
+  "No thanks" buttons, and do not deep-link (§3, 404s).
 - **A card-conversion notice modal** ("We're Converting Your Card") exists in
   the page's modal stack. It is an account-lifecycle notice, not marketing —
   never click through it, and tell the user it exists: a conversion changes
@@ -134,7 +143,7 @@ Observed at least once (2026-08-24):
   screen-share-with-rep, cookie settings). A `[role=dialog]` existing in the
   DOM does not mean a dialog is open — check visibility.
 
-## 3. The export flow — as last observed 2026-09-04
+## 3. The export flow — as last observed 2026-09-24
 
 Verified live against the real portal on that date. Citi will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -151,7 +160,7 @@ facts that bite:
   The guid is an internal id; the last 4 appears only in the link text. Both
   belong in `providers.local.yaml`, neither in this file.
 - **The guid is not stable across sessions.** It differed between 2026-08-24
-  and 2026-09-04 for the same unchanged card. Never treat a stored guid as
+  and 2026-09-04, and again on 2026-09-24, for the same unchanged card. Never treat a stored guid as
   the account's identity or use it to decide which card you are on — **match
   on the last 4 in the link text**, and treat the stored guid as a stale
   hint at best.
@@ -422,9 +431,11 @@ transactions upserted, and any popup or flow change you had to work around.
       not authoritative.** Verified 2026-09-04: for the range Aug 1 - Sep 4
       2026 the CSV exported 11 rows and the dashboard list rendered only 10,
       silently omitting an autopay credit. Widening the range did not bring
-      it back, and there was no pagination or "show more" control. The row
-      was present in the CSV and in two independent earlier exports, so the
-      **export is right and the list under-reports**. When the two disagree,
+      it back, and there was no pagination or "show more" control that day.
+      On 2026-09-24 the list showed 11 of 19 exported rows WITH a "show
+      more" control present, so at least part of the gap is pagination. The
+      row was present in the CSV and in two independent earlier exports, so
+      the **export is right and the list under-reports**. When the two disagree,
       corroborate the row against another capture of an overlapping window
       rather than "fixing" the data to match the screen.
 - [ ] sign spot-check: payments/credits land POSITIVE in `transactions`

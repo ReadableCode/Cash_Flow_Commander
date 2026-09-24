@@ -147,11 +147,15 @@ If accepted, with the user:
 1. **Use the user's real Chrome profile.** The password manager lives there;
    embedded browser panels and fresh automation profiles don't autofill. Two
    pathways that work: **Claude in Chrome** when its tools are in the session,
-   or **AppleScript on macOS** — `osascript -e 'tell app "Google Chrome" to
-   open location ...'`, then `execute <tab> javascript "..."` (needs the
-   one-time **View → Developer → Allow JavaScript from Apple Events** toggle
-   plus Automation consent). Find the tab by URL match on every call, never by
-   index.
+   or **AppleScript on macOS** — open the page in the user's PERSONAL profile
+   explicitly with
+   `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>`
+   (directory name from the user's local notes, never in a command file),
+   then `execute <tab> javascript "..."` (needs the one-time **View →
+   Developer → Allow JavaScript from Apple Events** toggle plus Automation
+   consent). Never `tell app "Google Chrome" to open location`: it lands in
+   whichever window is frontmost, which can be a work profile. Find the tab by
+   URL match on every call, never by index.
 2. The user signs in themselves — never type, store, or echo credentials, and
    never read them out of the password manager. Hand control over for MFA and
    wait; accept "remember this device" if offered. Keep exactly **one**

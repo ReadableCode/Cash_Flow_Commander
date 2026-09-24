@@ -91,6 +91,11 @@ in `$ARGUMENTS` is always safe — it costs one request.
   (`/web/{system_id}/...`) and is echoed as `system_id` in every JSON payload.
 - Open the portal in the user's Chrome (Claude-in-Chrome). The browser autofills credentials —
   **ask the user before clicking Log In.**
+- **Personal Chrome profile only, opened explicitly.** Without Claude in Chrome, drive the
+  real Chrome over AppleScript as in `transactions-chase.md` section 1, opening with
+  `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>` (directory name
+  from the user's local notes, never here). Never `tell app "Google Chrome" to open location`:
+  it lands in whichever window is frontmost, which can be a work profile.
 - A privacy/cookie consent modal appears on first load. Choose **Reject All** — never Accept.
   Decline app-install banners and battery/upgrade marketing. Do not change system settings.
 - Auth is a browser session cookie, so all calls run from the logged-in page context via

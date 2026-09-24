@@ -85,9 +85,15 @@ backfill plan look like a 2-month refresh.
   don't autofill, which forces manual credential entry — the user will reject
   that. Two pathways that work:
   - **Claude in Chrome**, when its tools are available in the session.
-  - **AppleScript on macOS**, when they are not: open the page with
-    `osascript -e 'tell app "Google Chrome" to open location ...'`, then drive
-    it with `execute <tab> javascript "..."`. Requires the one-time toggle
+  - **AppleScript on macOS**, when they are not: open the page in the
+    user's PERSONAL profile explicitly —
+    `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>`
+    (the directory name is in the user's local notes, never here) — then drive
+    it with `execute <tab> javascript "..."`. Never `tell app "Google Chrome"
+    to open location`: that lands in whichever window is frontmost, which can
+    be a work profile. It happened 2026-09-24; the tell is Chrome refusing
+    JavaScript from Apple Events because that profile never had the toggle
+    set. If it happens, close that tab and reopen in the right profile. Requires the one-time toggle
     **View → Developer → Allow JavaScript from Apple Events** in Chrome (have
     the user click it) plus macOS Automation consent on first use. Find the tab
     by URL match on every call — never by index, tabs move.
@@ -124,7 +130,7 @@ discovery session or the 2026-09-04 run — login landed straight on the
 dashboard both times. Expect them anyway; when one appears, add it here with
 the date first seen.
 
-## 3. The export flow — as last observed 2026-09-04
+## 3. The export flow — as last observed 2026-09-24
 
 Verified live against the real portal on that date. Elan will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -227,13 +233,13 @@ planner stops re-asking.
 Wherever the browser profile says — record the real location in
 `providers.local.yaml` notes. The filename pattern is
 `<account label> - <last4>_<MM-DD-YYYY start>_<MM-DD-YYYY end>.csv`, with
-` (1)` appended on collision — **but the end segment is NOT the requested
-end date**: it has run exactly four days past the requested end in every
-download so far (both 2026-08-24 downloads, requested end 08/24, were named
-`..._08-28-2026.csv`; the 2026-09-04 download, requested end 09/04, came back
-`..._09-08-2026.csv`). Do not lean on that offset — it is an observation, not
-a documented contract. Detect a completed download ONLY by a marker-timestamp
-watch on the download folder; never trust the name.
+` (1)` appended on collision — **but the end segment is NOT reliably the
+requested end date**: three downloads whose requested end was "today" came
+back named four days later (2026-08-24 ×2 → `..._08-28-2026.csv`,
+2026-09-04 → `..._09-08-2026.csv`), while a closed past month requested as
+07/01–07/31 on 2026-09-24 came back `..._07-31-2026.csv`, matching exactly.
+The offset is not a contract either way. Detect a completed download ONLY by
+a marker-timestamp watch on the download folder; never trust the name.
 
 Chrome's multiple-download block applies: the second download of a session
 silently produces no file until the user clicks Allow on the
