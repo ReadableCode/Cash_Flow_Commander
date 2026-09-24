@@ -146,7 +146,7 @@ Profile & settings to "fix" it.
 If a modal has no visible dismissal, re-navigate to the download URL rather
 than clicking through it.
 
-## 3. The download form — as last observed 2026-09-04
+## 3. The download form — as last observed 2026-09-24
 
 Verified live against the real portal on that date. Chase still moves this page,
 so if what you see disagrees, believe the page and then update this section (§8).
@@ -207,13 +207,16 @@ option:
   `error-messages` attribute (a JSON array; `[]` means valid).
 - After every step, **verify state by reading attributes back** rather than
   assuming the click landed.
-- **The account selector's `value` attribute settles LATE.** Read immediately
-  after clicking the option it is still `null`, while the selection has in fact
-  landed (verified 2026-09-04 — the attribute was present a moment later). Do
-  not read that `null` as a failed click and re-click. Verify with the DOM
-  property `sel.value` and the shadow button's text
-  (`sel.shadowRoot.querySelector('button').innerText`), both of which are
-  correct immediately.
+- **Both selectors' `value` attribute settles LATE, and the DOM property is
+  not reliable.** Read immediately after clicking the option the attribute is
+  still `null`, while the selection has in fact landed (2026-09-04). Do not
+  read that `null` as a failed click and re-click. On 2026-09-24 the DOM
+  property `sel.value` read `undefined` on both `#account-selector` and
+  `#downloadActivityOptionId` even after the selection landed, so it cannot be
+  the verification either. What works: the shadow button's text
+  (`sel.shadowRoot.querySelector('button').innerText`) is correct immediately,
+  and `sel.getAttribute('value')` is correct after ~2s. Verify with the
+  attribute after a short wait, falling back to the button text.
 
 ### The two account kinds behave differently
 
