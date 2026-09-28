@@ -198,9 +198,11 @@ def test_dedup_identical_bytes(sqlite_engine: Engine) -> None:
         # Rythm bill PDFs: 'Rythm YYYY-MM.pdf' -> first of month.
         ("Rythm 2025-01.pdf", ("bill_pdf", dt.date(2025, 1, 1))),
         ("Rythm 2024-11.pdf", ("bill_pdf", dt.date(2024, 11, 1))),
-        # 'rhythm_bill_*_YYYY-MM-DD.pdf' -> that exact date.
+        # '<provider>_bill_*_YYYY-MM-DD.pdf' -> that exact date, for any provider.
         ("rhythm_bill_synthetic_2025-02-14.pdf", ("bill_pdf", dt.date(2025, 2, 14))),
         ("rhythm_bill_fake_download_2024-12-31.pdf", ("bill_pdf", dt.date(2024, 12, 31))),
+        ("gexa_bill_synthetic_2026-09-28.pdf", ("bill_pdf", dt.date(2026, 9, 28))),
+        ("city_gas_power_bill_synthetic_2026-01-05.pdf", ("bill_pdf", dt.date(2026, 1, 5))),
         # Exact-name CSV exports.
         ("monthly_bills.csv", ("csv_export", None)),
         ("hourly_usage.csv", ("csv_export", None)),

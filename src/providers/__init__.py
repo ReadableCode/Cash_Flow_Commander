@@ -3,7 +3,7 @@
 
 from typing import Any, Callable
 
-from . import chase, citi, elan, enphase_enlighten, rhythm, smt
+from . import chase, citi, elan, enphase_enlighten, gexa, rhythm, smt
 
 
 # %%
@@ -86,6 +86,8 @@ _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
     ("rhythm", "api_invoice_json", _any_name, rhythm.parse_api_invoice_json, rhythm.BILL_PARSER_VERSION),
     ("rhythm", "bill_pdf", _any_name, rhythm.parse_bill_pdf, rhythm.BILL_PARSER_VERSION),
     ("rhythm", "csv_export", _is_payments_csv, rhythm.parse_payments_csv, rhythm.BILL_PARSER_VERSION),
+    ("gexa", "api_invoice_json", _any_name, gexa.parse_api_invoice_json, gexa.BILL_PARSER_VERSION),
+    ("gexa", "bill_pdf", _any_name, gexa.parse_bill_pdf, gexa.BILL_PARSER_VERSION),
     ("chase", "csv_export", _is_chase_capture, chase.parse_transactions_csv, chase.PARSER_VERSION),
     ("chase", "empty_window", _any_name, chase.parse_empty_window, chase.PARSER_VERSION),
     ("chase", "refetched_window", _any_name, _parse_coverage_marker, chase.PARSER_VERSION),

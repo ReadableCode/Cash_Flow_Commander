@@ -1,0 +1,357 @@
+---
+description: Gexa Energy billing acquisition — capture the invoice list and bill PDFs verbatim, land into raw_documents
+argument-hint: [optional: "full" to re-pull every invoice the portal lists]
+---
+
+# /bills-gexa — Gexa Energy billing run
+
+Acquire Gexa Energy (electricity) billing artifacts and land them in Cash Flow
+Commander's raw store. **Raw-first rule:** every artifact is captured VERBATIM
+before any parsing. Raw (`raw_documents`) is the source of truth; tables are
+disposable projections that can be rebuilt.
+
+## 0. Orient
+
+**This command is deployed globally, so the session may not start in the repo.**
+Every path below is relative to the Cash Flow Commander clone, conventionally
+`~/GitHub/Cash_Flow_Commander`. Change into it first; if it lives elsewhere on
+this host, find it and use that.
+
+- Read `docs/LANDING.md` for the landing architecture and ingest conventions.
+- Load the `gexa` entry from `providers.local.yaml` (repo root, gitignored):
+  `service_type`, `account_number`, `external_ids`, `archive_dir`, `raw_dir`,
+  `data_dir`, `notes`.
+- **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
+  run `/bills-add-company` first, then re-run this command.
+
+This command runs the full pipeline — **coverage → acquire → ingest → parse →
+dashboards** — and is safe to re-run at any time.
+
+## 0.1 Coverage — decide what to fetch
+
+```sh
+uv run python src/coverage.py --provider gexa
+```
+
+This reports `No matching series in usage_intervals`, and that is correct, not
+a gap: this provider contributes bills only. Its portal usage data is
+deliberately not landed (section 2.1), and interval data for the meter comes
+from Smart Meter Texas (section 3.4).
+
+What to fetch is therefore decided by invoices, not by intervals:
+
+- Capture the invoice list on every run. It is one small request.
+- Download the PDF of every listed invoice that has no `bills` row with line
+  items yet, plus the trailing three invoices to catch restatements. Overlap is
+  free (sha256 dedup at ingest, natural-key upsert at parse), so err wide.
+- If "$ARGUMENTS" says `full`, download the PDF of every invoice listed.
+
+## 1. Portal and auth
+
+As last observed 2026-09-28.
+
+- Login URL: `https://myaccount.gexaenergy.com/`
+- Auth type: email, then password, as two steps of one form (enter the email,
+  CONTINUE, then the password field appears). The form also offers a one-time
+  code by text or email.
+- Open the portal in the user's PERSONAL Chrome profile, never with
+  `open location`: `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>`
+  (directory name from the `notes` of providers.local.yaml). Drive it over
+  AppleScript as described in `transactions-chase.md` section 1.
+- **First enumerate the tabs on this portal's domain and keep exactly one**,
+  closing extras by URL match in reverse index order and verifying by count.
+- The user signs in themselves — never type, store, or echo credentials. On
+  2026-09-28 the email field came up empty, so there was nothing for a script to
+  submit anyway: leave the tab on the form and ask the user to sign in.
+- A new account has no login until it is registered. Registration is three
+  steps (account number; date of birth or the last four of the tax id; a
+  one-time code plus a new password). The identity and password steps belong
+  to the user.
+- Decline marketing modals and offers. Never change an account setting.
+- **Never enroll in, change, or drive Auto Pay.** The payment-accounts page
+  renders inside a cross-origin frame on a separate payment origin, so a script
+  in the portal tab cannot read it at all, including which card or bank account
+  is on file. The readable signal is the bill card on the dashboard, which
+  says `You have Auto Payments enabled` and gives the scheduled date once
+  enrolled. Do not read the Next Steps list for this: its `Set up Auto Pay`
+  item stays listed after enrollment, and only the completion percentage moves.
+
+### 1.1 Calling the portal's endpoints
+
+The portal is server-rendered pages plus JSON endpoints on the same origin.
+Every JSON call needs the session cookie and two request headers:
+
+    Access_Token: <token>
+    Is_Ajax_Request: true
+
+- The token lives in `localStorage` under `SelectedAccount_Gexa`, shaped
+  `<customer number>-<account id>*<token>`. **The stored value is a
+  JSON-encoded string, quotes included — `JSON.parse` it before splitting.**
+  Splitting the raw value leaves a trailing quote on the token, and the portal
+  then answers `204` or `401` with no hint that the token was malformed.
+- `Accounts_Gexa` in `localStorage` holds the account record, including the
+  site identifier the usage endpoints take.
+- Read both inside the page and use them there. **Never return or echo the
+  token**; return only a small summary (status, byte count, sha256).
+- **`204` with an empty body means an empty result, not a failure.** The
+  payments list answered `204` while the account had no payments. Do not save
+  a zero-byte file for it and do not retry it as an error.
+- `execute javascript` does not await promises. Start the async work, record
+  the outcome on a `window.` property, and poll it after a `delay`.
+- The portal loads a third-party bot-protection script. Calls made the way the
+  page makes them, from the signed-in tab, were served normally.
+
+## 2. API artifact catalog
+
+As last observed 2026-09-28. Capture responses verbatim into `raw_dir` via
+`Blob` + `a.download` (no reformatting, no pretty-printing).
+
+| Endpoint | doc_type | Filename pattern |
+| --- | --- | --- |
+| `GET /Payments/Invoices?noofMonths={N}` | `api_invoice_json` | `gexa_api_invoice-history_{YYYYMMDD}.json` |
+
+- The response is a bare JSON list, newest first, with `MM/DD/YYYY` dates and
+  the amount as a JSON number. It carries the invoice number, its base-36 form
+  (needed for the PDF), invoice date, due date, amount, and paid state. It has
+  no service period and no kWh; the bill PDF supplies those.
+- Pagination: none. `noofMonths` widens the window instead; the page asks for
+  `6` and its Show More button asks for `60`. Always ask for `60`.
+- Re-pull window: the whole list, every run.
+
+<!-- TODO: fill after the account has history — retention is unprobed. On
+     2026-09-28 the account held one invoice, so whether noofMonths=60 is
+     honoured, clamped, or capped at some row count could not be tested.
+     Probe it live once a year of invoices exists, and check whether asking
+     for more than the portal keeps fails loudly or truncates silently. -->
+
+<!-- TODO: payments. `GET /Payments/Payments?noofMonths={N}` answered 204
+     (no payments yet) on 2026-09-28, so its payload shape is unknown. No
+     parser is registered for it; capture it only once one is written, or it
+     lands as a permanent no_parser document. -->
+
+### 2.1 Usage endpoints — documented, deliberately not captured
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /Home/GetAccountUsageSummary?CustomerAccountId={id}` | one row per billing period |
+| same, plus `&StartDate=&EndDate=&ResolutionCode=P&SiteIdentifier=&Source=` | one row per day of that period |
+| same, plus `&StartDate={day}&ResolutionCode=D` | 24 hourly rows for that day |
+
+**Do not land these.** Verified 2026-09-28 against Smart Meter Texas for one
+whole day: the portal's kWh for each hour is consumption **plus** surplus
+generation added together, and the day's total matched the sum of the two
+meter channels to the thousandth. On a site with solar it therefore overstates
+consumption by exactly what was exported, and the daily rows for a billing
+period sum to more than the kWh that period was billed for. The page itself
+labels the figures an estimate. No usage parser is registered for this
+provider, and `tests/test_gexa.py` asserts it stays that way.
+
+Two more traps, should these endpoints ever be needed:
+
+- Hourly rows are labelled **hour-ending**. The first row of a day is `01:00`
+  and the last is `00:00` carrying the same date, meaning the hour that ends at
+  the following midnight.
+- **A day with no data returns 24 rows of zeros, not an empty response** — both
+  for days before service started and for days not yet published. A zero day is
+  indistinguishable from real data unless every hour is checked.
+
+## 3. Document downloads
+
+As last observed 2026-09-28.
+
+- Where in the portal: Payment Center → Invoice & Payment History → INVOICES.
+- What to grab: the bill PDF of each invoice chosen in section 0.1.
+- Endpoint: `GET /Payments/DownloadInvoice?accessToken={token}&invoiceNumber={base36}`,
+  where `{base36}` is the invoice's `Invoice_Number_Base36` from the list. For
+  an invoice whose `IsMigrated` is true the page sends the plain invoice number
+  and adds `&isMig=true` (not exercised; no migrated invoice existed).
+- **The token rides in the query string.** The page opens this URL in a new
+  tab; do not. `fetch` it inside the signed-in tab, check that the body starts
+  with `%PDF-`, and hand it to `Blob` + `a.download`. Never print the URL.
+- Naming: `gexa_bill_{invoice_number}_{YYYY-MM-DD}.pdf`, the date being the
+  invoice date. `src/ingest_raw.py` classifies this pattern as `bill_pdf`.
+- Compute the sha256 in the page before triggering the download and compare it
+  with `shasum -a 256` on the landed file.
+- Check `notes` in providers.local.yaml for where this browser puts downloads.
+  Detect a landed file by a marker timestamp taken just before the download,
+  never by predicting the path.
+- **Chrome's automatic-downloads permission is per origin.** Without an
+  allowance for the portal origin the first download of a run lands and every
+  later one vanishes with no prompt and no error — `fetch` still reports 200.
+  Seen 2026-09-28: the PDF landed, the invoice list after it did not, and the
+  same request landed once the origin was allowed. Confirm
+  the setting by reading
+  `profile.content_settings.exceptions.automatic_downloads` in the profile's
+  `Preferences` file; if the origin is absent, ask the user to add it under
+  `chrome://settings/content/automaticDownloads`. Never click Chrome's own
+  settings or dialogs yourself.
+- Move each capture out of the download location as soon as it lands.
+
+## 3.4 Interval data — Smart Meter Texas
+
+The meter's 15-minute consumption and generation come from Smart Meter Texas,
+which holds them for the meter whoever the retail provider is. The procedure,
+its quirks, and its verification arithmetic are in `bills-rhythm.md` section
+3.4; follow it unchanged. The billed-kWh reconciliation in section 9 needs
+15-minute data covering the new bill's whole service period.
+
+Which account the series is filed under after a change of retail provider is
+an open question tracked in `backlog/`; until it is settled, keep landing the
+export exactly as that section describes so the series stays in one piece.
+
+## 4. Filing conventions
+
+- Move bill PDFs into `archive_dir`, keeping the capture name.
+- Move `gexa_api_*.json` captures into `raw_dir`.
+- **Never overwrite** an existing file. On a filename collision the existing
+  file stays put: move the new copy into `<archive_dir>/_to_delete/` and note
+  it in the run report for the user to adjudicate.
+
+## 5. Email artifacts (optional)
+
+<!-- TODO: fill once the provider sends a bill or payment email. As of
+     2026-09-28 it had sent only a welcome message, a welcome-letter PDF and
+     verification codes; the first bill posted to the portal with no email.
+     No parser is registered for email doc types, so skip this section until
+     one is, rather than adding permanently unparseable documents. -->
+
+## 6. Land it (ingest CLI)
+
+```sh
+uv run python src/ingest_raw.py --provider gexa --source portal_api <archive_dir>
+```
+
+**Never omit the directory argument.** `raw_dir` and `data_dir` sit inside
+`archive_dir`, so that one path walks all three; passing them separately visits
+every file twice and doubles the counts.
+
+- Add `--dry-run` first to see how files classify.
+- Report ingested vs deduped counts per doc_type.
+- **Verify by content hash, not by the summary.** For each new file confirm a
+  `raw_documents` row exists with `provider='gexa'`. An `ingested 0, deduped N`
+  line is also what a document filed under the wrong provider looks like.
+- The archive lives in OneDrive with Files On-Demand. A freshly captured file
+  that is dehydrated before ingest runs is skipped as a cloud placeholder, so
+  grep the output for this run's filenames rather than reading the skip list.
+
+## 7. Normalize
+
+```sh
+uv run python src/parse_raw.py --provider gexa
+```
+
+`src/providers/gexa.py` handles `api_invoice_json` and `bill_pdf`. The invoice
+list creates each `bills` row (invoice number, invoice date, due date, amount
+due); the PDF then patches that row by invoice date (service period, billed
+kWh, energy rate, balances, total current charges) and writes its line items.
+`parse_raw` orders the two within a run, so **a PDF whose invoice is missing
+from every captured list fails as unresolved** — capture the list first.
+
+Report parsed / errored / no_parser counts and rows upserted per sink.
+
+On failure: **fix parser code, bump `BILL_PARSER_VERSION`, and reprocess** —
+never hand-edit parsed output.
+
+### 7.1 PDF layout reference
+
+As last observed 2026-09-28, a two-page bill:
+
+- Page 1, account summary: `Invoice date: Mon DD YYYY, Invoice No: N`,
+  `Opening Balance`, `Balance Forward`, the two block totals repeated,
+  `Total Current Charges`, `Total Amount Due`, the late-penalty lines, and
+  `Due Date MM/DD/YYYY`.
+- Page 2, meter table: meter number, read dates, read type, previous and
+  current reads, then `Total Usage N`.
+- Page 2, two charge blocks, each opened by
+  `<Electricity|TDU> Charges and Taxes Billing Period: MM/DD/YYYY - MM/DD/YYYY`
+  and closed by its `Total ... Charges and Taxes` line. The electricity block
+  maps to section `energy`, the TDU block to `non_energy`.
+- The energy line reads `*Energy Charge <kWh> <rate> $<amount>` with the rate
+  in **dollars** per kWh; the parser stores cents. A leading `*` marks lines
+  counted in the bill's average price.
+- TDU delivery is one lump-sum line with no kWh and no rate.
+- The plan name is not printed anywhere on the bill.
+
+The parser fails the document unless the line items sum to `Total Current
+Charges` to the cent.
+
+## 8. Dashboards
+
+This provider feeds `bills` and `bill_line_items`, which `deploy/grafana/energy.json`
+(uid `cfc-energy`) and `deploy/grafana/solar_net_metering.json`
+(uid `cfc-solar-net-metering`) read. Verify both after a run:
+
+```sh
+uv run python deploy/grafana_sync.py verify cfc-energy
+uv run python deploy/grafana_sync.py verify cfc-solar-net-metering
+```
+
+<!-- TODO: fill after the first real landing. No bill from this provider had
+     been landed when this was written, so how its rows render is unobserved.
+     Two things to look at: delivery is a lump sum here, and a panel that finds
+     per-kWh delivery by another provider's line wording will not see it (see
+     backlog/); and a plan with no solar buyback has no credit lines. -->
+
+To change a dashboard, edit it in the UI then round-trip it through
+`deploy/grafana_sync.py` (`export`, `import`, `verify`) — never copy JSON out
+of the panel editor. Dashboards are committed repo artifacts.
+
+## 8.5 Data-quality check — the silent failures
+
+```sh
+uv run python src/checks.py --provider gexa
+```
+
+`parse_raw` reports what *failed*. This reports what succeeded and is still
+unusable: a bill with no line items, no energy rate, or no positive kWh drops
+out of the value panels without a gap or an error.
+
+Non-zero exit means at least one billing period will be missing from the value
+panels. Fix it by reprocessing, never by editing rows:
+
+```sh
+uv run python src/parse_raw.py --provider gexa --status all
+```
+
+Do not proceed to the dashboard step while this is failing.
+
+## 9. Report and verify
+
+Summarize the run: invoices listed vs held, documents pulled per doc_type,
+ingested/deduped counts, rows upserted, anything filed to `_to_delete/`,
+dashboards touched, unpaid bills, anomalies.
+
+Standard checks (every provider):
+
+- [ ] re-run ingest → 100% dedup, zero new rows
+- [ ] `parse_raw.py` reports zero errored and zero no_parser
+- [ ] `checks.py` exits zero
+
+Provider-specific verification checklist:
+
+- [ ] every invoice in the captured list has a `bills` row with line items
+- [ ] no gap in the invoice sequence: each service period starts where the
+      previous one ended
+- [ ] each PDF's `Total Amount Due` equals the list's amount for that invoice
+- [ ] each landed file's sha256 equals the one computed in the page
+- [ ] billed kWh on the latest bill reconciles with the summed 15-minute
+      `consumption` over the same service period
+
+<!-- TODO: fill after the first reconciliation. Whether the service period's
+     end date is inclusive, and how closely billed kWh tracks the 15-minute
+     sum, is unobserved for this provider: on 2026-09-28 the smart-meter data
+     held did not yet cover the first bill's whole period. -->
+
+## Keeping this command current
+
+This provider will change its portal, its payload, or its quirks. When it does,
+the fix belongs in this file, not in a one-off workaround you forget by the next
+run. Before finishing, if reality did not match what is written above:
+
+1. Update the section that was wrong, and date it.
+2. Add any new popup, interstitial, or blocking modal to the portal-session
+   section.
+3. Replace a TODO block with what was observed once it has been observed.
+4. Put user-specific quirks (download locations, account oddities) in the
+   `notes` field of `providers.local.yaml` — never in this file.
+5. Tell the user what you changed. **Do not commit** — they review and commit.

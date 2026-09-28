@@ -75,3 +75,24 @@ The new provider's bill layout is unknown until its login exists. Design the
 categories against a real second bill format, as part of onboarding it with
 `/bills-add-company`, rather than guessing now. Do it together with
 `solar-buyback-inferred-from-generic-credit.md`, which reparses the same bills.
+
+## update 2026-09-28: the second bill format is known, and it has no per-kWh line
+
+Gexa was onboarded on 2026-09-28 (`src/providers/gexa.py`). `verify:` still
+returns `3`. Its first bill prints delivery as one lump sum, with no kWh and no
+rate on the line:
+
+    *TDU Delivery Charges                          $83.22
+    Out of Cycle Meter Reading Regular Hours        $0.20
+
+The parser files the first as `delivery` and the second as `fee`. Neither
+description matches `%per kWh%` or `%- Energy%`, so once this bill is landed
+the three panels compute `delivery_variable = 0` for it, exactly the silent
+understatement described above.
+
+This changes step 1 of the fix. Splitting the category by line wording cannot
+work for a bill that never states the split: the variable part has to be
+derived, from the delivery utility's published per-kWh and per-month charges
+for the service period, or as the lump sum less the fixed monthly charge.
+Decide which before writing the parser change. No Gexa bill had been landed
+when this was written, so the panels have not yet shown the wrong number.

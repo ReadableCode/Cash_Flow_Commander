@@ -51,7 +51,8 @@ CSV_EXPORT_NAMES = frozenset(
 
 # 'Rythm' spelling is intentional: it matches the provider's own bill filenames.
 _RYTHM_MONTH_RE = re.compile(r"^Rythm (\d{4})-(\d{2})\.pdf$")
-_RHYTHM_BILL_RE = re.compile(r"^rhythm_bill_.*_(\d{4})-(\d{2})-(\d{2})\.pdf$")
+# Portal bill downloads, named by the provider commands: {provider}_bill_{...}_{YYYY-MM-DD}.pdf
+_PORTAL_BILL_RE = re.compile(r"^[a-z0-9_]+?_bill_.*_(\d{4})-(\d{2})-(\d{2})\.pdf$")
 
 # Transaction exports, as filed by transaction_downloader/capture.py for any
 # provider (chase, citi, ...):
@@ -97,7 +98,7 @@ def _classify_bill_pdf(name: str) -> tuple[str, datetime.date] | None:
     if match is not None:
         parts = (int(match.group(1)), int(match.group(2)), 1)
     else:
-        match = _RHYTHM_BILL_RE.match(name)
+        match = _PORTAL_BILL_RE.match(name)
         if match is None:
             return None
         parts = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
