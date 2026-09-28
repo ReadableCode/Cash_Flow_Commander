@@ -200,10 +200,10 @@ Bill credits that carry-over to your next invoice
 EXPECTED_2026_ITEMS: list[tuple[str, str, str, Decimal | None, Decimal | None, Decimal]] = [
     ("energy", "energy", "Rhythm Energy Charge", Decimal("100.000"), Decimal("15.500"), Decimal("15.50")),
     ("energy", "energy", "Rhythm Energy Charge", Decimal("1000.000"), Decimal("15.500"), Decimal("155.00")),
-    ("energy", "credit", "Solar Buyback Credit - Applied Towards Energy", None, None, Decimal("-5.00")),
+    ("energy", "solar_buyback", "Solar Buyback Credit - Applied Towards Energy", None, None, Decimal("-5.00")),
     ("non_energy", "base", "Rhythm Base Charge", None, None, Decimal("9.95")),
-    ("non_energy", "delivery", "Oncor - Delivery charge per kWh", None, None, Decimal("40.00")),
-    ("non_energy", "delivery", "Oncor - Delivery charge per month", None, None, Decimal("4.05")),
+    ("non_energy", "delivery_variable", "Oncor - Delivery charge per kWh", None, None, Decimal("40.00")),
+    ("non_energy", "delivery_fixed", "Oncor - Delivery charge per month", None, None, Decimal("4.05")),
     ("non_energy", "tax", "City Sales Tax", None, None, Decimal("2.00")),
     ("non_energy", "tax", "PUC Assessment", None, None, Decimal("0.25")),
     ("non_energy", "tax", "Misc Gross Receipts Tax Reimbursement", None, None, Decimal("1.75")),
@@ -211,8 +211,8 @@ EXPECTED_2026_ITEMS: list[tuple[str, str, str, Decimal | None, Decimal | None, D
 
 EXPECTED_2022_ITEMS: list[tuple[str, str, str, Decimal | None, Decimal | None, Decimal]] = [
     ("current", "energy", "Rhythm Energy Charge", Decimal("1000"), Decimal("8.25"), Decimal("82.50")),
-    ("current", "delivery", "TDU Delivery Charge - Base", None, None, Decimal("3.50")),
-    ("current", "delivery", "TDU Delivery Charge - Energy", None, None, Decimal("40.00")),
+    ("current", "delivery_fixed", "TDU Delivery Charge - Base", None, None, Decimal("3.50")),
+    ("current", "delivery_variable", "TDU Delivery Charge - Energy", None, None, Decimal("40.00")),
     ("current", "tax", "City Sales Tax", None, None, Decimal("2.50")),
     ("current", "tax", "PUC Assessment", None, None, Decimal("0.20")),
     ("current", "tax", "Misc Gross Receipts Tax Reimbursement", None, None, Decimal("2.30")),
@@ -527,7 +527,7 @@ def test_parse_bill_pdf_2022_flat_layout(monkeypatch: pytest.MonkeyPatch) -> Non
     credit = items[6]
     assert credit["line_no"] == 7
     assert credit["section"] == "adjustment"
-    assert credit["category"] == "credit"
+    assert credit["category"] == "solar_buyback"
     assert "Solar Buyback Credit" in credit["description"]
     assert credit["amount"] == Decimal("-16.50")
     _assert_sections_sum_to_total(entry)

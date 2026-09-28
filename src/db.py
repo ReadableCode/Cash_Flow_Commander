@@ -229,7 +229,8 @@ bill_line_items = Table(
     ),  # 'energy' | 'non_energy' | 'current' | 'adjustment'
     Column(
         "category", Text, nullable=False
-    ),  # 'energy' | 'delivery' | 'base' | 'tax' | 'fee' | 'credit' | 'other'
+    ),  # 'energy' | 'delivery_variable' | 'delivery_fixed' | 'base' | 'tax' | 'fee'
+    #    | 'solar_buyback' | 'credit' | 'other'
     Column("description", Text, nullable=False),
     Column("quantity_kwh", Numeric(12, 3), nullable=True),
     Column("rate_cents_kwh", Numeric(8, 4), nullable=True),

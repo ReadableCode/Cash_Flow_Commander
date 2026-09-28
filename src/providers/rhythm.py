@@ -132,7 +132,7 @@ def parse_hourly_usage_csv(content: bytes, ctx: dict[str, Any]) -> list[dict[str
 # %%
 # Bill Constants #
 
-BILL_PARSER_VERSION = "rhythm-bills/1.0.0"
+BILL_PARSER_VERSION = "rhythm-bills/1.1.0"
 
 # Trailing dollar amount on a bill line; credits are written `-$46.51`.
 _AMOUNT_RE = re.compile(r"(-?)\$([\d,]+\.\d{2})$")
@@ -168,12 +168,20 @@ _CHARGE_SECTIONS = ("energy", "non_energy", "current")
 
 # (lowercased label substring, category) — first match wins, so the solar
 # credit rule precedes the energy-charge rule.
+#
+# Delivery is split by what the line is charged on, because the value of a kWh
+# that was never bought includes the per-kWh part and not the monthly part.
+# There is deliberately no catch-all delivery rule: a delivery line worded some
+# new way lands in 'other', and checks.py then reports the bill as having no
+# per-kWh delivery instead of the dashboards quietly pricing it at zero.
 _CATEGORY_RULES: tuple[tuple[str, str], ...] = (
-    ("solar buyback credit", "credit"),
+    ("solar buyback credit", "solar_buyback"),
     ("rhythm energy charge", "energy"),
     ("rhythm base charge", "base"),
-    ("tdu delivery", "delivery"),
-    ("oncor - delivery", "delivery"),
+    ("tdu delivery charge - energy", "delivery_variable"),
+    ("tdu delivery charge - base", "delivery_fixed"),
+    ("oncor - delivery charge per kwh", "delivery_variable"),
+    ("oncor - delivery charge per month", "delivery_fixed"),
     ("city sales tax", "tax"),
     ("puc assessment", "tax"),
     ("misc gross receipts", "tax"),

@@ -47,6 +47,30 @@ rhythm:
   # billing cadence, anything the /bills-<slug> command should know.
   notes: |
 
+gexa:
+  service_type: electricity
+
+  # Your account number with the provider, exactly as it appears on bills.
+  account_number: ""
+
+  # Free-form identifiers, e.g. esi_id, meter_number.
+  external_ids: {}
+
+  archive_dir: ""
+  raw_dir: ""
+  data_dir: ""
+
+  # Required. The delivery utility's fixed charge per billing cycle, in dollars,
+  # keyed by the date it took effect (YYYY-MM-DD). The bill prints delivery as
+  # one lump sum, and the parser subtracts this charge to find the per-kWh
+  # part; without an entry in effect for a bill, that bill fails to parse. The
+  # provider publishes the current charge for each delivery utility on its
+  # TDU charges page. Add a new line when it changes; never edit an old one.
+  tdu_fixed_monthly_charges: {}
+    # "2026-01-01": "0.00"
+
+  notes: |
+
 chase:
   # Chase transactions are not a utility bill; this provider feeds
   # transaction_downloader/ rather than the usage/bills tables.

@@ -264,8 +264,12 @@ def _process_document(
             raw_store.mark_parsed(engine, doc["id"], "error", parser_version, error=reason[:ERROR_MAX_LEN])
         return ("error", Counter(), reason)
 
+    provider_config = config.get(doc["provider"])
     ctx: dict[str, Any] = {
         "account_id": account_id,
+        # The provider's own providers.local.yaml entry, for the facts a bill
+        # does not print (a tariff charge the parser needs to split a lump sum).
+        "config": provider_config if isinstance(provider_config, dict) else {},
         "provider": doc["provider"],
         "doc_type": doc["doc_type"],
         "original_name": doc["original_name"],

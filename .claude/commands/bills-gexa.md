@@ -20,7 +20,7 @@ this host, find it and use that.
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `gexa` entry from `providers.local.yaml` (repo root, gitignored):
   `service_type`, `account_number`, `external_ids`, `archive_dir`, `raw_dir`,
-  `data_dir`, `notes`.
+  `data_dir`, `tdu_fixed_monthly_charges`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
   run `/bills-add-company` first, then re-run this command.
 
@@ -155,6 +155,21 @@ Two more traps, should these endpoints ever be needed:
   for days before service started and for days not yet published. A zero day is
   indistinguishable from real data unless every hour is checked.
 
+### 2.2 The delivery utility's fixed charge — check it every run
+
+The bill prints delivery as one lump sum, and the parser finds the per-kWh
+part by subtracting the delivery utility's fixed charge, which it reads from
+`tdu_fixed_monthly_charges` in providers.local.yaml (effective date → dollars).
+
+- The provider publishes the current fixed and per-kWh charge for each
+  delivery utility at `https://mygexa2.gexaenergy.com/tdu-charges`, a public
+  page with its own "updated" date.
+- Compare the fixed charge for the user's delivery utility with the newest
+  entry in the config. If it changed, tell the user and add a new dated entry;
+  never edit an old one, because older bills were billed at the older charge.
+  Then reparse (section 7) so bills after the change are split correctly.
+- A bill with no entry in effect fails to parse, by design.
+
 ## 3. Document downloads
 
 As last observed 2026-09-28.
@@ -247,6 +262,26 @@ kWh, energy rate, balances, total current charges) and writes its line items.
 `parse_raw` orders the two within a run, so **a PDF whose invoice is missing
 from every captured list fails as unresolved** — capture the list first.
 
+Two things the parser does that the bill does not print:
+
+- **It splits the delivery lump sum** into `delivery_variable` and
+  `delivery_fixed` line items, both marked `(derived)` in their description.
+  The fixed part is the charge from section 2.2, in full for a period of 27
+  days or more and prorated over a 30-day month for a shorter first or last
+  period; the per-kWh part is the remainder. The two still sum to the printed
+  line. The dashboards price a kWh that was never bought at the energy rate
+  plus the per-kWh part, so a bill without a `delivery_variable` line would be
+  priced as if delivery were free; `checks.py` reports that.
+- **It stores `service_end` as the day before the printed end date.** The bill
+  prints two meter read dates, and the closing read opens the next period.
+  Verified 2026-09-28 on the first bill: 15-minute consumption over the period
+  ending the day before the closing read summed to within half a kWh of the
+  billed kWh, and including the read date added a whole day's usage.
+
+A delivery line worded any other way than `TDU Delivery Charges` lands in
+`other`, not in a delivery category. That is deliberate: it fails the check
+instead of being guessed at. Extend the parser, with a test.
+
 Report parsed / errored / no_parser counts and rows upserted per sink.
 
 On failure: **fix parser code, bump `BILL_PARSER_VERSION`, and reprocess** —
@@ -269,7 +304,9 @@ As last observed 2026-09-28, a two-page bill:
 - The energy line reads `*Energy Charge <kWh> <rate> $<amount>` with the rate
   in **dollars** per kWh; the parser stores cents. A leading `*` marks lines
   counted in the bill's average price.
-- TDU delivery is one lump-sum line with no kWh and no rate.
+- TDU delivery is one lump-sum line with no kWh and no rate. On the first
+  bill the per-kWh part the parser derived from it came to within a thousandth
+  of a cent of the per-kWh charge the provider publishes.
 - The plan name is not printed anywhere on the bill.
 
 The parser fails the document unless the line items sum to `Total Current
@@ -286,11 +323,19 @@ uv run python deploy/grafana_sync.py verify cfc-energy
 uv run python deploy/grafana_sync.py verify cfc-solar-net-metering
 ```
 
-<!-- TODO: fill after the first real landing. No bill from this provider had
-     been landed when this was written, so how its rows render is unobserved.
-     Two things to look at: delivery is a lump sum here, and a panel that finds
-     per-kWh delivery by another provider's line wording will not see it (see
-     backlog/); and a plan with no solar buyback has no credit lines. -->
+As last observed 2026-09-28, after the first bill landed:
+
+- The three solar value panels read `delivery_variable` and `solar_buyback`
+  line items, never a description. A bill from this provider has no
+  `solar_buyback` line, so its buyback is zero and the panels are worth exactly
+  the energy that did not have to be bought: self-consumed kWh at the energy
+  rate plus per-kWh delivery, grossed up for tax.
+- **A billing period appears on those panels only when production, import and
+  export intervals all cover it.** Run `/bills-enphase_enlighten` and the
+  Smart Meter Texas export (section 3.4) in the same sitting, or the period is
+  missing or understated; `checks.py` reports which days are short.
+- `Monthly cost by category (stacked)` on `cfc-energy` groups by category, so
+  delivery shows as two series.
 
 To change a dashboard, edit it in the UI then round-trip it through
 `deploy/grafana_sync.py` (`export`, `import`, `verify`) — never copy JSON out
@@ -304,7 +349,13 @@ uv run python src/checks.py --provider gexa
 
 `parse_raw` reports what *failed*. This reports what succeeded and is still
 unusable: a bill with no line items, no energy rate, or no positive kWh drops
-out of the value panels without a gap or an error.
+out of the value panels without a gap or an error; a bill with no per-kWh
+delivery, a metered day no bill covers, or a recent billing period its
+interval data does not fully cover is understated by them.
+
+`--provider gexa` limits the bill checks to this provider's bills. Interval
+data is read across every account either way, because the meter's series and
+the production series are each filed under an account of their own.
 
 Non-zero exit means at least one billing period will be missing from the value
 panels. Fix it by reprocessing, never by editing rows:
@@ -337,10 +388,9 @@ Provider-specific verification checklist:
 - [ ] billed kWh on the latest bill reconciles with the summed 15-minute
       `consumption` over the same service period
 
-<!-- TODO: fill after the first reconciliation. Whether the service period's
-     end date is inclusive, and how closely billed kWh tracks the 15-minute
-     sum, is unobserved for this provider: on 2026-09-28 the smart-meter data
-     held did not yet cover the first bill's whole period. -->
+Expect agreement within a kWh, not to the unit: the bill prints whole kWh from
+two register reads. Observed 2026-09-28 on the first bill, 1333.328 kWh summed
+against 1333 billed.
 
 ## Keeping this command current
 
