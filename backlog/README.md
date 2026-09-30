@@ -7,11 +7,3 @@ before acting on it — reality moves.
 
 | Issue | Found | Status |
 |-------|-------|--------|
-| [a mislabelled raw document cannot be corrected by re-ingesting it](raw-dedup-ignores-provider.md) | 2026-09-04 | open |
-| [rhythm api_orders_json has no parser; no_parser grows one per invoice](rhythm-orders-json-no-parser.md) | 2026-09-04 | open |
-| [nothing records whether a plan pays buyback, so a missing buyback line cannot be checked](plans-do-not-record-buyback-terms.md) | 2026-09-11 | open |
-| [a match on a still-pending Chase bank row breaks when the row posts](pairing-pending-chase-row-breaks-on-posting.md) | 2026-09-24 | open |
-| [the smart-meter series is filed under a retail provider, and that provider has been replaced](smt-series-keyed-to-retail-provider.md) | 2026-09-28 | open |
-| [a file left in the browser's download location is never noticed](download-location-leftovers.md) | 2026-09-29 | open |
-| [verbatim transaction captures are filed in the repo's data folder, on one machine](transaction-captures-in-repo-data-folder.md) | 2026-09-29 | open |
-| [the test config helper names a system that belongs to another context](test-helper-names-another-context.md) | 2026-09-29 | open |

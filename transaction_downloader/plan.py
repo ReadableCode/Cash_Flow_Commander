@@ -202,9 +202,10 @@ def _days_in_month(year: int, month: int) -> int:
 def captures_from_database(provider: str = DEFAULT_PROVIDER) -> list[dict[str, Any]] | None:
     """Rebuild coverage from raw_documents, or None when the database is unreachable.
 
-    This is the durable source. On-disk staging is transient by design — once a
-    capture is ingested, `raw_documents` holds the bytes and the file can be
-    deleted — so coverage must not depend on the file still being there.
+    This is the source main() reads unless --from-disk is passed. raw_dir is an
+    archive and keeps its captures after ingest, but `raw_documents` holds
+    every landed capture, so coverage does not depend on the files being
+    present on this machine.
 
     The requested window is recoverable because it is encoded in the capture
     filename, which ingest stores as `original_name`.
@@ -695,7 +696,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--from-disk",
         action="store_true",
-        help="read coverage from staging on disk instead of the database",
+        help="read coverage from the capture archive on disk instead of the database",
     )
     parser.add_argument(
         "--rescan",
@@ -732,9 +733,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     raw_dir = _resolve_repo_relative(raw_dir)
 
-    # The database is the durable record: staging is cleared once ingested, so
-    # asking the disk alone would report months as missing that are safely
-    # landed. Disk is the fallback for a first run, or when there is no database.
+    # The database is read first: it holds every landed capture, while raw_dir
+    # is an archive that may not be complete on this machine, so asking the
+    # disk alone could report months as missing that are safely landed. Disk is
+    # read with --from-disk, or when the database is unreachable.
     source = "database"
     captures = None if args.from_disk else captures_from_database(provider)
     if captures is None:

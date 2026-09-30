@@ -47,6 +47,12 @@ def ingest_bytes(
 
     Returns {'id': <int>, 'deduped': <bool>} where deduped=True means an
     identical document already existed and no new row was written.
+
+    The same bytes never belong to two providers. When the existing row is
+    held under a different provider the result also carries
+    'provider_conflict': <that provider>, and nothing is written: the caller
+    must report it rather than count a clean dedup, and src/relabel_raw.py
+    corrects the held row.
     """
     content_sha256 = hashlib.sha256(content).hexdigest()
 
@@ -91,19 +97,18 @@ def ingest_bytes(
 
     with engine.begin() as conn:
         returned_id = conn.execute(returning_stmt).scalar_one_or_none()
-        deduped = returned_id is None
         if returned_id is not None:
-            row_id = int(returned_id)
-        else:
-            row_id = int(
-                conn.execute(
-                    select(db.raw_documents.c.id).where(
-                        db.raw_documents.c.content_sha256 == content_sha256
-                    )
-                ).scalar_one()
+            return {"id": int(returned_id), "deduped": False}
+        existing = conn.execute(
+            select(db.raw_documents.c.id, db.raw_documents.c.provider).where(
+                db.raw_documents.c.content_sha256 == content_sha256
             )
+        ).one()
 
-    return {"id": row_id, "deduped": deduped}
+    result: dict[str, Any] = {"id": int(existing.id), "deduped": True}
+    if existing.provider != provider:
+        result["provider_conflict"] = existing.provider
+    return result
 
 
 def iter_documents(

@@ -7,6 +7,7 @@ routes the parsed rows to their sink:
   'usage_intervals' -> usage_store.upsert_intervals
   'bills'           -> bill_store.upsert_bills
   'payments'        -> bill_store.upsert_payments
+  'plans'           -> bill_store.upsert_plans
   'pdf_bills'       -> bill_store.apply_pdf_bill
 
 Parsers either return a bare list (usage interval rows) or a dict mapping
@@ -70,7 +71,7 @@ _DEFAULT_PRIORITY = 1
 
 # Fixed display order for per-sink counts in the summary.
 _SINK_LABEL_ORDER = (
-    "bills", "bills_patched", "line_items", "payments", "usage rows",
+    "bills", "bills_patched", "line_items", "payments", "plans", "usage rows",
     "transactions", "stale transactions removed",
 )
 
@@ -179,7 +180,7 @@ def _dry_run_counts(sinks: dict[str, Any]) -> Counter[str]:
             continue  # metadata; a dry run cannot know what it would prune
         if sink == "usage_intervals":
             counts["usage rows"] += len(payload)
-        elif sink in ("bills", "payments", "transactions"):
+        elif sink in ("bills", "payments", "plans", "transactions"):
             counts[sink] += len(payload)
         elif sink == "pdf_bills":
             counts["bills_patched"] += len(payload)
@@ -208,6 +209,8 @@ def _upsert_sinks(engine: Engine, sinks: dict[str, Any]) -> tuple[Counter[str], 
             counts["bills"] += int(bill_store.upsert_bills(engine, payload)["upserted"])
         elif sink == "payments":
             counts["payments"] += int(bill_store.upsert_payments(engine, payload)["upserted"])
+        elif sink == "plans":
+            counts["plans"] += int(bill_store.upsert_plans(engine, payload)["upserted"])
         elif sink == "transactions":
             if window is not None:
                 result = transaction_store.sync_capture(engine, payload, window)

@@ -11,9 +11,9 @@ any parsing. `raw_documents` is the source of truth; anything derived is a
 rebuildable projection.
 
 Run this whenever you want fresh transactions. There is deliberately no
-schedule — the planner works out what is still missing from what is already on
-disk, so running it twice in a day is cheap and running it once a quarter still
-gets everything.
+schedule: the planner works out what is still missing from what is already
+landed, so running it twice in a day is cheap and running it once a quarter
+still gets everything.
 
 ## 0. Orient
 
@@ -30,8 +30,8 @@ be invoked from anywhere; the `uv run python ...` calls cannot.
 - Read `transaction_downloader/README.md` for how coverage is tracked here and
   why it differs from `src/coverage.py`.
 - Load the `chase` entry from `providers.local.yaml` (repo root, gitignored):
-  `external_ids.accounts` (last-4 → label), `raw_dir`, `archive_dir`,
-  `backfill_start`, `notes`.
+  `external_ids.accounts` (last-4 → label), `download_dir`, `raw_dir`,
+  `data_dir`, `archive_dir`, `backfill_start`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or account numbers — copy
   the `chase` block from `template_providers.yaml` into `providers.local.yaml`,
   have the user fill it in, then re-run.
@@ -315,7 +315,7 @@ account** rather than reusing coordinates from the previous account.
 
 Not necessarily `~/Downloads` — this is browser-profile specific and has been
 observed pointing at a cloud-synced Documents folder. The path belongs in the
-`notes` field of `providers.local.yaml`; read it from there rather than
+`download_dir` key of `providers.local.yaml`; read it from there rather than
 guessing, and if a download seems to have vanished, check there before retrying.
 
 The filename differs by product: **card exports embed the requested window**
@@ -368,12 +368,17 @@ month fetched and found empty is covered, a month never fetched is not.
 the bytes unchanged into `raw_dir` under a canonical name, and records the
 window. Identical bytes filed twice are a no-op. Nothing is ever overwritten.
 
-**Every download is consumed exactly once**: a new one is MOVED into the repo,
+**Every download is consumed exactly once**: a new one is MOVED into `raw_dir`,
 and an identical re-download is discarded once its bytes are confirmed already
-filed. So a clean run leaves the browser's download folder empty, and anything
-still sitting there afterwards is real unfiled work — check it rather than
-assuming it is clutter. (Archived exports passed to `import-legacy` are copied
-and never removed; they are the user's own files.)
+filed. So a clean run leaves none of its downloads in `download_dir`, and
+anything of this provider's still sitting there afterwards is real unfiled
+work. Check it rather than assuming it is clutter. (Archived exports passed to
+`import-legacy` are copied and never removed; they are the user's own files.)
+
+`raw_dir` is an archive. Captures, window markers and the manifest stay there
+after ingest; nothing in this command clears it. `raw_documents` holds the same
+bytes and is what the planner reads first. The files are the copy a person can
+open and the one `plan.py --from-disk` reads.
 
 A discarded re-download still records the window it was requested for, as a
 `refetched_window` marker filed alongside the captures. `raw_documents` dedups
@@ -381,8 +386,9 @@ on content sha256 alone, so identical bytes can never record a wider window
 themselves — without the marker the month would stay "never fetched" and the
 planner would ask for it on every run forever.
 
-Check the user's `notes` in `providers.local.yaml` for their browser download
-location before hunting for files.
+The browser's download location is `download_dir` in `providers.local.yaml`.
+Look there before hunting for files; a bare filename passed to `capture.py file`
+or `land.sh` resolves against it.
 
 ## 4.1 Months Chase will not serve
 
@@ -426,7 +432,7 @@ bash transaction_downloader/land.sh --provider chase \
 To run the ingest step alone:
 
 ```sh
-uv run python src/ingest_raw.py --provider chase data/chase/incoming
+uv run python src/ingest_raw.py --provider chase <raw_dir>
 ```
 
 That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
@@ -518,6 +524,9 @@ transactions upserted, and any popup or flow change you had to work around.
       debits negative — an account with zero rows in one direction means the
       parser's sign projection is wrong (Citi shipped that way once)
 - [ ] months reported as inferred are ones you actually imported from an archive
+- [ ] `download_dir` holds no file whose name starts with `chase` in any letter
+      case: Chase names its downloads `ChaseNNNN_Activity...CSV`, and a filed
+      capture starts `chase_`
 
 ## 8. Keeping this command current
 
@@ -527,8 +536,9 @@ not match §3:
 
 1. Update §3 to what you actually saw, and change the "as last observed" date.
 2. Add any new popup to §2.
-3. Put user-specific quirks (download location, which accounts export how far
-   back) in the `notes` field of `providers.local.yaml` — never in this file.
+3. Put the download location in `download_dir` and other user-specific quirks
+   (which accounts export how far back) in the `notes` field of
+   `providers.local.yaml`, never in this file.
 4. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---

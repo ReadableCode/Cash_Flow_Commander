@@ -7,6 +7,7 @@ import importlib
 import os
 import uuid
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -186,6 +187,71 @@ def test_dedup_identical_bytes(sqlite_engine: Engine) -> None:
     assert other["deduped"] is False
     assert other["id"] != first["id"]
     assert _count_rows(sqlite_engine) == 2
+
+
+def test_same_bytes_under_another_provider_is_a_conflict(sqlite_engine: Engine) -> None:
+    """The same bytes never belong to two providers; the holder is named, nothing is written."""
+    first = raw_store.ingest_bytes(
+        sqlite_engine,
+        provider="elan",
+        doc_type="bill_pdf",
+        source="manual",
+        content=FAKE_PDF,
+        original_name="Rythm 2025-01.pdf",
+    )
+    assert "provider_conflict" not in first
+
+    again = raw_store.ingest_bytes(
+        sqlite_engine,
+        provider="rhythm",
+        doc_type="bill_pdf",
+        source="manual",
+        content=FAKE_PDF,
+        original_name="Rythm 2025-01.pdf",
+    )
+    assert again == {"id": first["id"], "deduped": True, "provider_conflict": "elan"}
+    assert _count_rows(sqlite_engine) == 1
+    assert _fetch_row(sqlite_engine, first["id"])["provider"] == "elan"
+
+    same_provider = raw_store.ingest_bytes(
+        sqlite_engine,
+        provider="elan",
+        doc_type="bill_pdf",
+        source="manual",
+        content=FAKE_PDF,
+        original_name="Rythm 2025-01.pdf",
+    )
+    assert same_provider == {"id": first["id"], "deduped": True}
+
+
+def test_ingest_cli_reports_a_provider_conflict_and_exits_1(
+    sqlite_engine: Engine, tmp_path: Any, capsys: Any
+) -> None:
+    """A re-ingest under the right provider must not read as a clean dedup."""
+    folder = tmp_path / "raw"
+    folder.mkdir()
+    (folder / "Rythm 2025-01.pdf").write_bytes(FAKE_PDF)
+    (folder / "Rythm 2025-02.pdf").write_bytes(FAKE_PDF_OTHER)
+
+    assert ingest_raw.main(["--provider", "elan", str(folder / "Rythm 2025-01.pdf")]) == 0
+    capsys.readouterr()
+
+    assert ingest_raw.main(["--provider", "rhythm", str(folder)]) == 1
+
+    out = capsys.readouterr().out
+    assert "rhythm/bill_pdf: ingested 1, deduped 0, skipped 0, provider_conflict 1" in out
+    assert "Totals: ingested 1, deduped 0, skipped 0, provider_conflict 1" in out
+    assert "Rythm 2025-01.pdf: held under provider 'elan' as document #" in out
+    assert "Skipped files:" not in out
+    assert _count_rows(sqlite_engine) == 2
+
+    # The same run again: the second file is now a plain dedup, the first still conflicts.
+    assert ingest_raw.main(["--provider", "rhythm", str(folder)]) == 1
+    assert "Totals: ingested 0, deduped 1, skipped 0, provider_conflict 1" in capsys.readouterr().out
+
+    # A clean re-run under the holding provider stays exit 0.
+    assert ingest_raw.main(["--provider", "elan", str(folder / "Rythm 2025-01.pdf")]) == 0
+    assert "Totals: ingested 0, deduped 1, skipped 0, provider_conflict 0" in capsys.readouterr().out
 
 
 # %%
@@ -409,7 +475,8 @@ def _real_engine() -> Engine:
     There is no separate test database: Postgres on a configured checkout,
     SQLite on a fresh clone, whatever CFC_DATABASE_URL names. An unreachable
     one is a red test, never a skip -- a skipped database test reports green
-    while proving nothing.
+    while proving nothing. The schema is checked, not applied, on anything but
+    a local SQLite file: see _require_current_schema.
     """
     engine = db.get_engine()
     if engine.dialect.name == "postgresql":
@@ -423,7 +490,39 @@ def _real_engine() -> Engine:
         raise AssertionError(
             f"database unreachable - this test must be red, not skipped: {exc}"
         ) from exc
+    _require_current_schema(engine)
     return engine
+
+
+def _require_current_schema(engine: Engine) -> None:
+    """Give a real-backend test its tables without changing a shared schema.
+
+    SQLite is a local file on a fresh clone, nobody's shared database, so it is
+    bootstrapped here. Anything else is the shared database: a test run never
+    changes its schema, so a version other than the code's is a red test.
+    """
+    if engine.dialect.name == "sqlite":
+        bootstrap.ensure_schema(engine)
+        return
+    applied = bootstrap.applied_version(engine)
+    assert applied == bootstrap.SCHEMA_VERSION, (
+        f"the schema in the configured database is at version {applied} while the code is at "
+        f"version {bootstrap.SCHEMA_VERSION}. A pending schema change is applied by deliberately "
+        "running an entry point (for example `uv run python src/checks.py`), never by the test suite."
+    )
+
+
+def test_a_stale_shared_schema_is_red_and_never_applied(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On anything but local SQLite the suite reads the version and changes nothing."""
+    stale = bootstrap.SCHEMA_VERSION - 1
+    applied: list[Any] = []
+    monkeypatch.setattr(bootstrap, "applied_version", lambda engine: stale)
+    monkeypatch.setattr(bootstrap, "ensure_schema", lambda *args, **kwargs: applied.append(args))
+    shared: Any = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+
+    with pytest.raises(AssertionError, match=f"is at version {stale} while the code is at version"):
+        _require_current_schema(shared)
+    assert applied == []
 
 
 def test_real_backend_ingest_and_dedup() -> None:
@@ -434,7 +533,6 @@ def test_real_backend_ingest_and_dedup() -> None:
     bare DELETE.
     """
     engine = _real_engine()
-    bootstrap.ensure_schema(engine)
     # Per-run unique payloads so this test never collides with existing rows.
     unique = uuid.uuid4().hex.encode()
     content_a = b"%PDF-1.4 fake real-backend doc A " + unique

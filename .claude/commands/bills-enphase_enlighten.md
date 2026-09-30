@@ -28,11 +28,10 @@ true_consumption = imported_kWh + self_consumption
 ```
 
 - `gross_production` — this provider, `production` channel.
-- `exported_kWh` — the electricity provider's `generation` metric (solar buyback).
-- `imported_kWh` — the electricity provider's `consumption` metric (what you were billed for).
+- `exported_kWh` — the meter's `generation` metric (solar buyback).
+- `imported_kWh` — the meter's `consumption` metric (what you were billed for).
 
-See `/bills-rhythm`; Smart Meter Texas exports cover the same ground when the retailer's window
-has lapsed. Both sides must be aggregated in the **same local timezone** before differencing, or
+The meter's series comes from Smart Meter Texas; see `/bills-smt`. Both sides must be aggregated in the **same local timezone** before differencing, or
 the result drifts by an interval at each day boundary.
 
 ## 0. Setup
@@ -46,7 +45,7 @@ hardcode a machine-specific path in this file.
 
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `enphase_enlighten` entry from `providers.local.yaml` in the repo root. You need its
-  `external_ids.system_id`, `archive_dir`, `raw_dir`, and `data_dir`.
+  `external_ids.system_id`, `archive_dir`, `raw_dir`, `data_dir`, and `download_dir`.
 - If `providers.local.yaml` is missing or has no `enphase_enlighten` entry, **STOP** and direct
   the user to run `/bills-add-company`. The file is gitignored — personal values never go in this
   repo.
@@ -164,8 +163,8 @@ directly, and the electricity-provider cross-reference becomes a check rather th
   user what's there so they can review and trash it.
 - There are no bill PDFs for this provider; `archive_dir` holds only system documents
   (commissioning paperwork, warranty) if the user files any there.
-- Check `notes` in providers.local.yaml for the browser download-location quirk before hunting
-  for downloaded files.
+- Downloads land in `download_dir` from providers.local.yaml. Look there before hunting for
+  downloaded files.
 
 ## 5. Optional Gmail supplements
 
@@ -189,7 +188,8 @@ argument-less `--provider elan` filed five Rhythm documents under `elan`, and
 they had to be reassigned by hand afterwards. Always pass the directory
 explicitly, even when you think the default is set to something harmless.
 
-- Add `--dry-run` first to confirm captures classify as `api_usage_json`, not `other`.
+- Add `--dry-run` first to confirm the two energy captures classify as `api_usage_json`. Only the
+  `api_system_today` capture is `other`.
 - Note that `raw_dir` sits inside `archive_dir`, so the walk visits each file twice; the second
   visit dedups. Expect ingested and deduped counts to be equal on a first run — that is correct,
   not a bug.
@@ -203,11 +203,8 @@ uv run python src/parse_raw.py --provider enphase_enlighten
 
 `src/providers/enphase_enlighten.py` handles both captures, routed by filename:
 `daily_energy` → 15-minute interval rows, `lifetime_energy` → `day` rollup rows. The
-`api_system_today` capture has no parser by design (system metadata, not measurements) and
-will report as `no_parser` every run — that is expected, not a failure. The count is
-**one per `api_system_today` capture held**, so it grows by one each run (2 as of
-2026-09-04). Check that the no_parser documents are all `api_system_today`; any other
-filename in that bucket is a real missing parser.
+`api_system_today` capture is held as metadata and parses to nothing: it ends `ok` with no
+rows. Expect **zero `no_parser`**; any document in that bucket is a real missing parser.
 
 Facts the parser encodes, repeated here because they are the ones that bite:
 
@@ -289,10 +286,11 @@ Report date range covered, days captured, raw docs ingested/deduped, empty-produ
 the reconciliation against the electricity provider. Verify:
 
 - [ ] every API call this run has a matching verbatim .json in `raw_dir`
+- [ ] `download_dir` holds no file whose name starts with `enphase_enlighten`
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
-- [ ] captures classified as `api_usage_json`, not `other`
-- [ ] `parse_raw.py` reports zero errored (`no_parser` == the number of
-      `api_system_today` captures held is expected; it grows by one per run)
+- [ ] the two energy captures classified as `api_usage_json`; only `api_system_today` is `other`
+- [ ] `parse_raw.py` reports zero errored and zero `no_parser` (the `api_system_today`
+      capture parses `ok` with no rows)
 - [ ] `coverage.py` re-run shows the fetched window now covered, no new thin days, and no new
       persistent gaps beyond the three known ones
 - [ ] interval counts per day are only ever 92 / 96 / 100, and the off-96 days land on DST
@@ -338,8 +336,9 @@ run. Before finishing, if reality did not match what is written above:
    section.
 3. Add any newly-confirmed permanent gap to the coverage notes, so future runs
    stop chasing it.
-4. Put user-specific quirks (download locations, account oddities) in the
-   `notes` field of `providers.local.yaml` — never in this file.
+4. Put the download location in `download_dir` and other user-specific quirks
+   (account oddities) in the `notes` field of `providers.local.yaml`, never in
+   this file.
 5. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---

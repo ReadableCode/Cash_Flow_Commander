@@ -34,6 +34,24 @@ PAYMENTS_UPDATE_COLUMNS = [
     "parser_version",
 ]
 
+# Natural key of one plan term; upserts conflict on these.
+PLANS_NATURAL_KEY = ["account_id", "start_date"]
+
+# Plan columns refreshed when a conflicting row already exists.
+PLANS_UPDATE_COLUMNS = [
+    "end_date",
+    "plan_name",
+    "status",
+    "energy_rate_cents_kwh",
+    "average_rate_cents_kwh_at_2000",
+    "base_charge",
+    "buyback_rate_cents_kwh",
+    "is_variable_rate",
+    "is_time_of_use",
+    "raw_document_id",
+    "parser_version",
+]
+
 
 # %%
 # Helpers #
@@ -178,6 +196,33 @@ def upsert_payments(engine: Engine, rows: list[dict[str, Any]]) -> dict[str, Any
     update_columns = [name for name in PAYMENTS_UPDATE_COLUMNS if name in rows[0]]
     upsert_stmt = insert_stmt.on_conflict_do_update(
         index_elements=PAYMENTS_NATURAL_KEY,
+        set_={name: insert_stmt.excluded[name] for name in update_columns},
+    )
+    with engine.begin() as conn:
+        conn.execute(upsert_stmt, rows)
+
+    return {"upserted": len(rows)}
+
+
+def upsert_plans(engine: Engine, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Upsert plan term rows on their natural key (account_id, start_date).
+
+    rows are dicts keyed by plans column names (except id); all rows in one
+    call must share the same key set and no two may share a natural key. The
+    same term is restated by every capture made during it, so on conflict the
+    term's columns present in the rows are updated in place: re-parsing is
+    idempotent and a restated status or end_date overwrites. Returns
+    {'upserted': <rows sent>}.
+    """
+    if not rows:
+        return {"upserted": 0}
+
+    insert_stmt = _dialect_insert(db.plans, engine)
+    # Intersect with the row keys so a source that states fewer terms of the
+    # plan leaves the columns it does not send alone.
+    update_columns = [name for name in PLANS_UPDATE_COLUMNS if name in rows[0]]
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=PLANS_NATURAL_KEY,
         set_={name: insert_stmt.excluded[name] for name in update_columns},
     )
     with engine.begin() as conn:

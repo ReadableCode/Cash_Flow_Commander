@@ -155,7 +155,8 @@ Overlap is free (sha256 dedup at ingest), so both windows err wide on purpose.
 
 ## Storage layout
 
-Everything lands in the `chase` entry's `raw_dir` from `providers.local.yaml`:
+Everything lands in the provider's `raw_dir` from `providers.local.yaml`
+(shown for `chase`):
 
 ```
 raw_dir/
@@ -173,6 +174,14 @@ leaves nothing to clean up by hand. The manifest is a cache; the files are the
 truth, and `capture.py reindex` rebuilds it from them. `plan.py` falls back to
 scanning the files automatically if the manifest is missing, so losing it never
 triggers a full re-download.
+
+`raw_dir` is an archive. Captures, window markers and the manifest stay there
+after ingest, and no step removes them. `raw_documents` holds the same bytes
+and is what `plan.py` reads first. The files are the copy a person can open and
+the one `plan.py --from-disk` reads. Write `raw_dir` as a `${ONEDRIVE_DOCS}/...`
+path so every machine that syncs the folder has the archive. A repo-relative
+value still works and resolves against the repo root, but those files exist on
+one machine only.
 
 ## Commands
 
@@ -220,7 +229,9 @@ uv run python src/parse_raw.py --provider chase
 ## Configuration
 
 The `chase` block in `providers.local.yaml` (gitignored; shape in
-`template_providers.yaml`). `raw_dir` and `external_ids.accounts` are required;
+`template_providers.yaml`). `raw_dir` and `external_ids.accounts` are required,
+and `land.sh` also requires `data_dir`. `download_dir` is where the browser
+drops exports; with it set, `capture.py file` takes a bare filename.
 `backfill_start` is optional and defaults to 24 months.
 
 ## Normalizing into `transactions`

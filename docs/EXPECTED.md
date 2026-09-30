@@ -45,6 +45,13 @@ a row a person wrote.
   identically worded autopays to different cards. A transaction that
   merely looks like your mortgage (a friend's mortgage at the same company)
   can never attach itself — pair it to its own series instead.
+- **A pending bank row cannot be paired.** A bank export carries same-day
+  activity before it posts, with no balance and a description the bank
+  rewrites on posting. A match stores the description, so one made on the
+  pending row would go `broken` when the row posts. Both front ends refuse
+  the pair (`expected_store.refuse_pending_transaction`); the board shows the
+  row dimmed with a `pending` badge. Card rows never carry a balance and are
+  not affected.
 - **One transaction belongs to one occurrence — unless every claim states its
   share.** One occurrence may hold many transactions (two gym charges, split
   tax payments, both legs of a card payoff). The reverse — one bill paying

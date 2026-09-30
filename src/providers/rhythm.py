@@ -497,3 +497,102 @@ def parse_payments_csv(content: bytes, ctx: dict[str, Any]) -> dict[str, list[di
         for record in reader
     ]
     return {"payments": payments}
+
+
+# %%
+# Plan Constants #
+
+PLAN_PARSER_VERSION = "rhythm-plan/1.0.0"
+
+# The orders capture states rates in dollars per kWh; plans stores cents.
+_CENTS_PER_DOLLAR = Decimal("100")
+
+
+# %%
+# Plan Helpers #
+
+
+def _order_date(order: dict[str, Any], field: str) -> date | None:
+    """Parse an order's ISO date field; None when absent, ValueError naming the field when bad."""
+    value = order.get(field)
+    if value is None or value == "":
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"order {field} is not an ISO date: {value!r}") from exc
+
+
+def _order_decimal(order: dict[str, Any], field: str) -> Decimal | None:
+    """Read an order's numeric field as Decimal; None when absent, ValueError naming the field when bad."""
+    value = order.get(field)
+    if value is None or value == "":
+        return None
+    # A bool is an int to Decimal, and a true/false here is a changed payload.
+    if isinstance(value, bool):
+        raise ValueError(f"order {field} is not a number: {value!r}")
+    try:
+        number = Decimal(str(value))
+    except ArithmeticError as exc:
+        raise ValueError(f"order {field} is not a number: {value!r}") from exc
+    if not number.is_finite():
+        raise ValueError(f"order {field} is not a number: {value!r}")
+    return number
+
+
+def _dollars_to_cents(dollars: Decimal | None) -> Decimal | None:
+    """Convert a dollars-per-kWh rate to cents per kWh."""
+    return None if dollars is None else dollars * _CENTS_PER_DOLLAR
+
+
+def _plan_row(account_id: str, order: Any) -> dict[str, Any]:
+    """Build one plans row from one order object."""
+    if not isinstance(order, dict):
+        raise ValueError(f"order is not an object: {order!r}")
+    start_date = _order_date(order, "start_date")
+    if start_date is None:
+        raise ValueError(f"order {order.get('id')!r} is missing start_date")
+    buyback = _order_decimal(order, "solar_buyback_kwh_rate")
+    pays_buyback = order.get("solar_eligible") is True and buyback is not None and buyback != 0
+    return {
+        "account_id": account_id,
+        "start_date": start_date,
+        "end_date": _order_date(order, "end_date"),
+        "plan_name": order.get("title"),
+        "status": order.get("status"),
+        # The orders capture states no energy rate; the contract rate is on the bill PDF.
+        "energy_rate_cents_kwh": None,
+        "average_rate_cents_kwh_at_2000": _dollars_to_cents(_order_decimal(order, "average_rate_at_2000_kwh")),
+        "base_charge": _order_decimal(order, "base_charge_amount"),
+        "buyback_rate_cents_kwh": _dollars_to_cents(buyback) if pays_buyback else None,
+        "is_variable_rate": order.get("is_variable_rate"),
+        "is_time_of_use": order.get("is_time_of_use"),
+    }
+
+
+# %%
+# Plan Parser #
+
+
+def parse_api_orders_json(content: bytes, ctx: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Parse one Rhythm orders capture into plans rows, one per order object.
+
+    The capture is a list of the plan terms an invoice falls in: one, or two
+    when the invoice straddles a renewal. Rates arrive as dollars per kWh and
+    are stored as cents. buyback_rate_cents_kwh is None unless the order is
+    solar eligible and states a non-zero buyback rate. account_id always comes
+    from ctx. Raises ValueError when the payload is not a list, an order has
+    no start_date, a number or date does not parse, or two orders in the
+    capture share a start_date.
+    """
+    # parse_float keeps a rate sent as a bare JSON number out of float.
+    payload = json.loads(content, parse_float=Decimal)
+    if not isinstance(payload, list):
+        raise ValueError(f"orders payload is not a list: {type(payload).__name__}")
+    plans = [_plan_row(ctx["account_id"], order) for order in payload]
+    seen: set[date] = set()
+    for row in plans:
+        if row["start_date"] in seen:
+            raise ValueError(f"two orders in one capture share start_date {row['start_date'].isoformat()}")
+        seen.add(row["start_date"])
+    return {"plans": plans}

@@ -9,6 +9,7 @@ from typing import Any
 import pypdf
 import pytest
 
+import ingest_raw
 from providers import gexa, get_parser
 
 # %%
@@ -168,6 +169,15 @@ def test_registry_routes_gexa_documents() -> None:
     assert get_parser("gexa", "api_usage_json", "gexa_api_usage_2026-02-27.json") is None
 
 
+def test_plan_capture_classifies_and_routes_to_the_plan_parser() -> None:
+    name = "gexa_api_current-plan_20260227.json"
+    assert ingest_raw.classify(name) == ("api_orders_json", None)
+    assert get_parser("gexa", "api_orders_json", name) == (
+        gexa.parse_api_current_plan_json,
+        gexa.PLAN_PARSER_VERSION,
+    )
+
+
 # %%
 # gexa.parse_api_invoice_json #
 
@@ -193,6 +203,91 @@ def test_parse_api_invoice_json_rows() -> None:
     ]
     # A JSON number loses its trailing zero; the stored amount must not.
     assert str(result["bills"][0]["amount_due"]) == "140.50"
+
+
+# %%
+# gexa.parse_api_current_plan_json #
+
+# The current-plan response, cut to the fields the parser reads plus a few it
+# must ignore. Rates are cents per kWh as JSON numbers; dates are M/D/YYYY.
+API_CURRENT_PLAN: dict[str, Any] = {
+    "RenewStatus": None,
+    "CurrentPlan": {
+        "ProductCode": "SYNTHPLAN12",
+        "Description": "Synthetic Saver 12",
+        "ContractTerm": "12 Months",
+        "ContractStartDate": "2/3/2026",
+        "ContractEndDate": "2/3/2027",
+        "MonthlyFee": 0.0,
+        "ETFCharge": 150.0,
+        "EFL_Rate2000": 11.4425,
+        "EFL_RateEnergyCharge": 5.21,
+        "ProductDescription1": "Term: <b>12 months</b>| Plan Type: <b>Fixed </b> <br />A locked-in price",
+        "IsSolarBundled": False,
+    },
+    "RenewedPlan": None,
+    "ResultCode": 0,
+    "ResultMessage": None,
+}
+
+
+def _plan_json(**changes: Any) -> bytes:
+    """The plan response with CurrentPlan fields replaced."""
+    payload = {**API_CURRENT_PLAN, "CurrentPlan": {**API_CURRENT_PLAN["CurrentPlan"], **changes}}
+    return json.dumps(payload).encode()
+
+
+def test_parse_api_current_plan_json_row() -> None:
+    result = gexa.parse_api_current_plan_json(json.dumps(API_CURRENT_PLAN).encode(), CTX)
+    assert result == {
+        "plans": [
+            {
+                "account_id": ACCOUNT_ID,
+                "start_date": dt.date(2026, 2, 3),
+                "end_date": dt.date(2027, 2, 3),
+                "plan_name": "Synthetic Saver 12",
+                "status": None,
+                "energy_rate_cents_kwh": Decimal("5.21"),
+                "average_rate_cents_kwh_at_2000": Decimal("11.4425"),
+                "base_charge": Decimal("0.0"),
+                # The response states no buyback rate: the plan pays none.
+                "buyback_rate_cents_kwh": None,
+                "is_variable_rate": False,
+                "is_time_of_use": None,
+            }
+        ]
+    }
+    # A JSON number must not pass through float on its way to Decimal.
+    assert str(result["plans"][0]["average_rate_cents_kwh_at_2000"]) == "11.4425"
+
+
+def test_plan_type_is_unknown_when_the_description_does_not_say() -> None:
+    row = gexa.parse_api_current_plan_json(_plan_json(ProductDescription1=None), CTX)["plans"][0]
+    assert row["is_variable_rate"] is None
+    variable = _plan_json(ProductDescription1="Plan Type: <b>Variable</b>")
+    assert gexa.parse_api_current_plan_json(variable, CTX)["plans"][0]["is_variable_rate"] is True
+
+
+def test_solar_bundled_plan_raises_rather_than_recording_no_buyback() -> None:
+    with pytest.raises(ValueError, match="solar bundled"):
+        gexa.parse_api_current_plan_json(_plan_json(IsSolarBundled=True), CTX)
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (b"[]", "not an object"),
+        (json.dumps({**API_CURRENT_PLAN, "ResultCode": 1}).encode(), "ResultCode"),
+        (json.dumps({**API_CURRENT_PLAN, "CurrentPlan": None}).encode(), "no CurrentPlan"),
+        (_plan_json(ContractStartDate=None), "missing ContractStartDate"),
+        (_plan_json(ContractEndDate="2027-02-03"), "ContractEndDate is not a M/D/YYYY date"),
+        (_plan_json(EFL_RateEnergyCharge="five"), "EFL_RateEnergyCharge is not a number"),
+        (_plan_json(MonthlyFee=True), "MonthlyFee is not a number"),
+    ],
+)
+def test_malformed_plan_capture_raises(content: bytes, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        gexa.parse_api_current_plan_json(content, CTX)
 
 
 # %%

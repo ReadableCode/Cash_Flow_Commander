@@ -18,6 +18,12 @@ Two properties make it safe to call on every process start:
 Bump SCHEMA_VERSION whenever a table definition in db.py changes. Because
 create_all is create-if-missing, a bump makes new *tables* appear but does NOT
 add a column to an existing table - that needs its own explicit migration.
+
+The test suite never applies a bump. Its real-backend test connects to the
+configured database and asserts the stamped version equals SCHEMA_VERSION
+instead of calling ensure_schema, so it is red between a bump and the first
+entry-point run. A new table reaches a shared database only when someone runs
+an entry point on purpose. A fresh clone on SQLite is bootstrapped by the test.
 """
 
 # %%
@@ -36,7 +42,7 @@ except ImportError:  # pragma: no cover - import shim, same pattern as the store
 # %%
 # Version #
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # %%

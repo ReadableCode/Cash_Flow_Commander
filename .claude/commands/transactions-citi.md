@@ -11,9 +11,9 @@ before any parsing. `raw_documents` is the source of truth; anything derived is
 a rebuildable projection.
 
 Run this whenever you want fresh transactions. There is deliberately no
-schedule — the planner works out what is still missing from what is already on
-disk, so running it twice in a day is cheap and running it once a quarter still
-gets everything.
+schedule: the planner works out what is still missing from what is already
+landed, so running it twice in a day is cheap and running it once a quarter
+still gets everything.
 
 ## 0. Orient
 
@@ -32,8 +32,8 @@ be invoked from anywhere; the `uv run python ...` calls cannot.
   cadence**. A month you asked Citi for and got nothing back is covered; a
   month you never asked for is not, however much data surrounds it.
 - Load the `citi` entry from `providers.local.yaml` (repo root, gitignored):
-  `external_ids.accounts` (last-4 → label), `raw_dir`, `archive_dir`,
-  `backfill_start`, `notes`.
+  `external_ids.accounts` (last-4 → label), `download_dir`, `raw_dir`,
+  `data_dir`, `archive_dir`, `backfill_start`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or account numbers — copy
   the `citi` block from `template_providers.yaml` into `providers.local.yaml`,
   have the user fill it in, then re-run.
@@ -268,7 +268,7 @@ Header: `Status,Date,Description,Debit,Credit,Member Name`.
 - The filename is the **scope label, not the account or window**:
   `Since Aug 06, 2026.CSV`, `Date range.CSV`, and collisions get
   `Date range (1).CSV`. Detect a completed download ONLY by a
-  marker-timestamp watch on the download folder; the name proves nothing and
+  marker-timestamp watch on `download_dir`; the name proves nothing and
   repeats across accounts and runs.
 
 ### Empty windows export nothing — silently
@@ -303,15 +303,21 @@ uv run python transaction_downloader/capture.py --provider citi record-empty \
     --account <last4> --start <YYYY-MM-DD> --end <YYYY-MM-DD>
 ```
 
-Check the user's `notes` in `providers.local.yaml` for their browser download
-location before hunting for files. Identical bytes filed twice are a no-op.
-Every download is consumed exactly once — a new one is moved into the repo,
+The browser's download location is `download_dir` in `providers.local.yaml`.
+Look there before hunting for files; a bare filename passed to `capture.py file`
+or `land.sh` resolves against it. Identical bytes filed twice are a no-op.
+Every download is consumed exactly once: a new one is moved into `raw_dir`, and
 an identical re-download is discarded once its bytes are confirmed already
-filed — so a clean run leaves the download folder empty and anything left
-there is real unfiled work. A discarded re-download still records the window it
-was requested for, as a `refetched_window` marker, because coverage is tracked
-by requested window and identical bytes can never record it themselves.
-Nothing is ever overwritten.
+filed. So a clean run leaves none of its downloads in `download_dir`, and any
+left there is real unfiled work. A discarded re-download still records the
+window it was requested for, as a `refetched_window` marker, because coverage
+is tracked by requested window and identical bytes can never record it
+themselves. Nothing is ever overwritten.
+
+`raw_dir` is an archive. Captures, window markers and the manifest stay there
+after ingest; nothing in this command clears it. `raw_documents` holds the same
+bytes and is what the planner reads first. The files are the copy a person can
+open and the one `plan.py --from-disk` reads.
 
 ## 4.1 Months Citi will not serve
 
@@ -348,7 +354,7 @@ bash transaction_downloader/land.sh --provider citi \
 To run the ingest step alone:
 
 ```sh
-uv run python src/ingest_raw.py --provider citi data/citi/incoming
+uv run python src/ingest_raw.py --provider citi <raw_dir>
 ```
 
 That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
@@ -443,6 +449,10 @@ transactions upserted, and any popup or flow change you had to work around.
       every payment once, and a card with zero positive rows is the tell
 - [ ] months reported as inferred are ones you actually imported from an
       archive
+- [ ] `download_dir` holds no file whose name starts with `citi`, and none of
+      this run's downloads under the portal's own name. Citi names them by
+      scope label (`Date range.CSV`, `Since <date>.CSV`), which never starts
+      with the slug, so find them by the marker timestamp.
 
 ## 8. Keeping this command current
 
@@ -452,8 +462,9 @@ not match §3:
 
 1. Update §3 to what you actually saw, and change the "as last observed" date.
 2. Add any new popup to §2.
-3. Put user-specific quirks (download location, which cards export how far
-   back) in the `notes` field of `providers.local.yaml` — never in this file.
+3. Put the download location in `download_dir` and other user-specific quirks
+   (which cards export how far back) in the `notes` field of
+   `providers.local.yaml`, never in this file.
 4. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---

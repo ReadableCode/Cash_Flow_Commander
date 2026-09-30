@@ -80,12 +80,11 @@ def _provider_entry(provider: str) -> dict[str, Any]:
 def _resolve_repo_relative(path: str) -> str:
     """Expand a config path, resolving a relative one against the repo root.
 
-    Staging lives inside the repo (data/, gitignored), so the configured value is
-    relative. Resolving against the repo rather than the cwd means the tools work
-    from anywhere, and nothing outside the repo is ever written.
-
-    Goes through user_paths so a config written as `${ONEDRIVE_DOCS}/...`
-    resolves to whichever machine this is running on.
+    raw_dir is the archive of verbatim captures and normally sits in the synced
+    documents tree, written as `${ONEDRIVE_DOCS}/...`. That goes through
+    user_paths, which resolves it to whichever machine this is running on. An
+    absolute path is used as given. A relative path resolves against the repo
+    root rather than the cwd, so the tools work from anywhere.
     """
     return user_paths.expand_config_path(path, _REPO_ROOT)
 
@@ -265,7 +264,7 @@ def file_capture(
         suffix += 1
 
     # Move by default: a download is pulled out of the browser's folder and into
-    # repo staging exactly once, so nothing re-scans that folder on later runs.
+    # raw_dir exactly once, so nothing re-scans that folder on later runs.
     # Archived exports are copied instead — they are someone's kept files.
     if move:
         shutil.move(source_path, target)
@@ -355,7 +354,7 @@ def cmd_file(args: argparse.Namespace, raw_dir: str, provider: str) -> int:
             f"  + {entry['file']}  ({entry['layout']}, {entry['rows']} row(s), "
             f"{entry['min_date'] or 'empty'} .. {entry['max_date'] or 'empty'})"
         )
-        print(f"    moved out of {os.path.dirname(source) or '.'} into repo staging")
+        print(f"    moved out of {os.path.dirname(source) or '.'} into raw_dir")
 
     return 1 if failures else 0
 
@@ -457,9 +456,9 @@ def cmd_record_empty(args: argparse.Namespace, raw_dir: str, provider: str) -> i
     find any activity..."; Citi: the export icon silently does nothing), so
     without this the coverage model cannot tell an empty month from a
     never-fetched month and the planner asks for it forever. The marker file
-    records the observation; it flows through ingest like any capture so the
-    database — the durable coverage source — carries it after staging is
-    cleared.
+    records the observation and stays in raw_dir with the captures. It is
+    ingested like any capture, so the database, which the planner reads
+    first, carries it too.
     """
     try:
         start = datetime.date.fromisoformat(args.start)

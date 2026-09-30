@@ -67,7 +67,7 @@ def test_ensure_schema_creates_every_table_from_nothing(engine: Any) -> None:
     tables = set(inspect(engine).get_table_names())
     assert set(db.metadata.tables) <= tables
     # The tables the app actually reads, not just whatever metadata happens to hold.
-    for expected in ("raw_documents", "transactions", "bills", "expected_series", "forecast_days"):
+    for expected in ("raw_documents", "transactions", "bills", "plans", "expected_series", "forecast_days"):
         assert expected in tables
 
 

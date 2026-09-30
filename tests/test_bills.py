@@ -19,7 +19,7 @@ import db
 import parse_raw
 import raw_store
 import usage_store
-from providers import rhythm
+from providers import get_parser, rhythm
 
 # %%
 # Synthetic fixtures (never real invoices, amounts, addresses, or personal data) #
@@ -65,6 +65,40 @@ API_INVOICE_PAGE = {
     ],
 }
 API_INVOICE_JSON = json.dumps(API_INVOICE_PAGE).encode()
+
+# One orders capture: a list of plan-term objects, rates as strings in dollars
+# per kWh. The second term starts the day the first ends.
+ORDER_BUYBACK = {
+    "id": 9000001,
+    "start_date": "2026-06-28",
+    "end_date": "2026-07-28",
+    "status": "EXPIRED",
+    "offersnapshot_id": 8000001,
+    "title": "Synthetic Buyback Flex",
+    "average_rate_at_2000_kwh": "0.201234",
+    "base_charge_amount": "9.95000",
+    "solar_eligible": True,
+    "solar_generation_capped": False,
+    "solar_buyback_kwh_rate": "0.03500",
+    "is_time_of_use": False,
+    "is_variable_rate": True,
+}
+ORDER_RENEWAL = {
+    **ORDER_BUYBACK,
+    "id": 9000002,
+    "start_date": "2026-07-28",
+    "end_date": "2026-08-28",
+    "status": "ACTIVE",
+    "offersnapshot_id": 8000002,
+    "title": "Synthetic Fixed 12",
+    "average_rate_at_2000_kwh": "0.185000",
+    "is_variable_rate": False,
+}
+
+
+def _orders_json(*orders: dict[str, Any]) -> bytes:
+    return json.dumps(list(orders)).encode()
+
 
 # payments.csv export: three payments, the middle one with a blank confirmation.
 PAYMENTS_CSV = (
@@ -448,6 +482,116 @@ def test_parse_api_invoice_json_rows() -> None:
 
 
 # %%
+# rhythm.parse_api_orders_json #
+
+
+def test_parse_api_orders_json_single_order() -> None:
+    result = rhythm.parse_api_orders_json(_orders_json(ORDER_BUYBACK), CTX)
+    assert set(result) == {"plans"}
+    assert result["plans"] == [
+        {
+            "account_id": ACCOUNT_ID,
+            "start_date": dt.date(2026, 6, 28),
+            "end_date": dt.date(2026, 7, 28),
+            "plan_name": "Synthetic Buyback Flex",
+            "status": "EXPIRED",
+            "energy_rate_cents_kwh": None,
+            "average_rate_cents_kwh_at_2000": Decimal("20.1234"),
+            "base_charge": Decimal("9.95"),
+            "buyback_rate_cents_kwh": Decimal("3.5"),
+            "is_variable_rate": True,
+            "is_time_of_use": False,
+        }
+    ]
+    # Dollars become cents exactly, in Decimal, never through float.
+    row = result["plans"][0]
+    for column in ("average_rate_cents_kwh_at_2000", "base_charge", "buyback_rate_cents_kwh"):
+        assert isinstance(row[column], Decimal), column
+
+
+def test_parse_api_orders_json_two_orders() -> None:
+    """An invoice that straddles a renewal lists both terms."""
+    plans = rhythm.parse_api_orders_json(_orders_json(ORDER_BUYBACK, ORDER_RENEWAL), CTX)["plans"]
+    assert [(row["start_date"], row["end_date"]) for row in plans] == [
+        (dt.date(2026, 6, 28), dt.date(2026, 7, 28)),
+        (dt.date(2026, 7, 28), dt.date(2026, 8, 28)),
+    ]
+    assert [row["plan_name"] for row in plans] == ["Synthetic Buyback Flex", "Synthetic Fixed 12"]
+    assert [row["status"] for row in plans] == ["EXPIRED", "ACTIVE"]
+    assert [row["is_variable_rate"] for row in plans] == [True, False]
+    assert plans[1]["average_rate_cents_kwh_at_2000"] == Decimal("18.5")
+
+
+def test_parse_api_orders_json_account_comes_from_ctx_only() -> None:
+    order = {**ORDER_BUYBACK, "account_id": "ACCT-IN-DOCUMENT"}
+    plans = rhythm.parse_api_orders_json(_orders_json(order), CTX)["plans"]
+    assert plans[0]["account_id"] == ACCOUNT_ID
+
+
+def test_parse_api_orders_json_not_solar_eligible_pays_no_buyback() -> None:
+    order = {**ORDER_BUYBACK, "solar_eligible": False}
+    plans = rhythm.parse_api_orders_json(_orders_json(order), CTX)["plans"]
+    assert plans[0]["buyback_rate_cents_kwh"] is None
+
+
+@pytest.mark.parametrize("rate", ["0.00000", "0", None])
+def test_parse_api_orders_json_zero_or_absent_rate_pays_no_buyback(rate: str | None) -> None:
+    order = {**ORDER_BUYBACK, "solar_buyback_kwh_rate": rate}
+    plans = rhythm.parse_api_orders_json(_orders_json(order), CTX)["plans"]
+    assert plans[0]["buyback_rate_cents_kwh"] is None
+
+
+def test_parse_api_orders_json_open_ended_term() -> None:
+    order = {**ORDER_BUYBACK, "end_date": None}
+    plans = rhythm.parse_api_orders_json(_orders_json(order), CTX)["plans"]
+    assert plans[0]["end_date"] is None
+
+
+def test_parse_api_orders_json_empty_list() -> None:
+    assert rhythm.parse_api_orders_json(b"[]", CTX) == {"plans": []}
+
+
+def test_parse_api_orders_json_not_a_list_raises() -> None:
+    with pytest.raises(ValueError, match="not a list"):
+        rhythm.parse_api_orders_json(json.dumps({"results": [ORDER_BUYBACK]}).encode(), CTX)
+
+
+def test_parse_api_orders_json_missing_start_date_raises() -> None:
+    order = {key: value for key, value in ORDER_BUYBACK.items() if key != "start_date"}
+    with pytest.raises(ValueError, match="start_date"):
+        rhythm.parse_api_orders_json(_orders_json(order), CTX)
+
+
+@pytest.mark.parametrize(
+    "field", ["average_rate_at_2000_kwh", "base_charge_amount", "solar_buyback_kwh_rate"]
+)
+def test_parse_api_orders_json_unparseable_number_raises(field: str) -> None:
+    order = {**ORDER_BUYBACK, field: "n/a"}
+    with pytest.raises(ValueError, match=field):
+        rhythm.parse_api_orders_json(_orders_json(order), CTX)
+
+
+def test_parse_api_orders_json_unparseable_date_raises() -> None:
+    order = {**ORDER_BUYBACK, "end_date": "07/28/2026"}
+    with pytest.raises(ValueError, match="end_date"):
+        rhythm.parse_api_orders_json(_orders_json(order), CTX)
+
+
+def test_parse_api_orders_json_duplicate_start_date_raises() -> None:
+    twin = {**ORDER_RENEWAL, "start_date": ORDER_BUYBACK["start_date"]}
+    with pytest.raises(ValueError, match="share start_date 2026-06-28"):
+        rhythm.parse_api_orders_json(_orders_json(ORDER_BUYBACK, twin), CTX)
+
+
+def test_get_parser_routes_orders_json() -> None:
+    assert get_parser("rhythm", "api_orders_json", "rhythm_api_orders_INV-TEST-0001.json") == (
+        rhythm.parse_api_orders_json,
+        rhythm.PLAN_PARSER_VERSION,
+    )
+    assert rhythm.PLAN_PARSER_VERSION == "rhythm-plan/1.0.0"
+
+
+# %%
 # rhythm.parse_payments_csv #
 
 
@@ -682,6 +826,58 @@ def test_upsert_payments_idempotent(sqlite_engine: Engine) -> None:
 
 
 # %%
+# bill_store.upsert_plans #
+
+
+def _fetch_plans(engine: Engine) -> list[RowMapping]:
+    with engine.connect() as conn:
+        return list(conn.execute(select(db.plans).order_by(db.plans.c.start_date)).mappings())
+
+
+def test_upsert_plans_idempotent_and_restated_status_overwrites(sqlite_engine: Engine) -> None:
+    row = {
+        "account_id": ACCOUNT_ID,
+        "start_date": dt.date(2026, 6, 28),
+        "end_date": dt.date(2026, 7, 28),
+        "plan_name": "Synthetic Buyback Flex",
+        "status": "ACTIVE",
+        "energy_rate_cents_kwh": None,
+        "average_rate_cents_kwh_at_2000": Decimal("20.1234"),
+        "base_charge": Decimal("9.95"),
+        "buyback_rate_cents_kwh": Decimal("3.5000"),
+        "is_variable_rate": True,
+        "is_time_of_use": False,
+        "raw_document_id": None,
+        "parser_version": "test-plans/0",
+    }
+    assert bill_store.upsert_plans(sqlite_engine, []) == {"upserted": 0}
+    assert bill_store.upsert_plans(sqlite_engine, [row]) == {"upserted": 1}
+    assert bill_store.upsert_plans(sqlite_engine, [row]) == {"upserted": 1}
+
+    stored = _fetch_plans(sqlite_engine)
+    assert len(stored) == 1
+    assert stored[0]["status"] == "ACTIVE"
+    assert stored[0]["average_rate_cents_kwh_at_2000"] == Decimal("20.1234")
+    assert stored[0]["base_charge"] == Decimal("9.95")
+    assert stored[0]["buyback_rate_cents_kwh"] == Decimal("3.5000")
+    assert stored[0]["energy_rate_cents_kwh"] is None
+
+    # The same term restated by a later capture: no new row, the term refreshed.
+    restated = dict(row, status="EXPIRED", end_date=dt.date(2026, 7, 27), parser_version="test-plans/1")
+    assert bill_store.upsert_plans(sqlite_engine, [restated]) == {"upserted": 1}
+    stored = _fetch_plans(sqlite_engine)
+    assert len(stored) == 1
+    assert stored[0]["status"] == "EXPIRED"
+    assert stored[0]["end_date"] == dt.date(2026, 7, 27)
+    assert stored[0]["parser_version"] == "test-plans/1"
+
+    # Another term of the same account is its own row.
+    later = dict(row, start_date=dt.date(2026, 7, 28), end_date=None)
+    assert bill_store.upsert_plans(sqlite_engine, [later]) == {"upserted": 1}
+    assert len(_fetch_plans(sqlite_engine)) == 2
+
+
+# %%
 # End-to-end: ingest -> parse_raw CLI -> bills + line items #
 
 
@@ -747,6 +943,55 @@ def test_parse_raw_bills_end_to_end(
     other = _fetch_bill(sqlite_engine, "INV-TEST-0002")
     assert other["amount_due"] == Decimal("114.50")
     assert _fetch_line_items(sqlite_engine, "INV-TEST-0002") == []
+
+
+def test_parse_raw_plans_end_to_end(sqlite_engine: Engine, capsys: pytest.CaptureFixture[str]) -> None:
+    # Two invoices' captures: the first holds one term, the second straddles a
+    # renewal and restates that term beside the next one.
+    first_id = _ingest_doc(
+        sqlite_engine, "api_orders_json", _orders_json(ORDER_BUYBACK), "rhythm_api_orders_INV-TEST-0001.json"
+    )
+    second_id = _ingest_doc(
+        sqlite_engine,
+        "api_orders_json",
+        _orders_json(ORDER_BUYBACK, ORDER_RENEWAL),
+        "rhythm_api_orders_INV-TEST-0002.json",
+    )
+
+    assert parse_raw.main(["--account-id", ACCOUNT_ID, "--dry-run"]) == 0
+    assert "would upsert 3 plans" in capsys.readouterr().out
+    assert _count_rows(sqlite_engine, db.plans) == 0
+    assert _fetch_doc(sqlite_engine, first_id)["parse_status"] == "pending"
+
+    assert parse_raw.main(["--account-id", ACCOUNT_ID]) == 0
+    assert "upserted 3 plans" in capsys.readouterr().out
+
+    for doc_id in (first_id, second_id):
+        doc = _fetch_doc(sqlite_engine, doc_id)
+        assert doc["parse_status"] == "ok", doc["parse_error"]
+        assert doc["parser_version"] == rhythm.PLAN_PARSER_VERSION
+        assert doc["parse_error"] is None
+
+    # The repeated term is one row, stamped by the last capture that stated it.
+    plans = _fetch_plans(sqlite_engine)
+    assert [row["start_date"] for row in plans] == [dt.date(2026, 6, 28), dt.date(2026, 7, 28)]
+    for row in plans:
+        assert row["account_id"] == ACCOUNT_ID
+        assert row["raw_document_id"] == second_id
+        assert row["parser_version"] == rhythm.PLAN_PARSER_VERSION
+    assert plans[0]["end_date"] == dt.date(2026, 7, 28)
+    assert plans[0]["plan_name"] == "Synthetic Buyback Flex"
+    assert plans[0]["status"] == "EXPIRED"
+    assert plans[0]["energy_rate_cents_kwh"] is None
+    assert plans[0]["average_rate_cents_kwh_at_2000"] == Decimal("20.1234")
+    assert plans[0]["base_charge"] == Decimal("9.95")
+    assert plans[0]["buyback_rate_cents_kwh"] == Decimal("3.5000")
+    assert plans[0]["is_variable_rate"] is True
+    assert plans[0]["is_time_of_use"] is False
+
+    # Reparsing everything lands on the same two rows.
+    assert parse_raw.main(["--account-id", ACCOUNT_ID, "--status", "all"]) == 0
+    assert _count_rows(sqlite_engine, db.plans) == 2
 
 
 # %%

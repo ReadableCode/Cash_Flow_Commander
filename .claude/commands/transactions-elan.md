@@ -13,9 +13,9 @@ banks and credit unions) and land them in Cash Flow Commander's raw store.
 projection.
 
 Run this whenever you want fresh transactions. There is deliberately no
-schedule — the planner works out what is still missing from what is already on
-disk, so running it twice in a day is cheap and running it once a quarter still
-gets everything.
+schedule: the planner works out what is still missing from what is already
+landed, so running it twice in a day is cheap and running it once a quarter
+still gets everything.
 
 ## 0. Orient
 
@@ -34,8 +34,8 @@ be invoked from anywhere; the `uv run python ...` calls cannot.
   cadence**. A month you asked Elan for and got nothing back is covered; a
   month you never asked for is not, however much data surrounds it.
 - Load the `elan` entry from `providers.local.yaml` (repo root, gitignored):
-  `external_ids.accounts` (last-4 → label), `raw_dir`, `archive_dir`,
-  `backfill_start`, `notes`.
+  `external_ids.accounts` (last-4 → label), `download_dir`, `raw_dir`,
+  `data_dir`, `archive_dir`, `backfill_start`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or account numbers — copy
   the `elan` block from `template_providers.yaml` into `providers.local.yaml`,
   have the user fill it in, then re-run.
@@ -230,8 +230,8 @@ planner stops re-asking.
 
 ### Where the file lands, and what it is called
 
-Wherever the browser profile says — record the real location in
-`providers.local.yaml` notes. The filename pattern is
+Wherever the browser profile says. The real location is the `download_dir` key
+of `providers.local.yaml`. The filename pattern is
 `<account label> - <last4>_<MM-DD-YYYY start>_<MM-DD-YYYY end>.csv`, with
 ` (1)` appended on collision — **but the end segment is NOT reliably the
 requested end date**: three downloads whose requested end was "today" came
@@ -239,7 +239,7 @@ back named four days later (2026-08-24 ×2 → `..._08-28-2026.csv`,
 2026-09-04 → `..._09-08-2026.csv`), while a closed past month requested as
 07/01–07/31 on 2026-09-24 came back `..._07-31-2026.csv`, matching exactly.
 The offset is not a contract either way. Detect a completed download ONLY by
-a marker-timestamp watch on the download folder; never trust the name.
+a marker-timestamp watch on `download_dir`; never trust the name.
 
 Chrome's multiple-download block applies: the second download of a session
 silently produces no file until the user clicks Allow on the
@@ -276,15 +276,21 @@ uv run python transaction_downloader/capture.py --provider elan record-empty \
     --account <last4> --start <YYYY-MM-DD> --end <YYYY-MM-DD>
 ```
 
-Check the user's `notes` in `providers.local.yaml` for their browser download
-location before hunting for files. Identical bytes filed twice are a no-op.
-Every download is consumed exactly once — a new one is moved into the repo,
+The browser's download location is `download_dir` in `providers.local.yaml`.
+Look there before hunting for files; a bare filename passed to `capture.py file`
+or `land.sh` resolves against it. Identical bytes filed twice are a no-op.
+Every download is consumed exactly once: a new one is moved into `raw_dir`, and
 an identical re-download is discarded once its bytes are confirmed already
-filed — so a clean run leaves the download folder empty and anything left
-there is real unfiled work. A discarded re-download still records the window it
-was requested for, as a `refetched_window` marker, because coverage is tracked
-by requested window and identical bytes can never record it themselves.
-Nothing is ever overwritten.
+filed. So a clean run leaves none of its downloads in `download_dir`, and any
+left there is real unfiled work. A discarded re-download still records the
+window it was requested for, as a `refetched_window` marker, because coverage
+is tracked by requested window and identical bytes can never record it
+themselves. Nothing is ever overwritten.
+
+`raw_dir` is an archive. Captures, window markers and the manifest stay there
+after ingest; nothing in this command clears it. `raw_documents` holds the same
+bytes and is what the planner reads first. The files are the copy a person can
+open and the one `plan.py --from-disk` reads.
 
 ## 4.1 Months Elan will not serve
 
@@ -321,7 +327,7 @@ bash transaction_downloader/land.sh --provider elan \
 To run the ingest step alone:
 
 ```sh
-uv run python src/ingest_raw.py --provider elan data/elan/incoming
+uv run python src/ingest_raw.py --provider elan <raw_dir>
 ```
 
 That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
@@ -404,6 +410,10 @@ transactions upserted, and any popup or flow change you had to work around.
       once)
 - [ ] months reported as inferred are ones you actually imported from an
       archive
+- [ ] `download_dir` holds no file whose name starts with `elan`, and none of
+      this run's downloads under the portal's own name. Elan names them
+      `<account label> - <last4>_<start>_<end>.csv`, which does not start with
+      the slug, so find them by the marker timestamp.
 
 ## 8. Keeping this command current
 
@@ -413,8 +423,9 @@ not match §3:
 
 1. Update §3 to what you actually saw, and change the "as last observed" date.
 2. Add any new popup to §2.
-3. Put user-specific quirks (download location, which cards export how far
-   back) in the `notes` field of `providers.local.yaml` — never in this file.
+3. Put the download location in `download_dir` and other user-specific quirks
+   (which cards export how far back) in the `notes` field of
+   `providers.local.yaml`, never in this file.
 4. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---

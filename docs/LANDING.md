@@ -19,7 +19,7 @@ Every provider command implements all five stages. A command that stops at `raw_
 
 Every command must be safe and cheap to run repeatedly, forever. Three properties make that true, and none of them may be weakened:
 
-- **Overlap is free.** Raw documents dedup by sha256 at ingest; `usage_intervals` upserts on `(account_id, ts, granularity, metric)` and `bills` on its own natural key. Re-fetching a period already held costs bandwidth and nothing else.
+- **Overlap is free.** Raw documents dedup by sha256 at ingest; `usage_intervals` upserts on `(account_id, ts, granularity, metric)`, `bills` on its own natural key and `plans` on `(account_id, start_date)`. Re-fetching a period already held costs bandwidth and nothing else.
 - **Therefore always err wide.** Never try to fetch precisely. A window that overlaps what you hold is correct; a window that misses a day is a permanent gap if the provider's retention lapses first.
 - **Never fetch blindly.** "Everything, every time" wastes a retention-limited window and, on some providers, is impossible. "Since last run" silently loses interior gaps a provider backfilled late. Ask the database instead — see below.
 
@@ -69,7 +69,9 @@ Examples:
 
 `doc_type` vocabulary comes from the ingest layer: `bill_pdf`, `api_invoice_json`, `api_usage_json`, `api_orders_json`, `weekly_email`, `payment_email`, `csv_export`, `smt_export`, `other`.
 
-## 5. Staging
+## 5. Filing captures
+
+The browser drops downloads in the provider's `download_dir`. Move each capture out of it as soon as it lands. `raw_dir` is the archive of verbatim captures: files stay there after ingestion.
 
 Everything lands in the provider's `raw_dir` before ingestion. For browser-fetched data, use Blob + `a.download` downloads for anything large — JS tool results truncate, and a truncated capture is not verbatim.
 
@@ -83,6 +85,8 @@ uv run python src/ingest_raw.py --provider <slug> <dirs that hold captures>
 
 sha256 dedup makes re-runs free — when in doubt, over-capture and re-ingest. The CLI can also infer the provider from first-level folder names when `--provider` is omitted, but provider commands always pass it explicitly.
 
+The same bytes never belong to two providers. A document whose bytes are already held under another provider is reported as a `provider_conflict`, naming the holder, and the command exits 1: nothing was written, and the document is invisible to every query for the provider it was sent to. One of the two labels is wrong. `src/relabel_raw.py` corrects the held row (dry run by default) and resets it to pending; `src/purge_raw.py` removes a document that should never have been ingested.
+
 ## 7. Email capture is optional
 
 Email capture depends on the user's connected tools. It is a supplementary artifact source, never required — a provider command must succeed without it.
@@ -94,6 +98,8 @@ uv run python src/parse_raw.py --provider <slug>
 ```
 
 Routes each raw document to its parser via `src/providers/__init__.py::_REGISTRY` and upserts the typed rows. A document with no registered parser stays pending and is reported — that is the signal to write a parser, never to hand-load data.
+
+A plan snapshot (`api_orders_json`) lands in `plans`, one row per account and plan term. Every capture made during a term restates it, and they all upsert onto the one row.
 
 On a parse failure: fix the parser code, bump its `PARSER_VERSION`, and re-run. Never hand-edit parsed output. Upserts are keyed naturally, so mass-reprocessing is idempotent.
 
@@ -122,6 +128,7 @@ Dashboards are **repo artifacts, not Grafana-only state**. Grafana's database is
 After every run:
 
 - [ ] Every fetched artifact has a verbatim file on disk.
+- [ ] The download location holds no file whose name starts with this provider's slug.
 - [ ] `raw_documents` growth == new-artifact count.
 - [ ] Re-run ingest → 100% dedup, zero new rows.
 - [ ] `parse_raw.py` reports zero errored and zero no_parser documents.

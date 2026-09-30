@@ -267,6 +267,38 @@ payments = Table(
     UniqueConstraint("account_id", "paid_at", "amount", name="uq_payments_natural"),
 )
 
+# One row per account and plan term: what the provider contracted to charge and
+# pay over a date range, as opposed to what any one bill charged.
+plans = Table(
+    "plans",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("account_id", Text, nullable=False),
+    Column("start_date", Date, nullable=False),  # first day of the term
+    # The provider's own term end. The next term starts on this date, so the
+    # term is the half-open range [start_date, end_date). NULL = open-ended.
+    Column("end_date", Date, nullable=True),
+    Column("plan_name", Text, nullable=True),
+    Column("status", Text, nullable=True),  # the provider's own word, e.g. 'ACTIVE' | 'EXPIRED'
+    # NULL when the source states none, e.g. a variable-rate plan.
+    Column("energy_rate_cents_kwh", Numeric(8, 4), nullable=True),
+    # The advertised all-in average at 2000 kWh.
+    Column("average_rate_cents_kwh_at_2000", Numeric(8, 4), nullable=True),
+    Column("base_charge", Numeric(12, 2), nullable=True),  # $ per billing cycle
+    # NULL = the plan pays no buyback; checks.bills_buyback_mismatch reads this.
+    Column("buyback_rate_cents_kwh", Numeric(8, 4), nullable=True),
+    Column("is_variable_rate", Boolean, nullable=True),
+    Column("is_time_of_use", Boolean, nullable=True),
+    Column(
+        "raw_document_id",
+        Integer,
+        ForeignKey(raw_documents.c.id, name="fk_plans_raw_document"),
+        nullable=True,
+    ),
+    Column("parser_version", Text, nullable=False),
+    UniqueConstraint("account_id", "start_date", name="uq_plans_account_start"),
+)
+
 
 transactions = Table(
     "transactions",

@@ -203,6 +203,7 @@ def build_state(
                 "description": str(txn_row["description"]),
                 "amount": float(txn_row["amount"]),
                 "occurrence": int(txn_row["occurrence"]),
+                "pending": bool(txn_row["pending"]),
                 "match_ids": [],
             }
         )
@@ -350,7 +351,8 @@ def apply_match(engine, payload: dict) -> int:
 
     payload: occurrence_id, txn {account_id, post_date, description, amount,
     occurrence}, matched_amount (None = whole transaction), source, note.
-    Validation beyond shape (already claimed, split rules) is add_match's.
+    A pending bank row is refused by expected_store.refuse_pending_transaction;
+    validation beyond shape (already claimed, split rules) is add_match's.
     """
     txn = payload["txn"]
     txn_dict = {
@@ -366,6 +368,7 @@ def apply_match(engine, payload: dict) -> int:
     matched_amount = payload.get("matched_amount")
     if matched_amount is not None:
         matched_amount = float(matched_amount)
+    expected_store.refuse_pending_transaction(engine, txn_dict)
     return expected_store.add_match(
         engine,
         int(payload["occurrence_id"]),
@@ -433,6 +436,8 @@ def apply_share(engine, payload: dict) -> dict:
         "amount": float(old["txn_amount"]),
         "occurrence": int(old["txn_occurrence"]),
     }
+    # Before the void: a refusal after it would leave the whole claim voided.
+    expected_store.refuse_pending_transaction(engine, txn_dict)
     expected_store.void_match(
         engine, match_id, note="split into shares on the pairing board"
     )

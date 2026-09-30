@@ -116,9 +116,14 @@ provider-independent rules into `.claude/commands/transactions-<slug>.md`:
 - **4 File each download verbatim** — `--start`/`--end` are the window you
   *requested*, not the dates inside the file; record empty windows explicitly
   so the planner stops re-asking.
+  `raw_dir` is the archive of verbatim captures: captures and window markers
+  stay there after ingest, so the section must not tell a run to clear it.
 - **5 Land into raw_documents**, **6 Normalize**, **7 Report and verify**
   (checklist), **8 Keeping this command current**, and the pre-commit hygiene
   checklist at the bottom.
+  Keep the download-location line in the §7 checklist, and word it for this
+  portal: a bank's own download names rarely start with the slug, so name the
+  pattern the portal uses as well.
 
 Leave every portal-specific section as a clearly marked TODO block
 (`<!-- TODO: fill after discovery session -->`) — never invent endpoints, form
@@ -129,8 +134,11 @@ mechanics, or retention numbers.
 1. If `providers.local.yaml` does not exist at the repo root, create it by
    copying `template_providers.yaml`.
 2. Append a `<slug>` stub following the shape of the `chase` block:
-   `external_ids.accounts` (last-4 → label), `raw_dir`, `archive_dir`,
-   `backfill_start`, `notes`. Tell the user to set `backfill_start` explicitly
+   `external_ids.accounts` (last-4 → label), `download_dir`, `raw_dir`,
+   `data_dir`, `archive_dir`, `backfill_start`, `notes`. `raw_dir` is the
+   archive of verbatim captures; write it as a `${ONEDRIVE_DOCS}/...` path so
+   every machine that syncs the folder has the files.
+   Tell the user to set `backfill_start` explicitly
    when the goal is "all of it" — anchoring history to the oldest existing
    capture has silently suppressed a whole backfill before (one stray capture
    made a 24-month plan look like a 2-month refresh).
@@ -187,10 +195,11 @@ If accepted, with the user:
      "wants to download multiple files" Allow, without which every download
      after the first silently vanishes).
 6. Downloads land wherever the browser profile says, not necessarily
-   `~/Downloads` — record the real location in the `notes` field of
+   `~/Downloads`. Record the real location in the `download_dir` key of
    `providers.local.yaml`. Filename patterns can differ per product; detect a
    completed download by watching for a file newer than a marker timestamp
-   taken just before triggering it, never by predicting the name.
+   taken just before triggering it, never by predicting the name. File every
+   probe download out of `download_dir` before the session ends.
 7. Write the findings into §3 of the new command, replacing the TODO blocks,
    stamped **"as last observed YYYY-MM-DD"**. Describe forms and endpoints
    generically — no account numbers, internal account ids, tokens, or other
@@ -202,9 +211,12 @@ If accepted, with the user:
    against the new command file: no account numbers or last-4s, no personal
    paths, no emails, no credentials, no balances or merchant names — personal
    values only via `providers.local.yaml`. Fix violations before proceeding.
-2. Restate the §2 list of remaining code work — the new command is not
+2. Check that `download_dir` holds no file whose name starts with `<slug>` and
+   none of this session's probe downloads under the portal's own name. A
+   discovery session writes probe downloads, and no later run looks for them.
+3. Restate the §2 list of remaining code work — the new command is not
    runnable until the planner, capture, and parser support this source.
-3. Tell the user `.claude/commands/transactions-<slug>.md` is ready for review
+4. Tell the user `.claude/commands/transactions-<slug>.md` is ready for review
    and commit. Do NOT commit anything yourself — the user reviews and commits.
    Finished per-provider transaction commands are deployed globally like
    `/transactions-chase`; remind the user to add a deployment entry for the

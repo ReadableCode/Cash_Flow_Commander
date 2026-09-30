@@ -13,11 +13,12 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine, RowMapping
 
+import coverage
 import db
 import parse_raw
 import raw_store
 import usage_store
-from providers import get_parser, rhythm, smt
+from providers import enphase_enlighten, get_parser, rhythm, smt
 
 # %%
 # Synthetic fixtures (never real accounts, ESI IDs, or personal data) #
@@ -297,10 +298,13 @@ def test_get_parser_dispatch() -> None:
     )
     # csv_export is name-gated: only hourly_usage.csv has a parser.
     assert get_parser("rhythm", "csv_export", "monthly_bills.csv") is None
-    assert get_parser("rhythm", "smt_export", "smt_export_synthetic.csv") == (
+    # The smart-meter series has its own provider; no retail provider parses it.
+    assert get_parser("smt", "smt_export", "smt_export_synthetic.csv") == (
         smt.parse_interval_csv,
         smt.PARSER_VERSION,
     )
+    assert get_parser("rhythm", "smt_export", "smt_export_synthetic.csv") is None
+    assert get_parser("gexa", "smt_export", "smt_export_synthetic.csv") is None
     assert get_parser("rhythm", "weekly_email", "synthetic_weekly.txt") is None
     assert get_parser("unknown_provider", "api_usage_json", "anything.json") is None
 
@@ -408,6 +412,67 @@ def test_parse_raw_end_to_end(sqlite_engine: Engine) -> None:
     # The error doc was not retried (default scope is pending docs) and rows are unchanged.
     assert _fetch_doc(sqlite_engine, bad_id)["parse_status"] == "error"
     assert len(_fetch_intervals(sqlite_engine)) == 4
+
+
+def test_a_document_held_as_evidence_parses_ok_with_no_rows(
+    sqlite_engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Enlighten system metadata capture has a parser that extracts nothing."""
+    result = raw_store.ingest_bytes(
+        sqlite_engine,
+        provider="enphase_enlighten",
+        doc_type="other",
+        source="manual",
+        content=b'{"synthetic": true, "system": {}}',
+        original_name="enphase_enlighten_api_system_today_2026-09-28.json",
+    )
+
+    assert parse_raw.main(["--account-id", ACCOUNT_ID]) == 0
+
+    doc = _fetch_doc(sqlite_engine, result["id"])
+    assert doc["parse_status"] == "ok"
+    assert doc["parser_version"] == enphase_enlighten.PARSER_VERSION
+    assert doc["parse_error"] is None
+    assert "parsed ok 1, errored 0, no_parser 0, upserted 0 rows" in capsys.readouterr().out
+    with sqlite_engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(db.usage_intervals)).scalar_one() == 0
+
+
+# %%
+# The smart-meter series has its own provider #
+
+
+def test_smart_meter_series_lands_under_its_own_provider(
+    sqlite_engine: Engine, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The meter's series is keyed to the smt account, so coverage finds it there
+    and a retail provider's account holds none of it."""
+    config_path = tmp_path / "providers.local.yaml"
+    config_path.write_text(
+        'smt:\n  account_number: "ESI-TEST-1"\nrhythm:\n  account_number: "ACCT-TEST-1"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(parse_raw, "PROVIDERS_YAML_PATH", str(config_path))
+    raw_store.ingest_bytes(
+        sqlite_engine,
+        provider="smt",
+        doc_type="smt_export",
+        source="manual",
+        content=SMT_CSV,
+        original_name="smt_IntervalData_synthetic.csv",
+    )
+
+    assert parse_raw.main(["--provider", "smt"]) == 0
+
+    config = coverage._load_providers_config(str(config_path))
+    smt_account = coverage.account_id_for_provider("smt", config)
+    assert smt_account == "ESI-TEST-1"
+    assert coverage.series_keys(sqlite_engine, smt_account) == [
+        ("ESI-TEST-1", "15min", "consumption"),
+        ("ESI-TEST-1", "15min", "generation"),
+    ]
+    rhythm_account = coverage.account_id_for_provider("rhythm", config)
+    assert coverage.series_keys(sqlite_engine, rhythm_account) == []
 
 
 # %%

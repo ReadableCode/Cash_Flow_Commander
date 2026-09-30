@@ -8,7 +8,8 @@ could not join.
 The case that motivated it: every value panel on `cfc-solar-net-metering`
 starts with
 
-    FROM bills b JOIN bill_line_items li USING (invoice_number)
+    FROM bills b JOIN bill_line_items li
+      ON li.account_id = b.account_id AND li.invoice_number = b.invoice_number
     ...
     WHERE energy_rate_cents IS NOT NULL
 
@@ -30,6 +31,12 @@ A metered day no bill covers is valued at nothing, and a bill that does not
 exist cannot show up in a check that reads bills. A billed period whose
 interval data stops partway is valued on the days that happen to be held.
 
+One check reads the plan terms beside the bill. A plan that pays buyback, a
+meter that shows export and a bill with no buyback line is a credit that failed
+to parse, and the panels read it as a buyback of zero. A buyback line on a plan
+that pays none is a line filed under the wrong category. A bill whose plan term
+is not recorded is not judged.
+
 Exit code is 1 when any check finds something, so a provider command cannot
 finish green while its dashboards are quietly understating.
 """
@@ -47,7 +54,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import yaml
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.engine import Engine
 
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -70,6 +77,11 @@ ENERGY_CATEGORY = "energy"
 # Line-item category that carries the per-kWh part of delivery, the other half
 # of what a kWh that was never bought would have cost.
 VARIABLE_DELIVERY_CATEGORY = "delivery_variable"
+
+# Line-item category the panels read solar buyback from, and the meter channel
+# that records what was exported to earn it.
+BUYBACK_CATEGORY = "solar_buyback"
+EXPORT_METRIC = "generation"
 
 # Days are site-local: a bill's service period is a range of local dates.
 SITE_TZ = ZoneInfo("America/Chicago")
@@ -127,7 +139,10 @@ def bills_without_line_items(engine: Engine, account_id: str | None) -> list[dic
     line_item_count = (
         select(func.count())
         .select_from(db.bill_line_items)
-        .where(db.bill_line_items.c.invoice_number == db.bills.c.invoice_number)
+        .where(
+            db.bill_line_items.c.account_id == db.bills.c.account_id,
+            db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
+        )
         .scalar_subquery()
     )
     stmt = select(
@@ -151,6 +166,7 @@ def bills_without_energy_rate(engine: Engine, account_id: str | None) -> list[di
         .select_from(db.bill_line_items)
         .where(
             and_(
+                db.bill_line_items.c.account_id == db.bills.c.account_id,
                 db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
                 db.bill_line_items.c.category == ENERGY_CATEGORY,
                 db.bill_line_items.c.rate_cents_kwh.isnot(None),
@@ -161,7 +177,10 @@ def bills_without_energy_rate(engine: Engine, account_id: str | None) -> list[di
     any_line_items = (
         select(func.count())
         .select_from(db.bill_line_items)
-        .where(db.bill_line_items.c.invoice_number == db.bills.c.invoice_number)
+        .where(
+            db.bill_line_items.c.account_id == db.bills.c.account_id,
+            db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
+        )
         .scalar_subquery()
     )
     stmt = select(
@@ -202,6 +221,7 @@ def bills_without_variable_delivery(engine: Engine, account_id: str | None) -> l
         .select_from(db.bill_line_items)
         .where(
             and_(
+                db.bill_line_items.c.account_id == db.bills.c.account_id,
                 db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
                 db.bill_line_items.c.category == VARIABLE_DELIVERY_CATEGORY,
             )
@@ -211,7 +231,10 @@ def bills_without_variable_delivery(engine: Engine, account_id: str | None) -> l
     any_line_items = (
         select(func.count())
         .select_from(db.bill_line_items)
-        .where(db.bill_line_items.c.invoice_number == db.bills.c.invoice_number)
+        .where(
+            db.bill_line_items.c.account_id == db.bills.c.account_id,
+            db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
+        )
         .scalar_subquery()
     )
     stmt = select(
@@ -348,11 +371,117 @@ def recent_bills_partly_metered(
     return findings
 
 
+def _export_days(engine: Engine, first_day: datetime.date, last_day: datetime.date) -> set[datetime.date]:
+    """Local days from first_day to last_day on which the meter recorded export.
+
+    Any granularity counts and every account is read: the meter's series is
+    not filed under the retail provider's account. Days are bucketed here so
+    the same code runs on both backends; the read is padded a day each side
+    because a local day is not a UTC date.
+    """
+    lower = datetime.datetime.combine(
+        first_day - datetime.timedelta(days=1), datetime.time(), tzinfo=datetime.timezone.utc
+    )
+    upper = datetime.datetime.combine(
+        last_day + datetime.timedelta(days=2), datetime.time(), tzinfo=datetime.timezone.utc
+    )
+    stmt = select(db.usage_intervals.c.ts).where(
+        db.usage_intervals.c.metric == EXPORT_METRIC,
+        db.usage_intervals.c.value > 0,
+        db.usage_intervals.c.ts >= lower,
+        db.usage_intervals.c.ts < upper,
+    )
+    with engine.connect() as conn:
+        days = {_local_day(ts) for (ts,) in conn.execute(stmt)}
+    return {day for day in days if first_day <= day <= last_day}
+
+
+def bills_buyback_mismatch(engine: Engine, account_id: str | None) -> list[dict[str, Any]]:
+    """Bills whose solar buyback line disagrees with what their plan pays.
+
+    Only bills with at least one recorded plan term of the same account
+    overlapping the service period are judged; a bill whose plan is not
+    recorded is left alone. A term is the half-open range [start_date,
+    end_date), and a bill that straddles two terms is judged against both.
+
+    Reported: a buyback line when no overlapping term pays buyback, and no
+    buyback line when a term pays buyback and the meter recorded export inside
+    the service period. Export is matched across every account, as
+    metered_days_without_bill matches bills, for the same reason.
+    """
+    overlaps = and_(
+        db.plans.c.account_id == db.bills.c.account_id,
+        db.plans.c.start_date <= db.bills.c.service_end,
+        or_(db.plans.c.end_date.is_(None), db.plans.c.end_date > db.bills.c.service_start),
+    )
+    terms = select(func.count()).select_from(db.plans).where(overlaps).scalar_subquery()
+    paying_terms = (
+        select(func.count())
+        .select_from(db.plans)
+        .where(and_(overlaps, db.plans.c.buyback_rate_cents_kwh.isnot(None)))
+        .scalar_subquery()
+    )
+    buyback_lines = (
+        select(func.count())
+        .select_from(db.bill_line_items)
+        .where(
+            and_(
+                db.bill_line_items.c.account_id == db.bills.c.account_id,
+                db.bill_line_items.c.invoice_number == db.bills.c.invoice_number,
+                db.bill_line_items.c.category == BUYBACK_CATEGORY,
+            )
+        )
+        .scalar_subquery()
+    )
+    stmt = select(
+        db.bills.c.account_id,
+        db.bills.c.invoice_number,
+        db.bills.c.service_start,
+        db.bills.c.service_end,
+        paying_terms.label("paying_terms"),
+        buyback_lines.label("buyback_lines"),
+    ).where(
+        db.bills.c.service_start.isnot(None),
+        db.bills.c.service_end.isnot(None),
+        terms > 0,
+    )
+    if account_id is not None:
+        stmt = stmt.where(db.bills.c.account_id == account_id)
+
+    with engine.connect() as conn:
+        bills = [dict(row) for row in conn.execute(stmt.order_by(db.bills.c.service_start)).mappings()]
+
+    # The meter is read only when some bill needs it, and only over those bills.
+    unpaid = [bill for bill in bills if bill["paying_terms"] and not bill["buyback_lines"]]
+    export_days: set[datetime.date] = set()
+    if unpaid:
+        export_days = _export_days(
+            engine,
+            min(bill["service_start"] for bill in unpaid),
+            max(bill["service_end"] for bill in unpaid),
+        )
+
+    findings: list[dict[str, Any]] = []
+    for bill in bills:
+        plan_pays = bool(bill.pop("paying_terms"))
+        has_line = bool(bill.pop("buyback_lines"))
+        exported = any(bill["service_start"] <= day <= bill["service_end"] for day in export_days)
+        if has_line and not plan_pays:
+            problem = "buyback line on a plan that pays no buyback"
+        elif plan_pays and not has_line and exported:
+            problem = "plan pays buyback and the meter shows export, but the bill has no buyback line"
+        else:
+            continue
+        findings.append({**bill, "problem": problem})
+    return findings
+
+
 CHECKS = (
     ("bills_without_line_items", bills_without_line_items),
     ("bills_without_energy_rate", bills_without_energy_rate),
     ("bills_without_usable_kwh", bills_without_usable_kwh),
     ("bills_without_variable_delivery", bills_without_variable_delivery),
+    ("bills_buyback_mismatch", bills_buyback_mismatch),
 )
 
 # Checks that compare against the calendar take the day to measure from.

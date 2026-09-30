@@ -43,6 +43,12 @@ DEFAULT_AMOUNT_TOLERANCE = 5.00
 # How far ahead generate_occurrences fills in future occurrences.
 DEFAULT_HORIZON_DAYS = 365 * 2
 
+# What a person is told when they try to pair a row that has not posted yet.
+PENDING_MESSAGE = (
+    "this row is still pending; Chase restates its description when it posts. "
+    "Pair it after the next capture."
+)
+
 
 # %%
 # Helpers #
@@ -265,6 +271,44 @@ def unskip_occurrence(engine: Engine, occurrence_id: int) -> None:
 
 # %%
 # Matches #
+
+
+def is_pending(account_kind: Any, balance: Any) -> bool:
+    """A bank row with no balance has not posted yet.
+
+    Every posted Chase bank row carries a running balance. Same-day ACH
+    activity is exported before it posts, with the balance empty and a
+    description Chase rewrites on posting. Card exports never carry a
+    balance, so the test is limited to bank rows.
+    """
+    return str(account_kind) == "bank" and bool(pd.isna(balance))
+
+
+def refuse_pending_transaction(engine: Engine, txn: dict) -> None:
+    """Raise ValueError when txn, a natural key as add_match takes it, is pending.
+
+    A match stores the natural key, so one made on a pending row stops
+    resolving when the row posts under its restated description. Both pairing
+    front ends call this before add_match. A key that names no stored
+    transaction passes; that case stays add_match's.
+    """
+    stmt = select(
+        db.transactions.c.account_kind,
+        db.transactions.c.amount,
+        db.transactions.c.balance,
+    ).where(
+        db.transactions.c.account_id == str(txn["account_id"]),
+        db.transactions.c.post_date == txn["post_date"],
+        db.transactions.c.description == str(txn["description"]),
+        db.transactions.c.occurrence == int(txn["occurrence"]),
+    )
+    with engine.connect() as conn:
+        txn_rows = conn.execute(stmt).mappings().all()
+    for txn_row in txn_rows:
+        if _amount_key(txn_row["amount"]) != _amount_key(txn["amount"]):
+            continue
+        if is_pending(txn_row["account_kind"], txn_row["balance"]):
+            raise ValueError(PENDING_MESSAGE)
 
 
 def add_match(
@@ -554,15 +598,18 @@ def get_transactions_with_matches_df(
     """Every transaction in [start, end] with the series name(s) it pays.
 
     The transactions-browser view: date-ordered actuals across all accounts,
-    with `matched_series` empty for anything still unclaimed.
+    with `matched_series` empty for anything still unclaimed. `pending` is
+    is_pending for the row: true for a bank row that has not posted yet.
     """
     stmt = (
         select(
             db.transactions.c.account_id,
+            db.transactions.c.account_kind,
             db.transactions.c.post_date,
             db.transactions.c.description,
             db.transactions.c.amount,
             db.transactions.c.occurrence,
+            db.transactions.c.balance,
         )
         .where(
             db.transactions.c.post_date >= start,
@@ -607,6 +654,12 @@ def get_transactions_with_matches_df(
         )
         matched_series.append(", ".join(series_by_txn_key.get(txn_key, [])))
     df_transactions["matched_series"] = matched_series
+    df_transactions["pending"] = [
+        is_pending(account_kind, balance)
+        for account_kind, balance in zip(
+            df_transactions["account_kind"], df_transactions["balance"]
+        )
+    ]
     return df_transactions
 
 

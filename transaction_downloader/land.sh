@@ -65,9 +65,9 @@ fi
 
 # Directories come from providers.local.yaml so they are never retyped.
 #
-# Read ONE PATH PER LINE with `IFS= read -r`. These paths contain spaces
-# ("Banks and Credit"), so a single `read -r A B C` splits them on the default
-# IFS and silently hands ingest_raw three fragments. Line-based reads also work
+# Read ONE PATH PER LINE with `IFS= read -r`. These paths can contain spaces,
+# so a single `read -r A B C` splits them on the default IFS and silently
+# hands ingest_raw three fragments. Line-based reads also work
 # on the bash 3.2 that ships with macOS, where `mapfile` does not exist.
 _paths_script='
 import os, sys, yaml
@@ -123,7 +123,7 @@ echo "  data_dir: $DATA_DIR"
 if [ -n "$ARCHIVE_DIR" ]; then
   echo "  archive_dir: $ARCHIVE_DIR"
 else
-  echo "  archive_dir: (unset - nothing outside the repo is walked)"
+  echo "  archive_dir: (unset - only raw_dir is walked)"
 fi
 echo
 

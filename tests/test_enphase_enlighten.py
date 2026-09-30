@@ -228,6 +228,24 @@ def test_registry_routes_by_filename(name: str, expected: Any) -> None:
     assert version == enphase_enlighten.PARSER_VERSION
 
 
-def test_registry_returns_none_for_unknown_enphase_document() -> None:
+def test_system_today_capture_parses_to_nothing() -> None:
+    """System metadata is held as evidence: it has a parser, and the parser emits no sinks."""
+    resolved = get_parser("enphase_enlighten", "other", "enphase_enlighten_api_system_today_2026-09-28.json")
+
+    assert resolved is not None
+    parse_fn, version = resolved
+    assert version == enphase_enlighten.PARSER_VERSION
+    assert parse_fn(b'{"synthetic": true}', CTX) == {}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "enphase_enlighten_api_site_config_2026-09-28.json",
+        "enphase_enlighten_system_today.html",
+        "notes.txt",
+    ],
+)
+def test_registry_returns_none_for_unknown_enphase_document(name: str) -> None:
     """An unrecognized capture stays pending rather than being parsed wrongly."""
-    assert get_parser("enphase_enlighten", "other", "enphase_enlighten_api_system_today.json") is None
+    assert get_parser("enphase_enlighten", "other", name) is None

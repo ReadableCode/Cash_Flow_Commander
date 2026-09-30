@@ -127,6 +127,8 @@
   .row.paid .name,.row.paid .amt{color:#9fb0c3}
   .row.skipped{opacity:.42}
   .row.skipped:hover{opacity:.8}
+  .row.pending{opacity:.42}
+  .row.pending:hover{opacity:.8}
   .row .name{color:#e3edf9;font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .row .cat{color:var(--ink-faint);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase}
   .row .amt{margin-left:auto;font-variant-numeric:tabular-nums;color:#cfe0f5}
@@ -517,12 +519,13 @@ function render(){
   });
 
   txn.forEach(t => {
-    const row = div('row' + (t.match_ids.length ? ' linked' : ''), null, right);
+    const row = div('row' + (t.match_ids.length ? ' linked' : '') + (t.pending ? ' pending' : ''), null, right);
     row.dataset.side = 'right'; row.dataset.id = t.key;
     row.style.top = state.pos.right[t.key].top + 'px';
     const far = t.match_ids.map(id => state.matchById[id]).filter(m => m && !m.occurrence_visible);
-    const badge = far.length
+    let badge = far.length
       ? `<span class="badge far" title="pays an occurrence outside this window">↖ ${esc(far[0].series)} ${esc(far[0].due_date)}</span>` : '';
+    if (t.pending) badge += `<span class="badge n" title="not posted yet: Chase restates the description when it posts, so pair it after the next capture">pending</span>`;
     row.innerHTML = `<b class="port"></b><span class="amt${t.amount > 0 ? ' in' : ''}" style="margin-left:0">${money(t.amount)}</span>` +
       `<span class="acct">${esc(t.account)}</span><span class="desc">${esc(t.description)}</span>${badge}`;
   });
@@ -803,7 +806,8 @@ function showTip(row, e){
       .map(m => `${esc(m.series)} ${m.due_date}${m.matched_amount != null ? ' (' + money(m.matched_amount) + ')' : ''}${m.occurrence_visible ? '' : ' (outside view)'}`);
     tip.innerHTML = `<b>${money(t.amount)}</b> <span class="k">${t.post_date} · ${esc(t.account)}</span>` +
       `<div class="p">${esc(t.description)}</div>` +
-      (pays.length ? `<div class="p"><span class="k">pays</span> ${pays.join(', ')}</div>` : `<div class="k">unclaimed</div>`);
+      (pays.length ? `<div class="p"><span class="k">pays</span> ${pays.join(', ')}</div>` : `<div class="k">unclaimed</div>`) +
+      (t.pending ? `<div class="k">pending · pair it after the next capture</div>` : '');
   }
   tip.classList.add('show');
   moveTip(e);
@@ -1105,7 +1109,7 @@ $('about').innerHTML = `<span class="close" onclick="this.parentNode.classList.r
 <li><b>Oldest / next unpaid:</b> <code>o</code> jumps to the oldest bill still to pair, <code>n</code> to the next one, <code>shift+n</code> back; each is selected with its suggestions drawn. The count in the corner says how many are left in this view.</li>
 <li><b>Adding a second charge:</b> after a pair the bill stays selected and stays on the board (even if it was only there because it was unpaid), so drag or click the next transaction onto it. Move on with <code>n</code>.</li>
 <li><b>Filters live in the column they affect.</b> The expected side has its status chips and a text filter; the transactions side has matched/unmatched, an account chip per account (alt-click for only that one), and a text filter (<code>/</code>). A selected bill never disappears, so select it, then narrow the right side to find its payment. Words are ANDed.</li>
-<li><b>Badges:</b> ↗ a match whose other end is outside this window · <span style="color:var(--bad)">broken</span> a match to a transaction that no longer exists · <span style="color:var(--bad)">card leg only</span> a card payoff paired to the card's side but not the bank's; only the bank leg counts as paid, so pair it (or skip the bill if the payment came from an account not held here).</li>
+<li><b>Badges:</b> ↗ a match whose other end is outside this window · <span style="color:var(--bad)">broken</span> a match to a transaction that no longer exists · <span style="color:var(--bad)">card leg only</span> a card payoff paired to the card's side but not the bank's; only the bank leg counts as paid, so pair it (or skip the bill if the payment came from an account not held here) · <b>pending</b> a dimmed bank row that has not posted yet; its memo changes when it posts, so it cannot be paired until the next capture.</li>
 </ul>
 <p>Nothing is buffered: what you see after each action is the database re-read. Filters, the window, and the search only change what is drawn. The server runs on localhost from your terminal and exits when this tab closes.</p>`;
 

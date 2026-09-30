@@ -103,6 +103,22 @@ def test_refuses_when_rows_were_parsed_from_the_document(engine: Any, capsys: An
     assert "REFUSING" in capsys.readouterr().out
 
 
+def test_refuses_when_a_plan_term_was_parsed_from_the_document(engine: Any, capsys: Any) -> None:
+    """Plan terms carry provenance too: their orders capture is never purged."""
+    doc_id = _add_doc(engine, "rhythm", "api_orders_json", "rhythm_api_orders_INV-TEST-0001.json")
+    with engine.begin() as conn:
+        conn.execute(db.plans.insert(), [{
+            "account_id": "TEST-ACCT", "start_date": dt.date(2026, 6, 28), "end_date": dt.date(2026, 7, 28),
+            "raw_document_id": doc_id, "parser_version": "t",
+        }])
+
+    assert purge_raw.dependents(engine, [doc_id]) == {"plans": 1}
+    assert purge_raw.main(["--provider", "rhythm", "--doc-type", "api_orders_json", "--yes"]) == 2
+
+    assert _count_docs(engine) == 1
+    assert "1 row(s) in plans" in capsys.readouterr().out
+
+
 def test_removes_an_unparsed_document_when_confirmed(engine: Any) -> None:
     """The actual job: clear a document nothing was built from."""
     _add_doc(engine, "chase", "other", "some-letter.pdf")
@@ -121,6 +137,47 @@ def test_only_touches_the_named_provider_and_doc_type(engine: Any) -> None:
     purge_raw.main(["--provider", "chase", "--doc-type", "other", "--yes"])
 
     assert _count_docs(engine) == 2
+
+
+def test_name_narrows_past_a_document_that_blocks_the_doc_type(engine: Any) -> None:
+    """One doc_type can hold parsed documents and junk; --name removes only the junk."""
+    parsed = _add_doc(engine, "rhythm", "csv_export", "hourly_usage.csv")
+    _add_doc(engine, "rhythm", "csv_export", "weekly_usage.csv")
+    _add_doc(engine, "rhythm", "csv_export", "monthly_bills.csv")
+    with engine.begin() as conn:
+        conn.execute(db.usage_intervals.insert(), [{
+            "account_id": "TEST-ACCT", "ts": dt.datetime(2026, 8, 1, tzinfo=dt.timezone.utc),
+            "granularity": "hour", "metric": "consumption", "value": 1,
+            "raw_document_id": parsed, "parser_version": "t",
+        }])
+
+    assert purge_raw.main(["--provider", "rhythm", "--doc-type", "csv_export", "--yes"]) == 2
+    assert _count_docs(engine) == 3
+
+    code = purge_raw.main([
+        "--provider", "rhythm", "--doc-type", "csv_export",
+        "--name", "weekly_usage.csv", "--name", "monthly_bills.csv", "--yes",
+    ])
+
+    assert code == 0
+    assert purge_raw.find(engine, "rhythm", "csv_export") == purge_raw.find(
+        engine, "rhythm", "csv_export", ["hourly_usage.csv"]
+    )
+    assert _count_docs(engine) == 1
+
+
+def test_refuses_a_name_that_matches_nothing(engine: Any, capsys: Any) -> None:
+    """A mistyped name must not turn into a smaller purge that reads as done."""
+    _add_doc(engine, "rhythm", "csv_export", "weekly_usage.csv")
+
+    code = purge_raw.main([
+        "--provider", "rhythm", "--doc-type", "csv_export",
+        "--name", "weekly_usage.csv", "--name", "weekly_usage.cvs", "--yes",
+    ])
+
+    assert code == 2
+    assert _count_docs(engine) == 1
+    assert "weekly_usage.cvs" in capsys.readouterr().out
 
 
 def test_reports_cleanly_when_nothing_matches(engine: Any, capsys: Any) -> None:

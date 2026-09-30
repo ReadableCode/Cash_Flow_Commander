@@ -391,6 +391,9 @@ class MatchScreen(ModalScreen):
                 self.notify(f"Not a number: {text!r}", severity="error")
                 return
             try:
+                expected_store.refuse_pending_transaction(
+                    self.app_state.engine, candidate
+                )
                 expected_store.add_match(
                     self.app_state.engine,
                     int(self.occurrence_row["occurrence_id"]),
@@ -420,6 +423,9 @@ class MatchScreen(ModalScreen):
             candidate = self.candidates[index]
             source = "manual" if candidate["score"] is None else "confirmed_suggestion"
             try:
+                expected_store.refuse_pending_transaction(
+                    self.app_state.engine, candidate
+                )
                 expected_store.add_match(
                     self.app_state.engine,
                     int(self.occurrence_row["occurrence_id"]),

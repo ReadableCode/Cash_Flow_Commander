@@ -15,6 +15,7 @@ from pypdf import PdfReader
 # Constants #
 
 BILL_PARSER_VERSION = "gexa-bills/1.1.0"
+PLAN_PARSER_VERSION = "gexa-plan/1.0.0"
 
 CENT = Decimal("0.01")
 
@@ -49,6 +50,9 @@ _DELIVERY_LUMP_LABEL = "TDU Delivery Charges"
 # of a 30-day month.
 _FULL_CYCLE_DAYS = 27
 _PRORATION_DAYS = 30
+
+# `Plan Type: <b>Fixed </b>` inside the plan capture's marketing description.
+_PLAN_TYPE_RE = re.compile(r"Plan Type:\s*(?:<b>)?\s*(Fixed|Variable)", re.IGNORECASE)
 
 # (lowercased label substring, category) — first match wins.
 _CATEGORY_RULES: tuple[tuple[str, str], ...] = (
@@ -325,3 +329,75 @@ def parse_bill_pdf(content: bytes, ctx: dict[str, Any]) -> dict[str, list[dict[s
         "forward_balance": _labeled_amount(lines, "Balance Forward"),
     }
     return {"pdf_bills": [{"bill_patch": bill_patch, "line_items": items}]}
+
+
+# %%
+# Plan Parser #
+
+
+def _plan_decimal(plan: dict[str, Any], field: str) -> Decimal | None:
+    """Read a numeric plan field as Decimal; None when absent, ValueError naming the field when bad."""
+    value = plan.get(field)
+    if value is None:
+        return None
+    # A bool is an int to Decimal, and a true/false here is a changed payload.
+    if isinstance(value, bool) or not isinstance(value, (int, Decimal, str)):
+        raise ValueError(f"plan {field} is not a number: {value!r}")
+    try:
+        return Decimal(str(value))
+    except ArithmeticError as exc:
+        raise ValueError(f"plan {field} is not a number: {value!r}") from exc
+
+
+def _plan_date(plan: dict[str, Any], field: str) -> date | None:
+    """Parse a plan date field (`M/D/YYYY`); None when absent, ValueError naming the field when bad."""
+    value = plan.get(field)
+    if value is None or value == "":
+        return None
+    try:
+        return _portal_date(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"plan {field} is not a M/D/YYYY date: {value!r}") from exc
+
+
+def parse_api_current_plan_json(content: bytes, ctx: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Parse the portal's current-plan response into one plans row.
+
+    The response is an object whose `CurrentPlan` states the contract term
+    (`M/D/YYYY` dates), the energy charge and the advertised average, both
+    already in cents per kWh, and the monthly fee in dollars. It states no
+    buyback rate and no status word, so buyback_rate_cents_kwh is None: the
+    plan pays none. A plan flagged `IsSolarBundled` raises instead, because
+    where such a plan states its buyback rate has never been seen and
+    recording "pays none" for it would be a guess. account_id always comes
+    from ctx.
+    """
+    # parse_float keeps a rate sent as a JSON number out of float.
+    payload = json.loads(content, parse_float=Decimal)
+    if not isinstance(payload, dict):
+        raise ValueError(f"plan payload is not an object: {type(payload).__name__}")
+    if payload.get("ResultCode") != 0:
+        raise ValueError(f"plan payload ResultCode is {payload.get('ResultCode')!r}, not 0")
+    plan = payload.get("CurrentPlan")
+    if not isinstance(plan, dict):
+        raise ValueError("plan payload has no CurrentPlan object")
+    start_date = _plan_date(plan, "ContractStartDate")
+    if start_date is None:
+        raise ValueError("CurrentPlan is missing ContractStartDate")
+    if plan.get("IsSolarBundled"):
+        raise ValueError("CurrentPlan is solar bundled; its buyback rate is not parsed yet")
+    plan_type = _PLAN_TYPE_RE.search(plan.get("ProductDescription1") or "")
+    row = {
+        "account_id": ctx["account_id"],
+        "start_date": start_date,
+        "end_date": _plan_date(plan, "ContractEndDate"),
+        "plan_name": plan.get("Description"),
+        "status": None,
+        "energy_rate_cents_kwh": _plan_decimal(plan, "EFL_RateEnergyCharge"),
+        "average_rate_cents_kwh_at_2000": _plan_decimal(plan, "EFL_Rate2000"),
+        "base_charge": _plan_decimal(plan, "MonthlyFee"),
+        "buyback_rate_cents_kwh": None,
+        "is_variable_rate": None if plan_type is None else plan_type.group(1).lower() == "variable",
+        "is_time_of_use": None,
+    }
+    return {"plans": [row]}

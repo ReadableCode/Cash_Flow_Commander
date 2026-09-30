@@ -14,6 +14,11 @@ Usage:
 
     uv run python src/purge_raw.py --provider chase --doc-type other
     uv run python src/purge_raw.py --provider chase --doc-type other --yes
+
+--name narrows the match to exact original names, for a doc_type that also
+holds documents worth keeping:
+
+    uv run python src/purge_raw.py --provider chase --doc-type other --name some-letter.pdf
 """
 
 # %%
@@ -38,7 +43,7 @@ import db  # noqa: E402
 
 # Tables that carry a raw_document_id. A document any of these were parsed from
 # is provenance for real rows and is never purged.
-DEPENDENT_TABLES = ("usage_intervals", "bills", "bill_line_items", "payments", "transactions")
+DEPENDENT_TABLES = ("usage_intervals", "bills", "bill_line_items", "payments", "plans", "transactions")
 
 
 # %%
@@ -63,8 +68,8 @@ def dependents(engine: Engine, doc_ids: list[int]) -> dict[str, int]:
     return counts
 
 
-def find(engine: Engine, provider: str, doc_type: str) -> list[dict]:
-    """List the documents matching provider + doc_type."""
+def find(engine: Engine, provider: str, doc_type: str, names: list[str] | None = None) -> list[dict]:
+    """List the documents matching provider + doc_type, and names when given."""
     stmt = select(
         db.raw_documents.c.id,
         db.raw_documents.c.original_name,
@@ -74,6 +79,8 @@ def find(engine: Engine, provider: str, doc_type: str) -> list[dict]:
         db.raw_documents.c.provider == provider,
         db.raw_documents.c.doc_type == doc_type,
     ).order_by(db.raw_documents.c.id)
+    if names:
+        stmt = stmt.where(db.raw_documents.c.original_name.in_(names))
     with engine.connect() as conn:
         return [dict(row) for row in conn.execute(stmt).mappings()]
 
@@ -97,6 +104,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", required=True, help="provider slug, e.g. chase")
     parser.add_argument("--doc-type", required=True, help="doc_type to remove, e.g. other")
     parser.add_argument(
+        "--name",
+        action="append",
+        default=None,
+        help="only documents with this exact original_name; repeat for several",
+    )
+    parser.add_argument(
         "--yes",
         action="store_true",
         help="actually delete; without this nothing is written",
@@ -110,10 +123,17 @@ def main(argv: list[str] | None = None) -> int:
     engine = db.get_engine()
     bootstrap.ensure_schema(engine)
 
-    docs = find(engine, args.provider, args.doc_type)
+    docs = find(engine, args.provider, args.doc_type, args.name)
     if not docs:
         print(f"Nothing matches provider={args.provider!r} doc_type={args.doc_type!r}.")
         return 0
+
+    # A name that matched nothing is a typo, and a purge that quietly did less
+    # than it was asked reads as done.
+    unmatched = sorted(set(args.name or []) - {doc["original_name"] for doc in docs})
+    if unmatched:
+        print(f"REFUSING: no document named {', '.join(unmatched)} under that provider and doc_type.")
+        return 2
 
     print(f"{len(docs)} document(s) match provider={args.provider!r} doc_type={args.doc_type!r}:")
     for doc in docs:

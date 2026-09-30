@@ -84,13 +84,15 @@ def _add_bill(
         )
 
 
-def _add_line_item(eng: Any, invoice: str, *, category: str, rate: float | None, line_no: int = 1) -> None:
+def _add_line_item(
+    eng: Any, invoice: str, *, category: str, rate: float | None, line_no: int = 1, account: str = ACCOUNT
+) -> None:
     """Insert one bill line item."""
     with eng.begin() as conn:
         conn.execute(
             db.bill_line_items.insert(),
             [{
-                "account_id": ACCOUNT,
+                "account_id": account,
                 "invoice_number": invoice,
                 "line_no": line_no,
                 "section": "energy",
@@ -106,11 +108,14 @@ def _add_line_item(eng: Any, invoice: str, *, category: str, rate: float | None,
 def _add_healthy_bill(eng: Any, invoice: str, **bill: Any) -> None:
     """Insert a bill the valuation can price: an energy rate and per-kWh delivery."""
     _add_bill(eng, invoice, **bill)
-    _add_line_item(eng, invoice, category="energy", rate=9.4)
-    _add_line_item(eng, invoice, category="delivery_variable", rate=None, line_no=2)
+    account = bill.get("account", ACCOUNT)
+    _add_line_item(eng, invoice, category="energy", rate=9.4, account=account)
+    _add_line_item(eng, invoice, category="delivery_variable", rate=None, line_no=2, account=account)
 
 
-def _add_metered_days(eng: Any, metric: str, first: dt.date, last: dt.date, account: str = "ACCT-METER") -> None:
+def _add_metered_days(
+    eng: Any, metric: str, first: dt.date, last: dt.date, account: str = "ACCT-METER", value: float = 1.0
+) -> None:
     """Insert one 15-minute reading at local noon on every day from first to last."""
     rows = []
     day = first
@@ -121,12 +126,35 @@ def _add_metered_days(eng: Any, metric: str, first: dt.date, last: dt.date, acco
             "ts": noon.astimezone(dt.timezone.utc),
             "granularity": "15min",
             "metric": metric,
-            "value": 1.0,
+            "value": value,
             "parser_version": PARSER,
         })
         day += dt.timedelta(days=1)
     with eng.begin() as conn:
         conn.execute(db.usage_intervals.insert(), rows)
+
+
+def _add_plan(
+    eng: Any,
+    start: dt.date,
+    end: dt.date | None,
+    *,
+    buyback: float | None,
+    account: str = ACCOUNT,
+) -> None:
+    """Insert one plan term; buyback None is a plan that pays none."""
+    with eng.begin() as conn:
+        conn.execute(
+            db.plans.insert(),
+            [{
+                "account_id": account,
+                "start_date": start,
+                "end_date": end,
+                "plan_name": "Synthetic Plan",
+                "buyback_rate_cents_kwh": buyback,
+                "parser_version": PARSER,
+            }],
+        )
 
 
 def _problems(eng: Any) -> set[str]:
@@ -303,6 +331,191 @@ def test_an_old_bill_is_not_chased(engine: Any) -> None:
     _add_healthy_bill(engine, "INV-JUN")
 
     assert _partly_metered(engine) == set()
+
+
+# %%
+# A buyback line that disagrees with the plan #
+
+JUNE = (dt.date(2026, 6, 1), dt.date(2026, 6, 30))
+NO_PLAN_BUYBACK = "buyback line on a plan that pays no buyback"
+MISSING_BUYBACK = "plan pays buyback and the meter shows export, but the bill has no buyback line"
+
+
+def _add_buyback_line(eng: Any, invoice: str, account: str = ACCOUNT) -> None:
+    _add_line_item(eng, invoice, category="solar_buyback", rate=5.0, line_no=3, account=account)
+
+
+def _buyback(eng: Any) -> list[tuple[str, str]]:
+    """The (invoice, problem) of every buyback mismatch reported."""
+    findings = checks.run_checks(eng, ACCOUNT)["bills_buyback_mismatch"]
+    return [(row["invoice_number"], row["problem"]) for row in findings]
+
+
+def test_a_buyback_line_on_a_plan_that_pays_buyback_is_clean(engine: Any) -> None:
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_buyback_line(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+    _add_metered_days(engine, "generation", *JUNE)
+
+    assert _buyback(engine) == []
+    assert _problems(engine) == set()
+
+
+def test_a_buyback_line_on_a_plan_that_pays_none_is_reported(engine: Any) -> None:
+    """A line the parser filed under buyback that the plan cannot have paid."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_buyback_line(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=None)
+
+    findings = checks.run_checks(engine, ACCOUNT)["bills_buyback_mismatch"]
+
+    assert findings == [{
+        "account_id": ACCOUNT,
+        "invoice_number": "INV-JUN",
+        "service_start": JUNE[0],
+        "service_end": JUNE[1],
+        "problem": NO_PLAN_BUYBACK,
+    }]
+
+
+def test_a_missing_buyback_line_is_reported_when_the_meter_shows_export(engine: Any) -> None:
+    """The credit that failed to parse: the panels would read it as a buyback of zero."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+    _add_metered_days(engine, "generation", *JUNE, account=ACCOUNT)
+
+    assert _buyback(engine) == [("INV-JUN", MISSING_BUYBACK)]
+
+
+def test_a_missing_buyback_line_is_fine_when_nothing_was_exported(engine: Any) -> None:
+    """No export, no credit: consumption, zero readings and other months do not count."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+    _add_metered_days(engine, "consumption", *JUNE)
+    _add_metered_days(engine, "generation", *JUNE, value=0.0)
+    _add_metered_days(engine, "generation", dt.date(2026, 5, 1), dt.date(2026, 5, 31), account="ACCT-MAY")
+    _add_metered_days(engine, "generation", dt.date(2026, 7, 1), dt.date(2026, 7, 31), account="ACCT-JUL")
+
+    assert _buyback(engine) == []
+
+
+def test_export_under_another_account_still_counts(engine: Any) -> None:
+    """The meter's series is not filed under the retail provider's account."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+    _add_metered_days(engine, "generation", dt.date(2026, 6, 15), dt.date(2026, 6, 15), account="ACCT-THE-METER")
+
+    assert _buyback(engine) == [("INV-JUN", MISSING_BUYBACK)]
+
+
+def _add_hourly_export(eng: Any, day: dt.date, hour: int) -> None:
+    """Insert one hourly generation reading starting at a site-local hour."""
+    local = dt.datetime.combine(day, dt.time(hour), tzinfo=checks.SITE_TZ)
+    with eng.begin() as conn:
+        conn.execute(
+            db.usage_intervals.insert(),
+            [{
+                "account_id": "ACCT-METER",
+                "ts": local.astimezone(dt.timezone.utc),
+                "granularity": "hour",
+                "metric": "generation",
+                "value": 0.5,
+                "parser_version": PARSER,
+            }],
+        )
+
+
+def test_export_at_any_granularity_counts(engine: Any) -> None:
+    _add_hourly_export(engine, dt.date(2026, 6, 15), 12)
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+
+    assert _buyback(engine) == [("INV-JUN", MISSING_BUYBACK)]
+
+
+def test_export_is_placed_on_its_site_local_day(engine: Any) -> None:
+    """Late evening is already the next UTC date; the service period is local dates."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0)
+
+    _add_hourly_export(engine, dt.date(2026, 5, 31), 23)
+    _add_hourly_export(engine, dt.date(2026, 7, 1), 0)
+    assert _buyback(engine) == []
+
+    _add_hourly_export(engine, dt.date(2026, 6, 30), 23)
+    assert _buyback(engine) == [("INV-JUN", MISSING_BUYBACK)]
+
+
+def test_a_bill_with_no_recorded_plan_term_is_not_judged(engine: Any) -> None:
+    """The rule is scoped to bills whose plan is recorded, in either direction."""
+    _add_healthy_bill(engine, "INV-LINE")
+    _add_buyback_line(engine, "INV-LINE")
+    _add_healthy_bill(engine, "INV-NOLINE", start=dt.date(2026, 7, 1), end=dt.date(2026, 7, 31))
+    _add_metered_days(engine, "generation", dt.date(2026, 6, 1), dt.date(2026, 7, 31))
+    # A term that ended the day the first bill started, one that starts after
+    # the last bill ended, and another account's term over both.
+    _add_plan(engine, dt.date(2026, 5, 1), dt.date(2026, 6, 1), buyback=None)
+    _add_plan(engine, dt.date(2026, 8, 1), None, buyback=5.0)
+    _add_plan(engine, dt.date(2026, 1, 1), None, buyback=None, account="ACCT-OTHER")
+
+    assert _buyback(engine) == []
+
+
+def test_an_open_ended_term_covers_every_later_bill(engine: Any) -> None:
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_buyback_line(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 1, 1), None, buyback=None)
+
+    assert _buyback(engine) == [("INV-JUN", NO_PLAN_BUYBACK)]
+
+
+def test_a_straddling_bill_is_clean_when_one_of_its_terms_pays_buyback(engine: Any) -> None:
+    """A renewal mid-period: the buyback line belongs to the term that pays it."""
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_buyback_line(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 5, 15), dt.date(2026, 6, 15), buyback=5.0)
+    _add_plan(engine, dt.date(2026, 6, 15), dt.date(2026, 7, 15), buyback=None)
+    _add_metered_days(engine, "generation", *JUNE)
+
+    assert _buyback(engine) == []
+
+
+def test_a_buyback_mismatch_fails_the_run(engine: Any, capsys: Any) -> None:
+    _add_healthy_bill(engine, "INV-JUN")
+    _add_buyback_line(engine, "INV-JUN")
+    _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=None)
+
+    assert checks.main(["--account", ACCOUNT]) == 1
+    assert NO_PLAN_BUYBACK in capsys.readouterr().out
+
+
+# %%
+# Two accounts that share an invoice number #
+
+OTHER_ACCOUNT = "ACCT-CHECKS-OTHER"
+
+
+def test_line_items_on_another_accounts_bill_do_not_count(engine: Any) -> None:
+    """An invoice number is unique within one provider; a bill is (account, invoice)."""
+    _add_healthy_bill(engine, "INV-SHARED")
+    _add_bill(engine, "INV-SHARED", account=OTHER_ACCOUNT)
+
+    findings = checks.run_checks(engine)["bills_without_line_items"]
+
+    assert [(row["account_id"], row["invoice_number"]) for row in findings] == [(OTHER_ACCOUNT, "INV-SHARED")]
+
+
+def test_a_buyback_line_on_another_accounts_bill_does_not_count(engine: Any) -> None:
+    """The other bill's credit must not hide this bill's missing one."""
+    for account in (ACCOUNT, OTHER_ACCOUNT):
+        _add_healthy_bill(engine, "INV-SHARED", account=account)
+        _add_plan(engine, dt.date(2026, 6, 1), dt.date(2026, 7, 1), buyback=5.0, account=account)
+    _add_buyback_line(engine, "INV-SHARED")
+    _add_metered_days(engine, "generation", *JUNE)
+
+    findings = checks.run_checks(engine)["bills_buyback_mismatch"]
+
+    assert [(row["account_id"], row["problem"]) for row in findings] == [(OTHER_ACCOUNT, MISSING_BUYBACK)]
 
 
 # %%

@@ -136,7 +136,8 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
             return ("api_invoice_json", None)
         if "usage" in lowered:
             return ("api_usage_json", None)
-        if "orders" in lowered:
+        # A plan snapshot, whatever the provider's endpoint calls it.
+        if "orders" in lowered or "current-plan" in lowered:
             return ("api_orders_json", None)
         return ("other", None)
     if "smt" in lowered or name.startswith("IntervalData"):
@@ -225,8 +226,10 @@ def _process_file(
 ) -> tuple[str, str, str | None]:
     """Process one file; returns (status, doc_type, skip_reason).
 
-    status is one of 'ingested', 'deduped', 'skipped'. Never stores absolute
-    paths — only the basename goes to the database.
+    status is one of 'ingested', 'deduped', 'provider_conflict', 'skipped'.
+    A provider_conflict is a document whose bytes are already held under a
+    different provider: nothing was written, and the reason names the holder.
+    Never stores absolute paths — only the basename goes to the database.
     """
     name = os.path.basename(path)
     classified_doc_type, period_hint = classify(name)
@@ -257,11 +260,19 @@ def _process_file(
             "provider_from": "cli" if args.provider else "folder",
         },
     )
+    if "provider_conflict" in result:
+        held = f"held under provider '{result['provider_conflict']}' as document #{result['id']}"
+        return ("provider_conflict", doc_type, held)
     return ("deduped" if result["deduped"] else "ingested", doc_type, None)
 
 
-def _print_summary(counts: dict[str, Counter[str]], skips: list[tuple[str, str]], dry_run: bool) -> None:
-    """Print per-doc_type and total ingested/deduped/skipped counts."""
+def _print_summary(
+    counts: dict[str, Counter[str]],
+    skips: list[tuple[str, str]],
+    conflicts: list[tuple[str, str]],
+    dry_run: bool,
+) -> None:
+    """Print per-doc_type and total ingested/deduped/skipped/provider_conflict counts."""
     verb = "would ingest" if dry_run else "ingested"
     totals: Counter[str] = Counter()
     print()
@@ -269,14 +280,30 @@ def _print_summary(counts: dict[str, Counter[str]], skips: list[tuple[str, str]]
     for key in sorted(counts):
         counter = counts[key]
         totals.update(counter)
-        print(f"  {key}: {verb} {counter['ingested']}, deduped {counter['deduped']}, skipped {counter['skipped']}")
+        print(
+            f"  {key}: {verb} {counter['ingested']}, deduped {counter['deduped']}, "
+            f"skipped {counter['skipped']}, provider_conflict {counter['provider_conflict']}"
+        )
     if not counts:
         print("  (no files found)")
-    print(f"Totals: {verb} {totals['ingested']}, deduped {totals['deduped']}, skipped {totals['skipped']}")
+    print(
+        f"Totals: {verb} {totals['ingested']}, deduped {totals['deduped']}, "
+        f"skipped {totals['skipped']}, provider_conflict {totals['provider_conflict']}"
+    )
     if skips:
         print("Skipped files:")
         for name, reason in skips:
             print(f"  {name}: {reason}")
+    if conflicts:
+        # Not a dedup: the document stays invisible to every query for the
+        # provider it was just ingested as.
+        print("Provider conflicts (nothing was written for these):")
+        for name, reason in conflicts:
+            print(f"  {name}: {reason}")
+        print(
+            "The same bytes never belong to two providers, so one label is wrong. If it is "
+            "the held row's, correct it with src/relabel_raw.py (dry run first) and re-run."
+        )
 
 
 # %%
@@ -323,7 +350,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 f"--provider {args.provider} needs an explicit DIR_OR_FILE: it labels every "
                 "file ingested, and the CFC_RAW_INGEST_DIRS fallback spans providers, so it "
                 f"would stamp '{args.provider}' onto other providers' documents. Pass that "
-                "provider's raw_dir (e.g. data/<provider>/incoming), or drop --provider to "
+                "provider's raw_dir (from its providers.local.yaml entry), or drop --provider to "
                 "infer each file's provider from its folder."
             )
         # Entries go through expand_config_path so $ONEDRIVE_DOCS resolves; an
@@ -344,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
         bootstrap.ensure_schema(engine)
     counts: dict[str, Counter[str]] = defaultdict(Counter)
     skips: list[tuple[str, str]] = []
+    conflicts: list[tuple[str, str]] = []
     for skipped_name, skip_reason in path_skips:
         counts[f"unknown/{args.doc_type or classify(skipped_name)[0]}"]["skipped"] += 1
         skips.append((skipped_name, skip_reason))
@@ -359,10 +387,13 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             status, doc_type, reason = "skipped", args.doc_type or classify(name)[0], f"error: {exc}"
         counts[f"{provider}/{doc_type}"][status] += 1
-        if reason is not None:
+        if status == "provider_conflict" and reason is not None:
+            conflicts.append((name, reason))
+        elif reason is not None:
             skips.append((name, reason))
-    _print_summary(counts, skips, args.dry_run)
-    return 0
+    _print_summary(counts, skips, conflicts, args.dry_run)
+    # A conflict is a document that did not land where it was sent.
+    return 1 if conflicts else 0
 
 
 # %%

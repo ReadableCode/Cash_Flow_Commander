@@ -38,7 +38,7 @@ If `.claude/commands/bills-<slug>.md` already exists, STOP and tell the user —
 ## 3. Local config stub
 
 1. If `providers.local.yaml` does not exist at the repo root, create it by copying `template_providers.yaml`.
-2. Append a stub entry for `<slug>`, following the shape in `template_providers.yaml`, with placeholder values for the user to fill in (account number, directories, etc.).
+2. Append a stub entry for `<slug>`, following the shape in `template_providers.yaml`, with placeholder values for the user to fill in (account number, `archive_dir`, `raw_dir`, `data_dir`, `download_dir`, etc.). `raw_dir` is the archive of verbatim captures and `download_dir` is where this machine's browser drops the portal's downloads.
 3. NEVER commit `providers.local.yaml`. Remind the user it is gitignored and stays local — it is where all personal values belong.
 
 ## 4. Discovery session (offer, don't force)
@@ -56,11 +56,12 @@ If accepted, with the user:
    - pagination and date-range parameters
 5. **Expect web components.** `document.querySelectorAll('select')` returning nothing does not mean there is no form — options may live in element attributes or in shadow roots, sometimes nested two deep, and sibling components on one page can differ. Drive controls the way a user does (open the dropdown, click the option; set input values with the native setter and dispatch `input`/`change` with `{bubbles:true, composed:true}`), and **verify every step by reading state back** rather than assuming the click landed.
 6. **Probe claimed limits live.** Test the retention boundary with real dates — it may be a rolling daily floor rather than a month boundary, and may apply to each endpoint of a range independently. Find any export cap and check whether exceeding it fails loudly or truncates silently. Note which date a range filter actually applies to, and what an empty result produces — some portals serve no file at all, which must not read as a failed download.
-7. Downloads land wherever the browser profile says, not necessarily `~/Downloads` — record the real location in the `notes` field of `providers.local.yaml`. Detect a completed download by watching for a file newer than a marker timestamp taken just before triggering it — never by predicting the filename, and never by grabbing the newest file without the timestamp check.
+7. Downloads land wherever the browser profile says, not necessarily `~/Downloads`. Record the real location in the `download_dir` key of `providers.local.yaml`. Detect a completed download by watching for a file newer than a marker timestamp taken just before triggering it, never by predicting the filename, and never by grabbing the newest file without the timestamp check. File every probe download out of `download_dir` before the session ends.
 8. Write the findings into the new command's API artifact catalog section, replacing the corresponding TODO blocks, and **stamp each observed section "as last observed YYYY-MM-DD"** so future runs know how stale the notes are. Describe endpoints generically — no account numbers, tokens, or other personal identifiers in the command file.
 
 ## 5. Finish
 
 1. Run the pre-commit hygiene checklist (bottom of `templates/provider-command.md`) against the new command file: no account numbers, no meter/ESI-style identifiers, no personal paths, no emails, no credentials — personal values only via `providers.local.yaml`. Fix any violations before proceeding.
-2. Tell the user `.claude/commands/bills-<slug>.md` is ready for review and commit. Do NOT commit anything yourself — the user reviews and commits.
-3. Finished per-provider commands are deployed globally like `/bills-rhythm`; remind the user to add a deployment entry for the new command (the user handles deployment).
+2. Check the generated command's report-and-verify section carries the download-location line from `templates/provider-command.md` (`download_dir` holds no file whose name starts with `<slug>`), then run that check now: a discovery session writes probe downloads, and no later run looks for them.
+3. Tell the user `.claude/commands/bills-<slug>.md` is ready for review and commit. Do NOT commit anything yourself — the user reviews and commits.
+4. Finished per-provider commands are deployed globally like `/bills-rhythm`; remind the user to add a deployment entry for the new command (the user handles deployment).

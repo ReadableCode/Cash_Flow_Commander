@@ -21,12 +21,14 @@ hardcode a machine-specific path in this file.
 
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `rhythm` entry from `providers.local.yaml` in the repo root. You need its
-  `account_number`, `external_ids.premise_id`, `archive_dir`, `raw_dir`, and `data_dir`.
+  `account_number`, `external_ids.premise_id`, `archive_dir`, `raw_dir`, `data_dir`, and
+  `download_dir`.
 - If `providers.local.yaml` is missing or has no `rhythm` entry, **STOP** and direct the user
   to run `/bills-add-company` (or copy `template_providers.yaml` to `providers.local.yaml` and
   fill it in). The file is gitignored — personal values never go in this repo. Required keys:
   `service_type`, `account_number`, `external_ids` (`premise_id`, `esi_id`), `archive_dir`,
-  `raw_dir`, `data_dir`, and any `notes` (download quirks, TDU, contract status, cadence).
+  `raw_dir`, `data_dir`, `download_dir`, and any `notes` (download quirks, TDU, contract
+  status, cadence).
 
 This command runs the full pipeline — **coverage → acquire → ingest → parse → dashboards** —
 and is safe to re-run at any time.
@@ -37,9 +39,10 @@ and is safe to re-run at any time.
 uv run python src/coverage.py --provider rhythm
 ```
 
-Reports four series: `consumption` and `generation` at both `15min` (Smart Meter Texas) and
-`hour` (Rhythm portal). Use the reported `FETCH:` windows; overlap is free (sha256 dedup at
-ingest, natural-key upsert at parse), so err wide.
+Reports two series: `consumption` and `generation` at `hour`, from the Rhythm portal. The
+meter's `15min` series belongs to Smart Meter Texas and has its own command, `/bills-smt`
+(`coverage.py --provider smt`). Use the reported `FETCH:` windows; overlap is free (sha256
+dedup at ingest, natural-key upsert at parse), so err wide.
 
 **Unlike the solar provider, this one is time-critical** — the portal keeps only ~12 months of
 hourly interval data and Smart Meter Texas ~24 months of 15-minute data. A gap that ages out of
@@ -60,17 +63,16 @@ to fill them):
     2022-03-14..2023-02-25   2023-03-13..2024-02-26
     2024-03-11..2025-02-25   2025-03-10..2025-07-28
 
-Two residual `FETCH:` windows are also normal at the end of a healthy run, not gaps: SMT
-publishes 15-minute data ~2 days in arrears, and the `hour` series only extends to the last
-*billed* day, because it comes from the per-invoice usage endpoint. Both close on the next
-run.
+One residual `FETCH:` window is also normal at the end of a healthy run, not a gap: the `hour`
+series only extends to the last *billed* day, because it comes from the per-invoice usage
+endpoint. It closes on the next run.
 
 The `hour` window only closes while Rhythm keeps billing (added 2026-09-11). After a switch to
 another retail provider the last invoice is a short-cycle closing bill: on 2026-09-11 it was a
 7-day service period, and the portal home showed a "Re-enroll with Rhythm" banner. Once that
 invoice's usage is captured, the `hour` `FETCH:` window stays open for good; stop chasing it.
-The `15min` series does not end, because Smart Meter Texas keeps the meter's data whoever the
-retail provider is.
+The meter's `15min` series does not end, because Smart Meter Texas keeps the meter's data
+whoever the retail provider is; `/bills-smt` lands it.
 
 ## 1. Portal session
 
@@ -153,64 +155,21 @@ inline — JS tool results truncate):
 
 - `GET https://api.gotrhythm.com/api/premises/{premise_id}/invoice/{id}/` returns the PDF.
 - Trigger as downloads named `rhythm_bill_{invoice_number}_{invoice_date}.pdf`.
-- Check `notes` in providers.local.yaml for the user's browser download-location quirks
-  before hunting for the files.
+- The files land in `download_dir` from providers.local.yaml. Look there before hunting for
+  them; `notes` holds any other download quirks.
 
 ## 3.4 Smart Meter Texas — the 15-minute series
 
-The portal only ever gives `hour` data, and only for *billed* periods. The `15min`
-consumption/generation series comes from Smart Meter Texas, which holds ~24 months for any
-Texas ESI ID. Fetch it whenever coverage reports a `15min` gap — and always when you need the
-billed-kWh reconciliation in step 8, which needs 15-minute data covering the new bill's whole
-service period.
-
-- `https://www.smartmetertexas.com/` — credentials are in the `notes` field of
-  providers.local.yaml. Chrome autofills them; **ask the user before clicking Login**, same
-  rule as the Rhythm portal.
-- The dashboard shows `ESIID` and `Meter Number` — confirm they match `external_ids.esi_id`
-  in providers.local.yaml before exporting.
-- Set **Report Type** = `Energy Data 15 Min Interval`, then **Start date** / **End date**
-  (`MM/DD/YYYY`). The default end date is the latest day published — SMT runs **one to two
-  days in arrears** (two on 2026-09-11, one on 2026-09-16: the dashboard's "Latest End of Day
-  Read" was 09/15 and the export carried 09/15 in full), so do not ask for today; a residual
-  1–2 day `FETCH:` window after a run is expected, not a gap. Both date fields default to that
-  latest day, so only the start date needs setting when the end date is the latest published.
-- ⚠️ Clicking or setting either date field opens a calendar overlay that **covers the "Export
-  My Report" button**. Press Escape or click neutral page space first, or the click lands on
-  the calendar and silently does nothing.
-- Driven by script (2026-09-11), the controls are `select#reporttype_input` (value `INTERVAL`),
-  `input#startdatefield` and `input#enddatefield`. They have ids but no `name` attribute, so a
-  `[name=...]` selector finds nothing. Assigning `.value` and dispatching `input`/`change`, then
-  Escape, was enough for the export to honour the dates; the file arithmetic below confirmed it.
-  Confirmed again 2026-09-16: dispatching `keydown`/`keyup` `Escape` on `document` plus a
-  `document.body.click()` clears the overlay; before clicking, `document.elementFromPoint` at
-  the button's centre tells you whether something still covers it.
-- **Export My Report** downloads immediately — there is no queue, no email, and no
-  "Report Request Status" round trip. The file is always named `IntervalData.csv`; a second
-  click yields `IntervalData (1).csv`, so it is easy to fire two identical exports without
-  noticing. File the one you want and put any duplicate in `_to_delete/`.
-- `www.smartmetertexas.com` is a *separate origin* from the Rhythm ones, so it needs its own
-  Chrome automatic-downloads allowance if a run exports more than once — same silent-failure
-  mode as section 1.
-- Rename to `rhythm_smt_IntervalData_{YYYY-MM-DD}_{YYYY-MM-DD}.csv` (actual first/last usage
-  date) and file into `raw_dir`. It ingests as `smt_export` and parses via
-  `src/providers/smt.py`.
-
-Verify the export before filing — a silent clamp is the failure to watch for:
-
-    head -2 <file>; tail -1 <file>; wc -l < <file>
-
-Columns are `ESIID,USAGE_DATE,REVISION_DATE,USAGE_START_TIME,USAGE_END_TIME,USAGE_KWH,
-ESTIMATED_ACTUAL,CONSUMPTION_SURPLUSGENERATION`. Both series are interleaved in one file, so a
-complete export has **days x 96 x 2 + 1** lines. The 2026-07-01..2026-09-02 pull was 12,289
-lines = 64 x 96 x 2 + 1, with no clamp; 2026-08-26..2026-09-09 was 2,881 = 15 x 96 x 2 + 1.
-Check the arithmetic rather than trusting the range you typed.
+The portal only ever gives `hour` data, and only for *billed* periods. The meter's `15min`
+consumption/generation series comes from Smart Meter Texas, which has its own provider (`smt`)
+and its own command: run `/bills-smt`. Run it for the billed-kWh reconciliation in step 8,
+which needs 15-minute data covering the new bill's whole service period.
 
 ## 3.5 Verify attribution after ingest, not just the counts
 
-Downloads land in the user's OneDrive Documents **root**, which every provider
-command stages through — including the `/transactions-*` ones. That shared root is
-also on `CFC_RAW_INGEST_DIRS`.
+Downloads land in `download_dir`. Every provider command shares that folder,
+including the `/transactions-*` ones. When this was observed it was the **root** of
+the synced documents tree, and that shared root is also on `CFC_RAW_INGEST_DIRS`.
 
 Observed 2026-09-04: a concurrent `/transactions-elan` run called
 `ingest_raw.py --provider elan` with **no explicit path**, so it fell back to the
@@ -218,25 +177,25 @@ shared `CFC_RAW_INGEST_DIRS` and stamped `provider='elan'` onto every file sitti
 there — including five of this command's captures. `src/ingest_raw.py` now refuses
 `--provider` without an explicit `DIR_OR_FILE`, so that particular path is closed.
 
-What is *not* fixed is the recovery: `raw_store.ingest_bytes` dedups on
-`content_sha256` alone, with no provider in the conflict key. Re-running this
-command's own correct `ingest_raw.py --provider rhythm <dirs>` over those files
-inserted nothing and reported `ingested 0, deduped 11` — a success line that hid
-five documents filed under the wrong provider and invisible to every rhythm query
-and to `coverage.py`.
+The recovery was silent too. `raw_store.ingest_bytes` dedups on `content_sha256`
+alone, so re-running this command's own correct `ingest_raw.py --provider rhythm <dirs>`
+over those files inserted nothing and reported `ingested 0, deduped 11`: a success
+line that hid five documents filed under the wrong provider and invisible to every
+rhythm query and to `coverage.py`. Ingest now reports bytes held under another
+provider as `provider_conflict`, names the holder for each file, and exits 1.
 
 Therefore:
 
 - Always pass explicit directories to `ingest_raw.py` (step 6 already does); never
   rely on the env fallback.
-- Move captures out of the Documents root into `raw_dir`/`archive_dir` as soon as
+- Move captures out of `download_dir` into `raw_dir`/`archive_dir` as soon as
   they land, rather than batching a whole run's downloads there.
-- **Verify by content hash, not by the summary.** For each new file, confirm a
-  `raw_documents` row exists *with `provider='rhythm'`*. An `ingested 0, deduped N`
-  line is exactly what mis-attribution looks like, not proof the data was held.
-- Repair is `src/purge_raw.py --provider <wrong> --doc-type <type> --yes` then
-  re-ingest. It refuses to touch a document anything was parsed from, so repair
-  before parsing.
+- **A non-zero `provider_conflict` count is a failed landing.** Each listed document
+  is held under the provider named beside it and is invisible to every rhythm query.
+- Repair is `src/relabel_raw.py --from <wrong> --to rhythm --doc-type <type>` (a dry
+  run; add `--yes` to write). It moves the held row and resets it to pending, so
+  parse afterwards. The same bytes never belong to two providers, so there is
+  nothing to re-ingest.
 
 ## 4. Filing
 
@@ -293,7 +252,7 @@ uv run python src/ingest_raw.py --provider rhythm <archive_dir> <raw_dir> <data_
 
 `raw_dir` is nested inside `archive_dir`, so passing both walks every file twice — one visit
 ingests and the second reports `deduped`. Per-doc_type counts are therefore roughly doubled;
-judge success by the hash check in section 3.5, not by these numbers.
+judge success by `provider_conflict 0` and the checks in section 8, not by these numbers.
 
 ## 7. Normalize
 
@@ -301,8 +260,8 @@ judge success by the hash check in section 3.5, not by these numbers.
 uv run python src/parse_raw.py --provider rhythm
 ```
 
-`src/providers/rhythm.py` handles api_usage_json, hourly_usage.csv, api_invoice_json, bill_pdf,
-and payments.csv; `src/providers/smt.py` handles smt_export. Report parsed / errored /
+`src/providers/rhythm.py` handles api_usage_json, api_orders_json (plan terms, into `plans`),
+hourly_usage.csv, api_invoice_json, bill_pdf, and payments.csv. Report parsed / errored /
 no_parser counts and rows upserted per sink.
 
 On failure: **fix parser code, bump `PARSER_VERSION`, and reprocess** — never hand-edit parsed
@@ -390,13 +349,7 @@ and unpaid bills. Verify:
 
 - [ ] every API call made this run has a matching verbatim .json in raw_dir
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
-- [ ] `parse_raw.py` reports zero errored
-- [ ] `no_parser` grows only by this run's new `api_orders_json` documents. Every new invoice
-      adds one orders capture with no parser (a `plans` sink decision comes first), so a fixed
-      baseline goes stale each month. As of 2026-09-11 it is 29: 22 `api_orders_json` + 5
-      legacy `csv_export` + 2 `other`, all tracked in `backlog/rhythm-orders-json-no-parser.md`.
-      Zero is not currently reachable, so treat any increase outside `api_orders_json` as this
-      run's regression and investigate it, rather than reading a non-zero total as normal.
+- [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] `coverage.py` re-run shows the fetched window now covered, and no new thin days
 - [ ] PDF totals reconcile with API `amount` to the cent
 - [ ] billed kWh on the latest bill matches the summed 15-minute `consumption` over the same
@@ -404,14 +357,15 @@ and unpaid bills. Verify:
       Expect agreement within a fraction of a kWh, not to the unit: 2026-09-11 summed 443.646
       kWh of SMT consumption against 443.313 billed over 2026-08-28..2026-09-03.
 - [ ] new PDFs named `Rythm YYYY-MM.pdf` and filed in archive_dir
+- [ ] `download_dir` holds no file whose name starts with `rhythm`
 
 Note: for interval data older than the portal's ~12-month window, Smart Meter Texas has ~24
-months of 15-minute meter data for any Texas ESI ID. See section 3.4 for the procedure.
+months of 15-minute meter data for any Texas ESI ID. See `/bills-smt`.
 
-Two `FETCH:` windows normally remain open at the end of a healthy run and are **not** failures:
-SMT publishes ~2 days in arrears, and the `hour` series stops at the last *billed* day because
-it comes from the per-invoice usage endpoint. Both close on the next run. Say so explicitly in
-the report, or the next run re-chases them.
+One `FETCH:` window normally remains open at the end of a healthy run and is **not** a failure:
+the `hour` series stops at the last *billed* day because it comes from the per-invoice usage
+endpoint. It closes on the next run. Say so explicitly in the report, or the next run
+re-chases it.
 
 ---
 
@@ -426,6 +380,7 @@ run. Before finishing, if reality did not match what is written above:
    section.
 3. Add any newly-confirmed permanent gap to the coverage notes, so future runs
    stop chasing it.
-4. Put user-specific quirks (download locations, account oddities) in the
-   `notes` field of `providers.local.yaml` — never in this file.
+4. Put the download location in `download_dir` and other user-specific quirks
+   (account oddities) in the `notes` field of `providers.local.yaml`, never in
+   this file.
 5. Tell the user what you changed. **Do not commit** — they review and commit.

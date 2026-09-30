@@ -15,7 +15,7 @@ pre-commit hygiene checklist at the bottom before committing. Personal values
 - Read `docs/LANDING.md` for repo conventions and the current state of the pipeline.
 - Load the `{{slug}}` entry from `providers.local.yaml` (repo root, gitignored):
   `service_type`, `account_number`, `external_ids`, `archive_dir`, `raw_dir`,
-  `data_dir`, `notes`.
+  `data_dir`, `download_dir`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
   run `/bills-add-company` first, then re-run this command.
 
@@ -82,7 +82,9 @@ One row per endpoint you pull:
   providers' patterns — when onboarding a new provider, either pass
   `--doc-type` per path group at ingest time or extend `classify()` (and its
   tests) to know your patterns.
-- Download to a staging location first — never straight into `archive_dir`.
+- The browser drops downloads in `download_dir` from `providers.local.yaml`.
+  Never point it straight at `archive_dir`. Move each capture out of
+  `download_dir` as soon as it lands.
 
 ## 4. Filing conventions
 
@@ -203,6 +205,7 @@ Standard checks (every provider):
 - [ ] re-run ingest → 100% dedup, zero new rows
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] any new series appears on a committed dashboard
+- [ ] `download_dir` holds no file whose name starts with `{{slug}}`
 
 Provider-specific verification checklist:
 
@@ -222,8 +225,9 @@ run. Before finishing, if reality did not match what is written above:
    section.
 3. Add any newly-confirmed permanent gap to the coverage notes, so future runs
    stop chasing it.
-4. Put user-specific quirks (download locations, account oddities) in the
-   `notes` field of `providers.local.yaml` — never in this file.
+4. Put the download location in `download_dir` and other user-specific quirks
+   (account oddities) in the `notes` field of `providers.local.yaml`, never in
+   this file.
 5. Tell the user what you changed. **Do not commit** — they review and commit.
 
 ---

@@ -20,7 +20,7 @@ this host, find it and use that.
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `gexa` entry from `providers.local.yaml` (repo root, gitignored):
   `service_type`, `account_number`, `external_ids`, `archive_dir`, `raw_dir`,
-  `data_dir`, `tdu_fixed_monthly_charges`, `notes`.
+  `data_dir`, `download_dir`, `tdu_fixed_monthly_charges`, `notes`.
 - **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
   run `/bills-add-company` first, then re-run this command.
 
@@ -109,6 +109,7 @@ As last observed 2026-09-28. Capture responses verbatim into `raw_dir` via
 | Endpoint | doc_type | Filename pattern |
 | --- | --- | --- |
 | `GET /Payments/Invoices?noofMonths={N}` | `api_invoice_json` | `gexa_api_invoice-history_{YYYYMMDD}.json` |
+| `GET /PlansServices/CurrentPlanInfo?CustomerAccountId={id}&IsMigratedCustomer=false&IsOttoCustomer=false` | `api_orders_json` | `gexa_api_current-plan_{YYYYMMDD}.json` |
 
 - The response is a bare JSON list, newest first, with `MM/DD/YYYY` dates and
   the amount as a JSON number. It carries the invoice number, its base-36 form
@@ -117,6 +118,21 @@ As last observed 2026-09-28. Capture responses verbatim into `raw_dir` via
 - Pagination: none. `noofMonths` widens the window instead; the page asks for
   `6` and its Show More button asks for `60`. Always ask for `60`.
 - Re-pull window: the whole list, every run.
+
+The plan capture, as first observed 2026-09-30:
+
+- It is what the Plans & Moving → My Service Plans page loads. `{id}` is the
+  account id, the second part of `<customer number>-<account id>` in
+  `SelectedAccount_Gexa` (section 1.1).
+- The response is one object. `CurrentPlan` carries the plan name, the contract
+  start and end (`M/D/YYYY`), the monthly fee in dollars, the energy charge and
+  the advertised averages in cents per kWh as JSON numbers, and `EFLLink`. It
+  states no buyback rate; the parser records a plan that pays none, and refuses
+  a plan flagged `IsSolarBundled` rather than guess.
+- Capture it on every run. The bytes change only when the plan does, so a
+  repeat capture dedups, and a renewal lands as a new term by itself.
+- `RenewedPlan` was null. Its shape once a renewal is signed is unknown; the
+  parser reads `CurrentPlan` only.
 
 <!-- TODO: fill after the account has history — retention is unprobed. On
      2026-09-28 the account held one invoice, so whether noofMonths=60 is
@@ -187,7 +203,7 @@ As last observed 2026-09-28.
   invoice date. `src/ingest_raw.py` classifies this pattern as `bill_pdf`.
 - Compute the sha256 in the page before triggering the download and compare it
   with `shasum -a 256` on the landed file.
-- Check `notes` in providers.local.yaml for where this browser puts downloads.
+- `download_dir` in providers.local.yaml is where this browser puts downloads.
   Detect a landed file by a marker timestamp taken just before the download,
   never by predicting the path.
 - **Chrome's automatic-downloads permission is per origin.** Without an
@@ -200,24 +216,34 @@ As last observed 2026-09-28.
   `Preferences` file; if the origin is absent, ask the user to add it under
   `chrome://settings/content/automaticDownloads`. Never click Chrome's own
   settings or dialogs yourself.
-- Move each capture out of the download location as soon as it lands.
+- Move each capture out of `download_dir` as soon as it lands.
+
+The Electricity Facts Label, as first observed 2026-09-30:
+
+- `EFLLink` in the plan capture (the same link as PLAN DETAILS → Electricity
+  Facts Label on My Service Plans) is a public viewer URL that answers with a
+  two-page PDF. It needs no session.
+- Fetch it once per plan, when the plan capture's bytes change, and file it as
+  `<archive_dir>/_contract/gexa_efl_{ProductCode}_{YYYY-MM-DD}.pdf`, the date
+  being the label's own date. It is the contract document behind the plan
+  capture. It is kept, not ingested: ingest skips folders whose name starts
+  with `_`, and the plan capture is what the parser reads.
+- The label's line on purchasing excess generation is boilerplate about the
+  provider's eligible plans. It states no rate for this plan.
 
 ## 3.4 Interval data — Smart Meter Texas
 
 The meter's 15-minute consumption and generation come from Smart Meter Texas,
-which holds them for the meter whoever the retail provider is. The procedure,
-its quirks, and its verification arithmetic are in `bills-rhythm.md` section
-3.4; follow it unchanged. The billed-kWh reconciliation in section 9 needs
-15-minute data covering the new bill's whole service period.
-
-Which account the series is filed under after a change of retail provider is
-an open question tracked in `backlog/`; until it is settled, keep landing the
-export exactly as that section describes so the series stays in one piece.
+which holds them for the meter whoever the retail provider is. That series has
+its own provider (`smt`) and its own command: run `/bills-smt`. The billed-kWh
+reconciliation in section 9 needs 15-minute data covering the new bill's whole
+service period.
 
 ## 4. Filing conventions
 
 - Move bill PDFs into `archive_dir`, keeping the capture name.
 - Move `gexa_api_*.json` captures into `raw_dir`.
+- Move the Electricity Facts Label into `<archive_dir>/_contract/`.
 - **Never overwrite** an existing file. On a filename collision the existing
   file stays put: move the new copy into `<archive_dir>/_to_delete/` and note
   it in the run report for the user to adjudicate.
@@ -242,9 +268,9 @@ every file twice and doubles the counts.
 
 - Add `--dry-run` first to see how files classify.
 - Report ingested vs deduped counts per doc_type.
-- **Verify by content hash, not by the summary.** For each new file confirm a
-  `raw_documents` row exists with `provider='gexa'`. An `ingested 0, deduped N`
-  line is also what a document filed under the wrong provider looks like.
+- **A non-zero `provider_conflict` count is a failed landing.** The command
+  exits 1 and names the provider each listed document is held under. Correct
+  the held row with `src/relabel_raw.py` (dry run first), then parse.
 - The archive lives in OneDrive with Files On-Demand. A freshly captured file
   that is dehydrated before ingest runs is skipped as a cloud placeholder, so
   grep the output for this run's filenames rather than reading the skip list.
@@ -255,10 +281,13 @@ every file twice and doubles the counts.
 uv run python src/parse_raw.py --provider gexa
 ```
 
-`src/providers/gexa.py` handles `api_invoice_json` and `bill_pdf`. The invoice
-list creates each `bills` row (invoice number, invoice date, due date, amount
-due); the PDF then patches that row by invoice date (service period, billed
-kWh, energy rate, balances, total current charges) and writes its line items.
+`src/providers/gexa.py` handles `api_invoice_json`, `bill_pdf` and
+`api_orders_json`. The plan capture lands one row in `plans` for the contract
+term, which is what lets `checks.py` judge this provider's bills for a buyback
+line that should not be there. The invoice list creates each `bills` row
+(invoice number, invoice date, due date, amount due); the PDF then patches
+that row by invoice date (service period, billed kWh, energy rate, balances,
+total current charges) and writes its line items.
 `parse_raw` orders the two within a run, so **a PDF whose invoice is missing
 from every captured list fails as unresolved** — capture the list first.
 
@@ -307,7 +336,8 @@ As last observed 2026-09-28, a two-page bill:
 - TDU delivery is one lump-sum line with no kWh and no rate. On the first
   bill the per-kWh part the parser derived from it came to within a thousandth
   of a cent of the per-kWh charge the provider publishes.
-- The plan name is not printed anywhere on the bill.
+- The plan name is not printed anywhere on the bill. It comes from the plan
+  capture (section 2).
 
 The parser fails the document unless the line items sum to `Total Current
 Charges` to the cent.
@@ -377,10 +407,15 @@ Standard checks (every provider):
 - [ ] re-run ingest → 100% dedup, zero new rows
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] `checks.py` exits zero
+- [ ] `download_dir` holds no file whose name starts with `gexa`, and no
+      `IntervalData*.csv` left over from the Smart Meter Texas export
+      (section 3.4)
 
 Provider-specific verification checklist:
 
 - [ ] every invoice in the captured list has a `bills` row with line items
+- [ ] `plans` holds a term for this account that covers the latest bill's
+      service period
 - [ ] no gap in the invoice sequence: each service period starts where the
       previous one ended
 - [ ] each PDF's `Total Amount Due` equals the list's amount for that invoice
@@ -402,6 +437,7 @@ run. Before finishing, if reality did not match what is written above:
 2. Add any new popup, interstitial, or blocking modal to the portal-session
    section.
 3. Replace a TODO block with what was observed once it has been observed.
-4. Put user-specific quirks (download locations, account oddities) in the
-   `notes` field of `providers.local.yaml` — never in this file.
+4. Put the download location in `download_dir` and other user-specific quirks
+   (account oddities) in the `notes` field of `providers.local.yaml`, never in
+   this file.
 5. Tell the user what you changed. **Do not commit** — they review and commit.

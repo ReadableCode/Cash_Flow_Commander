@@ -54,16 +54,28 @@ def engine(tmp_path: Any) -> Any:
         importlib.reload(db)
 
 
-def add_transaction(engine, account_id, post_date, description, amount, occurrence=0):
+def add_transaction(
+    engine,
+    account_id,
+    post_date,
+    description,
+    amount,
+    occurrence=0,
+    account_kind="bank",
+    balance=1000.00,
+):
+    """One stored transaction. The default is a posted bank row, which always
+    carries a balance; balance=None on a bank row is a pending one."""
     with engine.begin() as conn:
         conn.execute(
             insert(db.transactions).values(
                 account_id=account_id,
-                account_kind="bank",
+                account_kind=account_kind,
                 txn_date=post_date,
                 post_date=post_date,
                 description=description,
                 amount=amount,
+                balance=balance,
                 occurrence=occurrence,
                 parser_version="test-1",
             )
@@ -117,6 +129,9 @@ def seed(engine):
     add_transaction(engine, "1234", dt.date(2026, 9, 5), "CHASE MTG PAYMENT", -2444.00)
     add_transaction(engine, "5678", dt.date(2026, 7, 15), "PLANET FITNESS", -40.00)
     return mortgage, pmi
+
+
+PENDING_MEMO = "ORIG CO NAME:ACME GYM CO ENTRY DESCR:PAYMENT SEC:PPD ORIG ID:0000000000"
 
 
 def occurrence_id(engine, series_name, due_date):
@@ -311,6 +326,31 @@ def test_state_reports_broken_matches_without_a_transaction_end(engine):
     assert broken["status"] == "broken"
     match = next(m for m in state["matches"] if m["occurrence_id"] == september)
     assert match["txn_visible"] is False and match["occurrence_visible"] is True
+
+
+def test_state_flags_pending_bank_rows(engine):
+    """Only a bank row with no balance is pending; a card row never has one."""
+    seed(engine)
+    add_transaction(
+        engine, "5678", dt.date(2026, 9, 14), PENDING_MEMO, -40.00, balance=None
+    )
+    add_transaction(
+        engine,
+        "9012",
+        dt.date(2026, 9, 15),
+        "ACME GYM",
+        -40.00,
+        account_kind="credit",
+        balance=None,
+    )
+    state = pairing_web.build_state(engine, START, END, {})
+    pending = {t["description"]: t["pending"] for t in state["transactions"]}
+    assert pending == {
+        "PLANET FITNESS": False,
+        "CHASE MTG PAYMENT": False,
+        PENDING_MEMO: True,
+        "ACME GYM": False,
+    }
 
 
 # %%
@@ -614,6 +654,77 @@ def test_server_answers_store_errors_as_400(engine, server):
     assert status == 400 and "already matched" in reply["error"]
     status, reply = call(server, "/api/state?start=2026-09-30&end=2026-08-01")
     assert status == 400 and "before start" in reply["error"]
+
+
+def test_server_refuses_a_pair_on_a_pending_bank_row(engine, server):
+    """A bank row with no balance has not posted; the pair is a 400 and nothing is written."""
+    seed(engine)
+    window = {"start": START.isoformat(), "end": END.isoformat()}
+    gym = occurrence_id(engine, "Gym", dt.date(2026, 9, 15))
+    add_transaction(
+        engine, "5678", dt.date(2026, 9, 14), PENDING_MEMO, -40.00, balance=None
+    )
+    status, reply = call(
+        server,
+        "/api/match",
+        {
+            "occurrence_id": gym,
+            "txn": txn_payload("5678", dt.date(2026, 9, 14), PENDING_MEMO, -40.00),
+            "window": window,
+        },
+    )
+    assert status == 400
+    assert reply["error"] == expected_store.PENDING_MESSAGE
+    assert reply["error"] == (
+        "this row is still pending; Chase restates its description when it posts. "
+        "Pair it after the next capture."
+    )
+    with engine.connect() as conn:
+        assert conn.execute(select(db.expected_matches)).all() == []
+
+
+def test_server_pairs_a_posted_bank_row_and_a_card_row_without_a_balance(
+    engine, server
+):
+    """The pending test is bank-only: card exports never carry a balance."""
+    seed(engine)
+    window = {"start": START.isoformat(), "end": END.isoformat()}
+    gym = occurrence_id(engine, "Gym", dt.date(2026, 9, 15))
+    add_transaction(
+        engine, "5678", dt.date(2026, 9, 14), "ACME GYM PAYMENT", -40.00, balance=250.00
+    )
+    add_transaction(
+        engine,
+        "9012",
+        dt.date(2026, 9, 15),
+        "ACME GYM",
+        -40.00,
+        account_kind="credit",
+        balance=None,
+    )
+    status, reply = call(
+        server,
+        "/api/match",
+        {
+            "occurrence_id": gym,
+            "txn": txn_payload(
+                "5678", dt.date(2026, 9, 14), "ACME GYM PAYMENT", -40.00
+            ),
+            "window": window,
+        },
+    )
+    assert status == 200 and reply["ok"] is True
+    status, reply = call(
+        server,
+        "/api/match",
+        {
+            "occurrence_id": gym,
+            "txn": txn_payload("9012", dt.date(2026, 9, 15), "ACME GYM", -40.00),
+            "window": window,
+        },
+    )
+    assert status == 200 and reply["ok"] is True
+    assert len(expected_store.get_active_matches_df(engine)) == 2
 
 
 def test_server_exits_when_the_page_says_bye(engine):

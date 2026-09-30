@@ -510,8 +510,8 @@ def test_legacy_import_copies_rather_than_moving(tmp_path: Any) -> None:
     assert os.path.exists(source), "an archived export must not be moved out of its home"
 
 
-def test_relative_staging_resolves_against_the_repo_not_the_cwd() -> None:
-    """Config uses repo-relative staging so the tools work from anywhere."""
+def test_relative_raw_dir_resolves_against_the_repo_not_the_cwd() -> None:
+    """A repo-relative raw_dir is still supported and works from anywhere."""
     resolved = capture._resolve_repo_relative("data/chase/incoming")
 
     assert os.path.isabs(resolved)
