@@ -157,8 +157,8 @@ chase:
       "2222": {label: "Credit Card", kind: credit}
 
   # Where this machine's browser drops Chase downloads. Card exports embed the
-  # requested window in the filename and bank exports do not, so detect
-  # downloads by marker timestamp, never by name.
+  # requested window in the filename and bank exports do not, so never read
+  # the window from the name. A run claims its download with src/downloads.py.
   download_dir: ""
 
   # Where downloaded statements/PDFs are filed long-term. Optional for Chase.
@@ -253,8 +253,8 @@ elan:
       "0000": {label: "Card Name", kind: credit}
 
   # Where this machine's browser drops Elan downloads. Filenames embed the
-  # label and last 4 but NOT the requested end date — detect downloads by
-  # marker timestamp, never by name.
+  # label and last 4 but NOT the requested end date, so never read the window
+  # from the name. A run claims its download with src/downloads.py.
   download_dir: ""
 
   # Only raw_dir holds captures. transaction_downloader/land.sh passes ingest

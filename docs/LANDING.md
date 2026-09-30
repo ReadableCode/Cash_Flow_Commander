@@ -73,6 +73,8 @@ Examples:
 
 The browser drops downloads in the provider's `download_dir`. Move each capture out of it as soon as it lands. `raw_dir` is the archive of verbatim captures: files stay there after ingestion.
 
+Every provider command shares that download folder and runs may overlap, so a run never takes whatever arrived last. It claims a download on two facts together, through `src/downloads.py`: the file landed after a marker taken just before the click (`mark`), and its name has the shape that provider's downloads have (`claim --provider <slug> --since <marker>`, which waits and prints the landed path). A capture a command saves itself is named per section 4, so it starts with the provider's slug; a portal's own export name is listed per provider in `DOWNLOAD_NAME_PATTERNS`, and a new provider needs an entry there before its command can claim anything.
+
 Everything lands in the provider's `raw_dir` before ingestion. For browser-fetched data, use Blob + `a.download` downloads for anything large — JS tool results truncate, and a truncated capture is not verbatim.
 
 ## 6. Landing
@@ -128,7 +130,7 @@ Dashboards are **repo artifacts, not Grafana-only state**. Grafana's database is
 After every run:
 
 - [ ] Every fetched artifact has a verbatim file on disk.
-- [ ] The download location holds no file whose name starts with this provider's slug.
+- [ ] `uv run python src/downloads.py leftovers --provider <slug>` exits 0 (prints nothing).
 - [ ] `raw_documents` growth == new-artifact count.
 - [ ] Re-run ingest → 100% dedup, zero new rows.
 - [ ] `parse_raw.py` reports zero errored and zero no_parser documents.

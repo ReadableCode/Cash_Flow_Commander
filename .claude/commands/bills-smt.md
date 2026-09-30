@@ -91,7 +91,8 @@ As last observed 2026-09-16.
   published, so only the start date needs setting when the end date is the
   latest published. The site runs **one to two days in arrears** (two on
   2026-09-11, one on 2026-09-16: the dashboard's "Latest End of Day Read" was
-  09/15 and the export carried 09/15 in full), so do not ask for today.
+  09/15 and the export carried 09/15 in full; two again on 2026-09-30), so do
+  not ask for today.
 - Clicking or setting either date field opens a calendar overlay that **covers
   the "Export My Report" button**. Press Escape or click neutral page space
   first, or the click lands on the calendar and silently does nothing.
@@ -103,11 +104,32 @@ As last observed 2026-09-16.
   Confirmed again 2026-09-16: dispatching `keydown`/`keyup` `Escape` on
   `document` plus a `document.body.click()` clears the overlay. Before
   clicking, `document.elementFromPoint` at the button's centre tells you
-  whether something still covers it.
+  whether something still covers it. The button sits below the fold in a
+  small window (2026-09-30, 960 x 929 viewport), where `elementFromPoint`
+  returns `null` and says nothing either way: `scrollIntoView({block:'center'})`
+  on the button first, then test. It has no id; find it by its text among
+  `button` elements (class `btn meter-search-button`), and confirm exactly one
+  matches before clicking.
 - **Export My Report** downloads immediately. There is no queue, no email, and
   no "Report Request Status" round trip. The file is always named
   `IntervalData.csv`; a second click yields `IntervalData (1).csv`, so it is
   easy to fire two identical exports without noticing.
+- `download_dir` is shared with every other provider command and runs may
+  overlap, so claim the export with `src/downloads.py`, never by listing the
+  folder:
+
+  ```sh
+  uv run python src/downloads.py mark      # just before clicking Export My Report; prints a marker
+  uv run python src/downloads.py claim --provider smt --since <marker>
+  ```
+
+  `claim` waits (30 s by default, `--timeout SECONDS` to change it) for an
+  `IntervalData.csv` or `IntervalData (N).csv` that is newer than the marker,
+  then prints its path. That path is `<file>` below. An `IntervalData.csv`
+  left by an earlier session is older than the marker and is not claimed.
+  Exit 1 means nothing landed: the calendar overlay swallowed the click, or
+  Chrome blocked the download (section 1). Exit 2 means two landed, the double
+  export above; both paths are printed.
 
 Verify the export before filing. A silent clamp is the failure to watch for:
 
@@ -122,10 +144,12 @@ than trusting the range you typed.
 
 ## 3. Filing
 
-- The browser drops the export in `download_dir`. Move it out as soon as it
-  lands.
+- The browser drops the export in `download_dir`. Move it out as soon as
+  `claim` (section 2) prints its path.
 - Rename to `smt_IntervalData_{YYYY-MM-DD}_{YYYY-MM-DD}.csv`, using the actual
-  first and last usage date in the file, and move it into `raw_dir`.
+  first and last usage date in the file, and move it into `raw_dir`. Do both
+  in one `mv`: `src/downloads.py` knows the export by the portal's name, so a
+  renamed copy left in `download_dir` is not listed by `leftovers`.
 - **Never overwrite** an existing file. Put a duplicate export in
   `<raw_dir>/_to_delete/` and tell the user what is there.
 - `raw_dir` is this provider's own folder. Do not file the export in an
@@ -184,8 +208,8 @@ upserted, anything filed to `_to_delete/`, anomalies.
       no new thin days
 - [ ] re-run ingest → 100% dedup, zero new rows, zero `provider_conflict`
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
-- [ ] `download_dir` holds no file whose name starts with `smt`, and no
-      `IntervalData*.csv`, which does not carry the slug until it is renamed
+- [ ] `uv run python src/downloads.py leftovers --provider smt` exits 0
+      (prints nothing)
 
 ## Keeping this command current
 

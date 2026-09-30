@@ -143,7 +143,7 @@ Observed at least once (2026-08-24):
   screen-share-with-rep, cookie settings). A `[role=dialog]` existing in the
   DOM does not mean a dialog is open — check visibility.
 
-## 3. The export flow — as last observed 2026-09-24
+## 3. The export flow — as last observed 2026-09-30
 
 Verified live against the real portal on that date. Citi will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -172,6 +172,22 @@ facts that bite:
 Everything happens in the "Transactions" section of the card dashboard — there
 is no separate download page.
 
+- **The tile header has two layouts, chosen by viewport width, and both sit
+  in the DOM at once.** Every control below exists twice; the copy for the
+  other layout has no size. Always filter to the visible one, and read
+  `innerWidth` before assuming which layout you are in. The wide layout shows
+  the controls named below directly. The **compact layout** (seen 2026-09-30
+  in a 960 px wide window) hides them behind two header dropdowns:
+  - **"Search & Filter"** (`div.search-and-filters div.header-dropdown`):
+    click it to reveal the keyword search and the "Filter By" button. Filter
+    By, the From/To inputs and the primary Search button then work as
+    described below.
+  - **"I want to..."** (`div.iWantTo-wrapper`): click it to reveal three
+    `button.header-button` entries, View Last Statement, **Export** and
+    Print. Export opens the same export dialog as the download icon. In this
+    layout the download icon is never visible, under either aria-label.
+  Do not resize the window to get the wide layout; the compact one does
+  everything.
 - **Time Period dropdown** (`button.cds-dd2-button`): the current open cycle
   ("Since <last statement close>"), ~6 statement cycles, "Last year", "Year
   to date". **Presets are statement-shaped, not month-shaped — always use the
@@ -181,10 +197,12 @@ is no separate download page.
   then dispatch `input`/`change`/`blur` with `{bubbles:true}`), click the
   panel's primary **Search** button.
 - **The Filter By panel collapses after every search.** Re-expand it before
-  the next range. And **verify the applied range chip** (text like
-  "Aug 5, 2024 - Aug 24, 2026" above the results) after every search — a
-  search clicked while the panel is half-rendered does nothing and leaves the
-  previous range silently active.
+  the next range. And **verify the applied range chip** (`button.ums-chip`,
+  text like "Aug 5, 2024 - Aug 24, 2026" above the results, next to a
+  "Clear All" button) after every search — a search clicked while the panel
+  is half-rendered does nothing and leaves the previous range silently
+  active. With a custom range applied the Time Period dropdown reads
+  "Select Time Period".
 - **Do not count on an error rendering.** An inline `Error.` message near the
   fields was observed 2026-08-24, but on 2026-09-04 a refused range produced
   no message of any kind (see *Retention* below). Never conclude a range was
@@ -196,13 +214,18 @@ is no separate download page.
   varies with tile state: sometimes `button.download-icon[aria-label=
   "download"]`, after a custom search a `div[aria-label="Download icon"]`.
   Select by aria-label, filter to the visible one, and note the same icon
-  also exists for statement PDFs elsewhere on the page.
+  also exists for statement PDFs elsewhere on the page. In the compact
+  layout neither icon is visible; use **Export** under "I want to..."
+  instead (see *The Transactions tile*).
 - **Clicking the icon toggles the dialog** — a second click closes it. Read
-  the dialog state back instead of clicking again blindly.
+  the dialog state back instead of clicking again blindly. The open dialog is
+  the visible `div.cds-modal-dialog`; the "Done!" confirmation reuses that
+  class.
 - The dialog ("Exporting transactions") shows the scope it will export — the
   current view's time period ("Since …", "Date range", a statement cycle) —
-  and offers **CSV (default), TXT, QFX, QBO, OFX**. Keep CSV. Click
-  `button.export-button`.
+  and offers **CSV (default), TXT, QFX, QBO, OFX**. Keep CSV. Take a download
+  marker (`uv run python src/downloads.py mark`, see the filename bullet
+  under *The CSV*), then click `button.export-button`.
 - **A "Done!" confirmation modal follows every export** and blocks the page.
   Dismiss it (OK) before doing anything else — the next icon click does
   nothing while it is up.
@@ -262,14 +285,33 @@ Header: `Status,Date,Description,Debit,Credit,Member Name`.
   `ONLINE PAYMENT, THANK YOU` for manual payments, `AUTOPAY ...AUTO-PMT` for
   autopay. Anything pairing payoff legs must match on amount/direction, not
   one description.
-- **One Date column only.** All observed rows had Status `Cleared`; whether
-  pending activity ever exports (and with what Status value) is unverified.
+- **One Date column only.** All observed rows had Status `Cleared`.
+  **Pending rows did not export** when checked 2026-09-30: the list showed
+  two rows labelled Pending inside the requested range and neither was in
+  the CSV, which held only `Cleared` rows. One observation, so whether a
+  pending row can ever export (and with what Status value) is still open.
 - `Member Name` distinguishes cardholders/authorized users.
 - The filename is the **scope label, not the account or window**:
   `Since Aug 06, 2026.CSV`, `Date range.CSV`, and collisions get
-  `Date range (1).CSV`. Detect a completed download ONLY by a
-  marker-timestamp watch on `download_dir`; the name proves nothing and
-  repeats across accounts and runs.
+  `Date range (1).CSV`. The name repeats across accounts and runs, so it
+  never says which card or window a file is for. Its shape is still Citi's
+  alone, and that plus a marker is how a run claims its download:
+
+  ```sh
+  uv run python src/downloads.py mark      # just before clicking button.export-button; prints a marker
+  uv run python src/downloads.py claim --provider citi --since <marker>
+  ```
+
+  `claim` waits (30 s by default, `--timeout SECONDS` to change it) for a
+  file that is newer than the marker and has one of Citi's names, then prints
+  its path. File that path (§4). Every provider command shares
+  `download_dir` and runs may overlap: another run's download has another
+  shape and a leftover `Date range.CSV` is older than the marker, so neither
+  is claimed. Take a new marker for every window and claim before the next
+  export: that order is what ties a path to the window just requested.
+  Exit 1 means no Citi file arrived (an empty window, below, or Chrome's
+  multiple-download block, §1); exit 2 means more than one did, and every
+  path is printed. Never list `download_dir` yourself to pick a file.
 
 ### Empty windows export nothing — silently
 
@@ -304,12 +346,15 @@ uv run python transaction_downloader/capture.py --provider citi record-empty \
 ```
 
 The browser's download location is `download_dir` in `providers.local.yaml`.
-Look there before hunting for files; a bare filename passed to `capture.py file`
-or `land.sh` resolves against it. Identical bytes filed twice are a no-op.
+`<downloaded file>` is the path `claim` printed (§3); a bare filename passed to
+`capture.py file` or `land.sh` resolves against `download_dir`. Identical bytes
+filed twice are a no-op.
 Every download is consumed exactly once: a new one is moved into `raw_dir`, and
 an identical re-download is discarded once its bytes are confirmed already
 filed. So a clean run leaves none of its downloads in `download_dir`, and any
-left there is real unfiled work. A discarded re-download still records the
+left there is real unfiled work;
+`uv run python src/downloads.py leftovers --provider citi` lists it. A
+discarded re-download still records the
 window it was requested for, as a `refetched_window` marker, because coverage
 is tracked by requested window and identical bytes can never record it
 themselves. Nothing is ever overwritten.
@@ -361,13 +406,12 @@ That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
 is deliberately empty here and `data_dir` is a work directory holding no
 captures — `raw_dir` is the only directory with anything to ingest.
 
-**Never omit the directory arguments.** With `--provider` set and no paths,
-`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
-onto every file it finds there — including other providers' documents, whose
-`provider` column is then simply wrong. It happened on 2026-09-04: an
-argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. `land.sh` avoids this whole class
-of mistake, which is why it is the first option above.
+**Never omit the directory arguments.** `ingest_raw.py` refuses `--provider`
+with no paths. It used to fall back to `$CFC_RAW_INGEST_DIRS` and stamp that
+provider onto every file it found there: on 2026-09-04 an argument-less
+`--provider elan` filed five Rhythm documents under `elan`, and they had to be
+reassigned by hand afterwards. `land.sh` passes the directories for you, which is
+why it is the first option above.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs
@@ -390,9 +434,9 @@ Facts the parser encodes, repeated here because they are the ones that bite:
   stable** (2026-08-24): two independent downloads of overlapping windows,
   minutes apart, returned the 748-row overlap byte-identical and identically
   ordered.
-- **Sign convention:** Debit and Credit are separate unsigned columns;
-  `amount = credit − debit`, so negative is money out, matching Chase and the
-  `transactions` table contract. `txn_type` records which column the money
+- **Sign convention:** Debit and Credit are separate columns, and Citi prints
+  Credit values negative (§3). `amount = abs(credit) - abs(debit)`, so
+  negative is money out, matching Chase and the `transactions` table contract. `txn_type` records which column the money
   came from (DEBIT/CREDIT).
 - **One date column** feeds both `txn_date` and `post_date` — Citi exports
   only one, and inventing a second would be fabrication.
@@ -449,10 +493,8 @@ transactions upserted, and any popup or flow change you had to work around.
       every payment once, and a card with zero positive rows is the tell
 - [ ] months reported as inferred are ones you actually imported from an
       archive
-- [ ] `download_dir` holds no file whose name starts with `citi`, and none of
-      this run's downloads under the portal's own name. Citi names them by
-      scope label (`Date range.CSV`, `Since <date>.CSV`), which never starts
-      with the slug, so find them by the marker timestamp.
+- [ ] `uv run python src/downloads.py leftovers --provider citi` exits 0
+      (prints nothing)
 
 ## 8. Keeping this command current
 

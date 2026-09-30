@@ -150,13 +150,29 @@ inline — JS tool results truncate):
   free — the raw store dedups by sha256, and restatements are preserved as distinct documents.
 - ⚠️ The portal retains only ~12 months of hourly interval data. Run this monthly after the
   bill posts (~29th–31st) or gaps in the hourly series become permanent.
+- Every name above starts with `rhythm_`, which is what `src/downloads.py claim` matches on.
+  `download_dir` is shared with every other provider command and runs may overlap, so claim
+  the files instead of listing the folder. Take a marker just before the script that saves
+  them, then claim with the number of files that script saves:
+
+  ```sh
+  uv run python src/downloads.py mark      # prints a marker
+  uv run python src/downloads.py claim --provider rhythm --since <marker> --expect <N>
+  ```
+
+  `claim` waits for N files that are newer than the marker and named `rhythm_...`, then
+  prints each path. It waits 30 s by default; pass `--timeout SECONDS` for a long batch.
+  Exit 1 means fewer than N landed, which is what the automatic-downloads block in section 1
+  looks like. Exit 2 means more than N did.
 
 ## 3. Bill PDFs
 
 - `GET https://api.gotrhythm.com/api/premises/{premise_id}/invoice/{id}/` returns the PDF.
 - Trigger as downloads named `rhythm_bill_{invoice_number}_{invoice_date}.pdf`.
-- The files land in `download_dir` from providers.local.yaml. Look there before hunting for
-  them; `notes` holds any other download quirks.
+- The files land in `download_dir` from providers.local.yaml. Claim them as in section 2:
+  `mark` just before triggering the PDFs, then
+  `claim --provider rhythm --since <marker> --expect <number of PDFs>`, which prints each
+  landed path. `notes` holds any other download quirks.
 
 ## 3.4 Smart Meter Texas — the 15-minute series
 
@@ -227,13 +243,12 @@ and skip it unless the user asks, rather than adding permanently unparseable doc
 uv run python src/ingest_raw.py --provider rhythm <archive_dir> <raw_dir> <data_dir>
 ```
 
-**Never omit the directory arguments.** With `--provider` set and no paths,
-`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
-onto every file it finds there — including other providers' documents, whose
-`provider` column is then simply wrong. It happened on 2026-09-04: an
-argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. Always pass the directory
-explicitly, even when you think the default is set to something harmless.
+**Never omit the directory arguments.** `ingest_raw.py` refuses `--provider`
+with no paths. It used to fall back to `$CFC_RAW_INGEST_DIRS` and stamp that
+provider onto every file it found there: on 2026-09-04 an argument-less
+`--provider elan` filed five Rhythm documents under `elan`, and they had to be
+reassigned by hand afterwards. Pass this provider's own directories, and only
+those.
 
 Classification (bill_pdf, api_*_json, *_email, csv_export) is the CLI's job. Report ingested
 vs deduped counts per doc_type. Re-runs are safe — sha256 dedup makes ingestion idempotent.
@@ -357,7 +372,7 @@ and unpaid bills. Verify:
       Expect agreement within a fraction of a kWh, not to the unit: 2026-09-11 summed 443.646
       kWh of SMT consumption against 443.313 billed over 2026-08-28..2026-09-03.
 - [ ] new PDFs named `Rythm YYYY-MM.pdf` and filed in archive_dir
-- [ ] `download_dir` holds no file whose name starts with `rhythm`
+- [ ] `uv run python src/downloads.py leftovers --provider rhythm` exits 0 (prints nothing)
 
 Note: for interval data older than the portal's ~12-month window, Smart Meter Texas has ~24
 months of 15-minute meter data for any Texas ESI ID. See `/bills-smt`.

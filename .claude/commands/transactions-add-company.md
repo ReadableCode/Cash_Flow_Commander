@@ -93,6 +93,14 @@ with tests, not scaffolding. Tell the user plainly what this source needs:
 - **A truncation guard**: if the export has a row cap and truncates silently,
   refuse capped files at capture time (and again at parse time, as defence in
   depth) rather than recording a truncated month as complete.
+- **A `DOWNLOAD_NAME_PATTERNS` entry** in `src/downloads.py`: the shape of the
+  name the portal gives its downloads, with a sample name in `SAMPLES` in
+  `tests/test_downloads.py`. Every provider command downloads into one shared
+  folder, and a run claims its file by that shape plus a marker. Until the
+  entry exists, `claim` and `leftovers` reject the slug and the new command
+  cannot claim a download. The shape must fit no other provider's names; the
+  test asserts that. The name is only known once the portal has served a file,
+  so this lands during the discovery session (§5).
 
 ## 3. Scaffold the provider command
 
@@ -121,9 +129,10 @@ provider-independent rules into `.claude/commands/transactions-<slug>.md`:
 - **5 Land into raw_documents**, **6 Normalize**, **7 Report and verify**
   (checklist), **8 Keeping this command current**, and the pre-commit hygiene
   checklist at the bottom.
-  Keep the download-location line in the §7 checklist, and word it for this
-  portal: a bank's own download names rarely start with the slug, so name the
-  pattern the portal uses as well.
+  Keep the download-location line in the §7 checklist, with this slug:
+  `uv run python src/downloads.py leftovers --provider <slug>` exits 0
+  (prints nothing). Keep the `mark` / `claim --provider <slug>` procedure in
+  §3 the same way.
 
 Leave every portal-specific section as a clearly marked TODO block
 (`<!-- TODO: fill after discovery session -->`) — never invent endpoints, form
@@ -196,10 +205,23 @@ If accepted, with the user:
      after the first silently vanishes).
 6. Downloads land wherever the browser profile says, not necessarily
    `~/Downloads`. Record the real location in the `download_dir` key of
-   `providers.local.yaml`. Filename patterns can differ per product; detect a
-   completed download by watching for a file newer than a marker timestamp
-   taken just before triggering it, never by predicting the name. File every
-   probe download out of `download_dir` before the session ends.
+   `providers.local.yaml`. Find every probe download with `src/downloads.py`,
+   never by predicting the name or listing the folder:
+   - Run `uv run python src/downloads.py mark` just before triggering each
+     download. It prints a marker.
+   - The first probe has no name pattern yet. Run
+     `uv run python src/downloads.py arrived --provider <slug> --since <marker>`.
+     It lists every file that landed since the marker with whose it is; the
+     probe is the one marked `no pattern`.
+   - Add that shape to `DOWNLOAD_NAME_PATTERNS` in `src/downloads.py` under
+     `<slug>`, with the sample name (no real account digits) in `SAMPLES` in
+     `tests/test_downloads.py`, and run `uv run pytest tests/test_downloads.py`.
+     Filename patterns can differ per product; probe each account kind and
+     cover every shape.
+   - From then on, `uv run python src/downloads.py claim --provider <slug> --since <marker>`
+     waits for the download and prints its path.
+
+   File every probe download out of `download_dir` before the session ends.
 7. Write the findings into §3 of the new command, replacing the TODO blocks,
    stamped **"as last observed YYYY-MM-DD"**. Describe forms and endpoints
    generically — no account numbers, internal account ids, tokens, or other
@@ -211,9 +233,10 @@ If accepted, with the user:
    against the new command file: no account numbers or last-4s, no personal
    paths, no emails, no credentials, no balances or merchant names — personal
    values only via `providers.local.yaml`. Fix violations before proceeding.
-2. Check that `download_dir` holds no file whose name starts with `<slug>` and
-   none of this session's probe downloads under the portal's own name. A
-   discovery session writes probe downloads, and no later run looks for them.
+2. If the discovery session ran, check that
+   `uv run python src/downloads.py leftovers --provider <slug>` exits 0
+   (prints nothing). A discovery session writes probe downloads, and no later
+   run looks for them.
 3. Restate the §2 list of remaining code work — the new command is not
    runnable until the planner, capture, and parser support this source.
 4. Tell the user `.claude/commands/transactions-<slug>.md` is ready for review

@@ -83,8 +83,28 @@ One row per endpoint you pull:
   `--doc-type` per path group at ingest time or extend `classify()` (and its
   tests) to know your patterns.
 - The browser drops downloads in `download_dir` from `providers.local.yaml`.
-  Never point it straight at `archive_dir`. Move each capture out of
-  `download_dir` as soon as it lands.
+  Never point it straight at `archive_dir`. Every provider command shares that
+  folder and runs may overlap, so claim each download with `src/downloads.py`,
+  never by predicting the path or listing the folder:
+
+  ```sh
+  uv run python src/downloads.py mark      # just before triggering the download; prints a marker
+  uv run python src/downloads.py claim --provider {{slug}} --since <marker>
+  ```
+
+  `claim` waits (30 s by default, `--timeout SECONDS` to change it) for a file
+  that is newer than the marker and has this provider's name shape, then
+  prints its path. Add `--expect N` when one click or one script downloads N
+  files. Exit 1 means fewer arrived than expected, exit 2 more. Move each
+  capture out of `download_dir` as soon as it is claimed.
+- `claim` and `leftovers` know a provider only through its entry in
+  `DOWNLOAD_NAME_PATTERNS` in `src/downloads.py`, which needs a sample name in
+  `SAMPLES` in `tests/test_downloads.py`. A capture this command saves itself
+  (`Blob` + `a.download`) under the naming above starts with `{{slug}}_`, which
+  the pattern `{{slug}}_.+` matches. A file the portal names itself
+  (`{{Export.csv}}`) needs that name's shape in the entry too.
+  `/bills-add-company` adds the entry; check it covers every download this
+  command makes.
 
 ## 4. Filing conventions
 
@@ -205,7 +225,8 @@ Standard checks (every provider):
 - [ ] re-run ingest → 100% dedup, zero new rows
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] any new series appears on a committed dashboard
-- [ ] `download_dir` holds no file whose name starts with `{{slug}}`
+- [ ] `uv run python src/downloads.py leftovers --provider {{slug}}` exits 0
+      (prints nothing)
 
 Provider-specific verification checklist:
 

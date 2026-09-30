@@ -95,7 +95,7 @@ Three consequences baked into the code:
 | Rows per report | **no cap found** — the entire searchable window exported complete in one file |
 | Layout | `Status,Date,Description,Debit,Credit,Member Name` — one date column, unsigned Debit/Credit |
 | Empty window | shows "no transactions for this time period." and the export icon silently does nothing — record with `record-empty` |
-| Download filename | the scope label ("Date range.CSV"), no account, collisions get " (1)" — always pass `--account`, detect downloads by marker timestamp |
+| Download filename | the scope label ("Date range.CSV"), no account, collisions get " (1)". Always pass `--account`; the name's shape is still Citi's alone, which is how `src/downloads.py claim` tells the file from another run's |
 
 The planner approximates Citi's cycle-boundary floor with the same rolling
 24-month computation as Chase; that is conservative (every date at or after it
@@ -103,7 +103,8 @@ is guaranteed servable). Export order is newest-first and was verified stable
 across re-downloads — two overlapping captures minutes apart returned the
 748-row overlap region byte-identical and identically ordered — which is what
 makes the `occurrence` counter safe for Citi too. Sign convention:
-`amount = credit − debit`, so negative is money out, same as Chase.
+`amount = abs(credit) - abs(debit)` (Citi prints Credit values negative), so
+negative is money out, same as Chase.
 
 ## Elan's export limits — verified live 2026-08-24
 
@@ -113,7 +114,7 @@ makes the `occurrence` counter safe for Citi too. Sign convention:
 | Rows per report | no cap found — but the discovery account ran ~2.6 rows/month, far too little volume to surface one |
 | Layout | `"Date","Transaction","Name","Memo","Amount"` — ISO dates, a single **signed** Amount (negative = money out, no projection needed; a waived fee prints `-0.00`), direction stated in the Transaction column (DEBIT/CREDIT) |
 | Empty window | inline "There aren't any transactions for that date range." and no file — record with `record-empty` |
-| Download filename | `<label> - <last4>_<start>_<end>.csv`, but the end segment is NOT the requested end (observed ~4 days past it) — the last-4 hint works, the window does not; detect downloads by marker timestamp |
+| Download filename | `<label> - <last4>_<start>_<end>.csv`, but the end segment is NOT the requested end (observed ~4 days past it). The last-4 hint works, the window does not; the name's shape is still Elan's alone, which is how `src/downloads.py claim` tells the file from another run's |
 
 Export order is oldest-first and was verified stable across re-downloads (two
 overlapping downloads minutes apart, 25-row overlap byte-identical and
@@ -209,6 +210,10 @@ uv run python transaction_downloader/plan.py --provider citi
 uv run python transaction_downloader/plan.py --json          # for the agent
 uv run python transaction_downloader/plan.py --full          # include deferred backfill
 uv run python transaction_downloader/plan.py --overlap-days 10
+
+# claim a download: mark just before the click, claim after it; prints the landed path
+uv run python src/downloads.py mark
+uv run python src/downloads.py claim --provider citi --since <marker>
 
 # file what was downloaded (--provider before the subcommand)
 uv run python transaction_downloader/capture.py file \

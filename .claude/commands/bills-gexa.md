@@ -104,7 +104,9 @@ Every JSON call needs the session cookie and two request headers:
 ## 2. API artifact catalog
 
 As last observed 2026-09-28. Capture responses verbatim into `raw_dir` via
-`Blob` + `a.download` (no reformatting, no pretty-printing).
+`Blob` + `a.download` (no reformatting, no pretty-printing). Every name below
+starts with `gexa_`, which is what `src/downloads.py claim` matches on; section
+3 has the claim procedure.
 
 | Endpoint | doc_type | Filename pattern |
 | --- | --- | --- |
@@ -129,8 +131,16 @@ The plan capture, as first observed 2026-09-30:
   the advertised averages in cents per kWh as JSON numbers, and `EFLLink`. It
   states no buyback rate; the parser records a plan that pays none, and refuses
   a plan flagged `IsSolarBundled` rather than guess.
-- Capture it on every run. The bytes change only when the plan does, so a
-  repeat capture dedups, and a renewal lands as a new term by itself.
+- Capture it on every run. **A repeat capture never dedups.** `CurrentPlan.Id`
+  is a fresh identifier on every response (verified 2026-09-30: three requests
+  minutes apart gave three values and were identical in every other field), so
+  the sha256 differs each time and each run lands one more raw document. The
+  `plans` upsert on account and contract start is what keeps the term to one
+  row, and a renewal lands as a new term by itself.
+- To tell whether the plan itself changed, compare the parsed JSON with the
+  newest held capture ignoring `CurrentPlan.Id`, not the sha256.
+- A second capture on the same day has the same filename and different bytes,
+  so it is a collision under section 4 and goes to `_to_delete/`.
 - `RenewedPlan` was null. Its shape once a renewal is signed is unknown; the
   parser reads `CurrentPlan` only.
 
@@ -204,8 +214,21 @@ As last observed 2026-09-28.
 - Compute the sha256 in the page before triggering the download and compare it
   with `shasum -a 256` on the landed file.
 - `download_dir` in providers.local.yaml is where this browser puts downloads.
-  Detect a landed file by a marker timestamp taken just before the download,
-  never by predicting the path.
+  Every provider command shares it and runs may overlap, so claim each landed
+  file with `src/downloads.py`, never by predicting the path or listing the
+  folder:
+
+  ```sh
+  uv run python src/downloads.py mark      # just before the download; prints a marker
+  uv run python src/downloads.py claim --provider gexa --since <marker>
+  ```
+
+  `claim` waits (30 s by default, `--timeout SECONDS` to change it) for a file
+  that is newer than the marker and named `gexa_...`, then prints its path.
+  When one script saves several files (the invoice list, the plan capture and
+  the PDFs), add `--expect <N>`. Exit 1 means fewer landed than expected, which
+  is what the automatic-downloads block below looks like. Exit 2 means more
+  did.
 - **Chrome's automatic-downloads permission is per origin.** Without an
   allowance for the portal origin the first download of a run lands and every
   later one vanishes with no prompt and no error — `fetch` still reports 200.
@@ -216,14 +239,16 @@ As last observed 2026-09-28.
   `Preferences` file; if the origin is absent, ask the user to add it under
   `chrome://settings/content/automaticDownloads`. Never click Chrome's own
   settings or dialogs yourself.
-- Move each capture out of `download_dir` as soon as it lands.
+- Move each capture out of `download_dir` as soon as it is claimed.
 
 The Electricity Facts Label, as first observed 2026-09-30:
 
 - `EFLLink` in the plan capture (the same link as PLAN DETAILS → Electricity
   Facts Label on My Service Plans) is a public viewer URL that answers with a
-  two-page PDF. It needs no session.
-- Fetch it once per plan, when the plan capture's bytes change, and file it as
+  two-page PDF. It needs no session, so fetch it with `curl` straight to its
+  place; it does not pass through the browser's download folder.
+- Fetch it once per plan, when the plan capture differs from the newest held
+  one in anything other than `CurrentPlan.Id` (section 2), and file it as
   `<archive_dir>/_contract/gexa_efl_{ProductCode}_{YYYY-MM-DD}.pdf`, the date
   being the label's own date. It is the contract document behind the plan
   capture. It is kept, not ingested: ingest skips folders whose name starts
@@ -407,9 +432,8 @@ Standard checks (every provider):
 - [ ] re-run ingest → 100% dedup, zero new rows
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] `checks.py` exits zero
-- [ ] `download_dir` holds no file whose name starts with `gexa`, and no
-      `IntervalData*.csv` left over from the Smart Meter Texas export
-      (section 3.4)
+- [ ] `uv run python src/downloads.py leftovers --provider gexa` exits 0
+      (prints nothing)
 
 Provider-specific verification checklist:
 

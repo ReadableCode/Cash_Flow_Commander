@@ -168,7 +168,8 @@ Three buttons above the list: `#transaction-search-button`,
   stays open after a download, so consecutive windows need no re-opening.
   Drive the date inputs with the native value setter, then dispatch
   `input`/`change` with `{bubbles:true}` and blur; verify by reading
-  `.value` back.
+  `.value` back. Take a download marker before every click on
+  `#transactionsDownloadOptionsDownload` (see *Where the file lands* below).
 
 The panel warns *"your download may not include recent or pending
 transactions"* — which is exactly why the planner's always-refetch overlap
@@ -238,14 +239,35 @@ requested end date**: three downloads whose requested end was "today" came
 back named four days later (2026-08-24 ×2 → `..._08-28-2026.csv`,
 2026-09-04 → `..._09-08-2026.csv`), while a closed past month requested as
 07/01–07/31 on 2026-09-24 came back `..._07-31-2026.csv`, matching exactly.
-The offset is not a contract either way. Detect a completed download ONLY by
-a marker-timestamp watch on `download_dir`; never trust the name.
+The offset is not a contract either way, so never read the window from the
+name.
+
+The name's shape is still Elan's alone, and that plus a marker is how a run
+claims its download. Every provider command shares `download_dir` and runs may
+overlap, so use `src/downloads.py`, one window at a time:
+
+```sh
+uv run python src/downloads.py mark      # just before clicking Download; prints a marker
+uv run python src/downloads.py claim --provider elan --since <marker>
+```
+
+`claim` waits (30 s by default, `--timeout SECONDS` to change it) for a file
+that is newer than the marker and has Elan's name shape, then prints its path.
+File that path (§4). Another run's download has another shape and a leftover
+from an earlier session is older than the marker, so neither is claimed. Take
+a new marker for every window and claim before the next click: that order is
+what ties a path to the window just requested. Exit 1 means no Elan file
+arrived (an empty window, above, or the block below); exit 2 means more than
+one did, and every path is printed. Never list `download_dir` yourself to pick
+a file.
 
 Chrome's multiple-download block applies: the second download of a session
 silently produces no file until the user clicks Allow on the
 "www.myaccountaccess.com wants to download multiple files" prompt — and the
 blocked download is then released retroactively, so expect a duplicate
-(sha256 dedup absorbs it).
+(sha256 dedup absorbs it). While blocked, `claim` exits 1. If the released
+file and a retry both land after the marker, `claim` exits 2 and prints both
+paths.
 
 ## 4. File each download verbatim
 
@@ -277,12 +299,15 @@ uv run python transaction_downloader/capture.py --provider elan record-empty \
 ```
 
 The browser's download location is `download_dir` in `providers.local.yaml`.
-Look there before hunting for files; a bare filename passed to `capture.py file`
-or `land.sh` resolves against it. Identical bytes filed twice are a no-op.
+`<downloaded file>` is the path `claim` printed (§3); a bare filename passed to
+`capture.py file` or `land.sh` resolves against `download_dir`. Identical bytes
+filed twice are a no-op.
 Every download is consumed exactly once: a new one is moved into `raw_dir`, and
 an identical re-download is discarded once its bytes are confirmed already
 filed. So a clean run leaves none of its downloads in `download_dir`, and any
-left there is real unfiled work. A discarded re-download still records the
+left there is real unfiled work;
+`uv run python src/downloads.py leftovers --provider elan` lists it. A
+discarded re-download still records the
 window it was requested for, as a `refetched_window` marker, because coverage
 is tracked by requested window and identical bytes can never record it
 themselves. Nothing is ever overwritten.
@@ -334,13 +359,12 @@ That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
 is deliberately empty here and `data_dir` is a work directory holding no
 captures — `raw_dir` is the only directory with anything to ingest.
 
-**Never omit the directory arguments.** With `--provider` set and no paths,
-`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
-onto every file it finds there — including other providers' documents, whose
-`provider` column is then simply wrong. It happened on 2026-09-04: an
-argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. `land.sh` avoids this whole class
-of mistake, which is why it is the first option above.
+**Never omit the directory arguments.** `ingest_raw.py` refuses `--provider`
+with no paths. It used to fall back to `$CFC_RAW_INGEST_DIRS` and stamp that
+provider onto every file it found there: on 2026-09-04 an argument-less
+`--provider elan` filed five Rhythm documents under `elan`, and they had to be
+reassigned by hand afterwards. `land.sh` passes the directories for you, which is
+why it is the first option above.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs
@@ -410,10 +434,8 @@ transactions upserted, and any popup or flow change you had to work around.
       once)
 - [ ] months reported as inferred are ones you actually imported from an
       archive
-- [ ] `download_dir` holds no file whose name starts with `elan`, and none of
-      this run's downloads under the portal's own name. Elan names them
-      `<account label> - <last4>_<start>_<end>.csv`, which does not start with
-      the slug, so find them by the marker timestamp.
+- [ ] `uv run python src/downloads.py leftovers --provider elan` exits 0
+      (prints nothing)
 
 ## 8. Keeping this command current
 

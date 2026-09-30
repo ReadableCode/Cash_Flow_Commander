@@ -150,7 +150,7 @@ Profile & settings to "fix" it.
 If a modal has no visible dismissal, re-navigate to the download URL rather
 than clicking through it.
 
-## 3. The download form — as last observed 2026-09-24
+## 3. The download form — as last observed 2026-09-30
 
 Verified live against the real portal on that date. Chase still moves this page,
 so if what you see disagrees, believe the page and then update this section (§8).
@@ -233,7 +233,9 @@ option:
 **Credit cards** — 29 options: `YEAR_TO_DATE`, `PREVIOUS_YEAR`,
 `SINCE_LAST_STATEMENT`, 24 × `STMT_CYCLE_n` (one per statement, newest first),
 `ALL` (labelled "All transactions" — on a card this one really does mean all),
-and `DATE_RANGE`.
+and `DATE_RANGE`. The count is not fixed: a card with fewer statements on file
+lists fewer `STMT_CYCLE_n` entries (27 options on one card, 2026-09-30).
+`DATE_RANGE` is always there, so check for it rather than for the count.
 
 So the *same label* means different things on the two kinds. Always select
 `DATE_RANGE` and pass the planner's explicit window. Presets are stateful or
@@ -299,7 +301,9 @@ account** rather than reusing coordinates from the previous account.
 2. Confirm File type is `CSV` (it usually already is).
 3. Select `DATE_RANGE` / "Choose a date range".
 4. Type From and To from the planner window. Blur.
-5. Click `#download`. Chase then shows a **confirmation page**
+5. Take a download marker (`uv run python src/downloads.py mark`, see *Where
+   the file lands* below), then click `#download`. Chase then shows a
+   **confirmation page**
    (`.../confirmDownloadAccountActivity;params=<TYPE>,<SUBTYPE>,<internal id>`)
    with "Download other activity" and "Go back to accounts". Click "Download
    other activity" to queue the next window without re-navigating.
@@ -307,6 +311,12 @@ account** rather than reusing coordinates from the previous account.
    not in `innerText` — matching on text content alone finds nothing (hit
    2026-09-04). Match on the attribute, and click the button inside the
    element's shadow root (`el.shadowRoot.querySelector('button')`).
+   The form that comes back is not a blank one (2026-09-30): the previous
+   account is still selected, and the URL hash stays on
+   `confirmDownloadAccountActivity;params=...` instead of returning to
+   `.../index`. So the hash does not say whether the form or the confirmation
+   is showing; test for `#account-selector` instead, and always re-select the
+   account and `DATE_RANGE` and re-enter both dates for the next window.
 6. Repeat per account, per window. **One download per planner window** — never
    merge two windows into one wider download, because the requested window is
    what marks a month covered.
@@ -315,16 +325,35 @@ account** rather than reusing coordinates from the previous account.
 
 Not necessarily `~/Downloads` — this is browser-profile specific and has been
 observed pointing at a cloud-synced Documents folder. The path belongs in the
-`download_dir` key of `providers.local.yaml`; read it from there rather than
-guessing, and if a download seems to have vanished, check there before retrying.
+`download_dir` key of `providers.local.yaml`; `src/downloads.py` reads it from
+there, so never guess it.
 
 The filename differs by product: **card exports embed the requested window**
 (`ChaseNNNN_Activity20260701_20260822_20260822.CSV`) while **bank exports do
-not** (`ChaseNNNN_Activity_20260822.CSV`). Detect a completed download by
-watching the folder for a file newer than a marker timestamp taken just before
-clicking Download — never by predicting the name, and never by grabbing the
-newest file without the timestamp check (a leftover from an earlier session
-looks exactly like your download).
+not** (`ChaseNNNN_Activity_20260822.CSV`). So the name does not say which
+window a file is for. What it does have is a shape, `ChaseNNNN_Activity...CSV`,
+that no other portal uses.
+
+Every provider command downloads into this folder and runs may overlap, so
+claim each download with `src/downloads.py`, one window at a time:
+
+```sh
+uv run python src/downloads.py mark      # just before clicking #download; prints a marker
+uv run python src/downloads.py claim --provider chase --since <marker>
+```
+
+`claim` waits (30 s by default, `--timeout SECONDS` to change it) for a file
+that is newer than the marker and has Chase's name shape, then prints its path.
+That path is the `<downloaded file>` of §4. A leftover from an earlier session
+is older than the marker and another run's download has another shape, so
+neither is claimed. Take a new marker for every window and claim before the
+next click: that order is what ties a path to the window just requested.
+
+- Exit 1: no Chase file arrived. Either the window was empty (below) or Chrome
+  blocked the download (§1). Anything else that arrived is named on stderr.
+- Exit 2: more than one arrived, usually a double click. Every path is printed.
+
+Never predict the name, and never list the folder yourself to pick a file.
 
 ### Empty windows produce NO file
 
@@ -372,7 +401,8 @@ window. Identical bytes filed twice are a no-op. Nothing is ever overwritten.
 and an identical re-download is discarded once its bytes are confirmed already
 filed. So a clean run leaves none of its downloads in `download_dir`, and
 anything of this provider's still sitting there afterwards is real unfiled
-work. Check it rather than assuming it is clutter. (Archived exports passed to
+work. `uv run python src/downloads.py leftovers --provider chase` lists it;
+check it rather than assuming it is clutter. (Archived exports passed to
 `import-legacy` are copied and never removed; they are the user's own files.)
 
 `raw_dir` is an archive. Captures, window markers and the manifest stay there
@@ -387,8 +417,8 @@ themselves — without the marker the month would stay "never fetched" and the
 planner would ask for it on every run forever.
 
 The browser's download location is `download_dir` in `providers.local.yaml`.
-Look there before hunting for files; a bare filename passed to `capture.py file`
-or `land.sh` resolves against it.
+`<downloaded file>` is the path `claim` printed (§3); a bare filename passed to
+`capture.py file` or `land.sh` resolves against `download_dir`.
 
 ## 4.1 Months Chase will not serve
 
@@ -439,13 +469,12 @@ That path is this provider's `raw_dir`. Unlike the bills commands, `archive_dir`
 is deliberately empty here and `data_dir` is a work directory holding no
 captures — `raw_dir` is the only directory with anything to ingest.
 
-**Never omit the directory arguments.** With `--provider` set and no paths,
-`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
-onto every file it finds there — including other providers' documents, whose
-`provider` column is then simply wrong. It happened on 2026-09-04: an
-argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. `land.sh` avoids this whole class
-of mistake, which is why it is the first option above.
+**Never omit the directory arguments.** `ingest_raw.py` refuses `--provider`
+with no paths. It used to fall back to `$CFC_RAW_INGEST_DIRS` and stamp that
+provider onto every file it found there: on 2026-09-04 an argument-less
+`--provider elan` filed five Rhythm documents under `elan`, and they had to be
+reassigned by hand afterwards. `land.sh` passes the directories for you, which is
+why it is the first option above.
 
 Captures classify as `csv_export` with `period_hint` set to the first of the
 requested window's month. sha256 dedup makes re-runs free. Report ingested vs
@@ -524,9 +553,8 @@ transactions upserted, and any popup or flow change you had to work around.
       debits negative — an account with zero rows in one direction means the
       parser's sign projection is wrong (Citi shipped that way once)
 - [ ] months reported as inferred are ones you actually imported from an archive
-- [ ] `download_dir` holds no file whose name starts with `chase` in any letter
-      case: Chase names its downloads `ChaseNNNN_Activity...CSV`, and a filed
-      capture starts `chase_`
+- [ ] `uv run python src/downloads.py leftovers --provider chase` exits 0
+      (prints nothing)
 
 ## 8. Keeping this command current
 

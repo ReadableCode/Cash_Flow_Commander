@@ -7,3 +7,4 @@ before acting on it — reality moves.
 
 | Issue | Found | Status |
 |-------|-------|--------|
+| [a same-day Enphase capture stores the rest of today as zero production](enphase-current-day-stored-as-zeros.md) | 2026-09-30 | open |

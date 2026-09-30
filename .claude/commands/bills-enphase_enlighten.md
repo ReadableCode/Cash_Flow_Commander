@@ -81,6 +81,15 @@ day after that). The parser skips it, so a run made before sunrise simply lands 
 today — confirmed 2026-09-04, run at ~06:00 local with `production: []` for that date. Do not
 add today to the persistent-gap list; the next run picks it up.
 
+**Once the panels are producing, today is not partial-length: it is a full array padded with
+zeros.** Observed 2026-09-30 at ~09:20 local: today's `production` had all 96 slots, 8 positive
+and 88 zero (no nulls), including zeros for intervals that had not happened yet, and
+`totals.production` was the running total. `lifetime_energy` likewise carried today's running
+total as its last element. The array is not empty, so the parser does **not** skip it: a
+daytime run lands today's unelapsed intervals as zero readings and a short `day` rollup. They
+are placeholders, not measurements. The next run's overlap restates them by natural-key upsert,
+so do not read today's numbers as final and do not spot-check against today.
+
 Because this provider has no retention limit and serves the whole lifetime in one call, `full`
 in `$ARGUMENTS` is always safe — it costs one request.
 
@@ -95,6 +104,12 @@ in `$ARGUMENTS` is always safe — it costs one request.
   `open -na "Google Chrome" --args --profile-directory=<personal dir> <url>` (directory name
   from the user's local notes, never here). Never `tell app "Google Chrome" to open location`:
   it lands in whichever window is frontmost, which can be a work profile.
+- **AppleScript `execute <tab> javascript` does not wait for a promise** (proven 2026-09-30 for
+  all three captures). Start the fetch-and-save as an async function that records each step's
+  status and byte count on a `window` variable and sets a done flag, return at once, then poll
+  that variable with further `execute` calls. Save `await r.arrayBuffer()` into the `Blob` so
+  the bytes are the server's. Three `Blob` + `a.download` saves 1.5 s apart all landed, with no
+  "download multiple files" prompt and without the window being brought to front.
 - A privacy/cookie consent modal appears on first load. Choose **Reject All** — never Accept.
   Decline app-install banners and battery/upgrade marketing. Do not change system settings.
 - Auth is a browser session cookie, so all calls run from the logged-in page context via
@@ -119,6 +134,20 @@ Parameterized on `system_id` from providers.local.yaml. **Save every response bo
 | **Interval production (primary)** | `GET /pv/systems/{system_id}/daily_energy?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` | `api_usage_json` | `enphase_enlighten_api_usage_daily_energy_{start}_{end}.json` |
 | Daily rollups + system start | `GET /pv/systems/{system_id}/lifetime_energy` | `api_usage_json` | `enphase_enlighten_api_usage_lifetime_energy_{YYYY-MM-DD}.json` |
 | System / logger metadata | `GET /pv/systems/{system_id}/today` | `other` | `enphase_enlighten_api_system_today_{YYYY-MM-DD}.json` |
+
+Every filename above starts with `enphase_enlighten_`, which is what `src/downloads.py claim`
+matches on. `download_dir` is shared with every other provider command and runs may overlap, so
+claim the files instead of listing the folder. Take a marker just before the script that saves
+them, then claim with the number of files that script saves (three for the table above):
+
+```sh
+uv run python src/downloads.py mark      # prints a marker
+uv run python src/downloads.py claim --provider enphase_enlighten --since <marker> --expect 3
+```
+
+`claim` waits (30 s by default, `--timeout SECONDS` to change it) for that many files newer than
+the marker and named `enphase_enlighten_...`, then prints each path. Exit 1 means fewer landed,
+which is what Chrome's download throttling (section 1) looks like. Exit 2 means more did.
 
 Also observed, not worth capturing: `/app-api/{system_id}/get_latest_power` (instantaneous
 power), `/systems/{system_id}/weather.json?date=YYYY-MM-DD`, `/app-api/graph_view_preference`
@@ -163,8 +192,8 @@ directly, and the electricity-provider cross-reference becomes a check rather th
   user what's there so they can review and trash it.
 - There are no bill PDFs for this provider; `archive_dir` holds only system documents
   (commissioning paperwork, warranty) if the user files any there.
-- Downloads land in `download_dir` from providers.local.yaml. Look there before hunting for
-  downloaded files.
+- Downloads land in `download_dir` from providers.local.yaml. `claim` (section 2) prints the
+  path of each landed file.
 
 ## 5. Optional Gmail supplements
 
@@ -180,13 +209,12 @@ directly, and the electricity-provider cross-reference becomes a check rather th
 uv run python src/ingest_raw.py --provider enphase_enlighten <archive_dir> <raw_dir> <data_dir>
 ```
 
-**Never omit the directory arguments.** With `--provider` set and no paths,
-`ingest_raw.py` falls back to `$CFC_RAW_INGEST_DIRS` and stamps that provider
-onto every file it finds there — including other providers' documents, whose
-`provider` column is then simply wrong. It happened on 2026-09-04: an
-argument-less `--provider elan` filed five Rhythm documents under `elan`, and
-they had to be reassigned by hand afterwards. Always pass the directory
-explicitly, even when you think the default is set to something harmless.
+**Never omit the directory arguments.** `ingest_raw.py` refuses `--provider`
+with no paths. It used to fall back to `$CFC_RAW_INGEST_DIRS` and stamp that
+provider onto every file it found there: on 2026-09-04 an argument-less
+`--provider elan` filed five Rhythm documents under `elan`, and they had to be
+reassigned by hand afterwards. Pass this provider's own directories, and only
+those.
 
 - Add `--dry-run` first to confirm the two energy captures classify as `api_usage_json`. Only the
   `api_system_today` capture is `other`.
@@ -286,7 +314,8 @@ Report date range covered, days captured, raw docs ingested/deduped, empty-produ
 the reconciliation against the electricity provider. Verify:
 
 - [ ] every API call this run has a matching verbatim .json in `raw_dir`
-- [ ] `download_dir` holds no file whose name starts with `enphase_enlighten`
+- [ ] `uv run python src/downloads.py leftovers --provider enphase_enlighten` exits 0 (prints
+      nothing)
 - [ ] `raw_documents` grew by exactly the new-artifact count; re-run ingest → 100% dedup (0 new)
 - [ ] the two energy captures classified as `api_usage_json`; only `api_system_today` is `other`
 - [ ] `parse_raw.py` reports zero errored and zero `no_parser` (the `api_system_today`
