@@ -57,7 +57,8 @@ new usage metric. Nothing existing changes.
 ## not doing yet
 
 The statement is already in the mailbox, so the cheapest acquisition is to
-read the attachment rather than open a portal. This repo has no mail
+read the attachment rather than open a portal: a mailbox with API access
+serves the bytes directly, on any machine. This repo has no mail
 transport: `docs/LANDING.md` section 7 treats mail as optional and no parser
 is registered for any mail document type. Whether an attachment handed over
 by Mail.app is an accepted transport, or the portal must be discovered, is
