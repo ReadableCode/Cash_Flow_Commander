@@ -98,14 +98,17 @@ sys.path.insert(0, os.path.join(repo, "src"))
 import user_paths
 if user_paths.ensure_providers_file(path):
     sys.exit(user_paths.SETUP_EXIT_CODE)
+def setup_incomplete(message):
+    print(message, file=sys.stderr)
+    sys.exit(user_paths.SETUP_EXIT_CODE)
 if not os.path.isfile(path):
-    sys.exit("providers.local.yaml not found (or its symlink target is missing)")
+    setup_incomplete("providers.local.yaml not found (or its symlink target is missing)")
 entry = (yaml.safe_load(open(path)) or {}).get(provider)
 if not isinstance(entry, dict):
-    sys.exit("no %s entry in providers.local.yaml" % provider)
+    setup_incomplete("no %s entry in providers.local.yaml. %s" % (provider, user_paths.setup_hint(provider)))
 missing = [k for k in ("raw_dir", "data_dir") if not entry.get(k)]
 if missing:
-    sys.exit("%s entry is missing: %s. %s" % (provider, ", ".join(missing), user_paths.setup_hint(provider)))
+    setup_incomplete("%s entry is missing: %s. %s" % (provider, ", ".join(missing), user_paths.setup_hint(provider)))
 def resolve(v):
     # user_paths also expands ${ONEDRIVE_DOCS}, so a config path stays correct
     # on every machine the sync folder lands on.
@@ -118,17 +121,20 @@ print(resolve(entry["raw_dir"]))
 print(resolve(entry["data_dir"]))
 '
 
+# The lookup runs as a plain command substitution so its exit status is this
+# script's: 2 when setup is incomplete, the same code every python entry point
+# returns. A process substitution would hide the status and the reads below
+# would fail with a bare 1.
+_paths="$(uv run python -c "$_paths_script" "$PROVIDER")" || exit $?
+
 ARCHIVE_DIR=""; RAW_DIR=""; DATA_DIR=""
 {
   IFS= read -r ARCHIVE_DIR
   IFS= read -r RAW_DIR
   IFS= read -r DATA_DIR
-} < <(uv run python -c "$_paths_script" "$PROVIDER")
-
-if [ -z "$RAW_DIR" ] || [ -z "$DATA_DIR" ]; then
-  echo "could not read raw_dir/data_dir from providers.local.yaml; the message above says what to do" >&2
-  exit 2
-fi
+} <<EOF_PATHS
+$_paths
+EOF_PATHS
 mkdir -p "$RAW_DIR" "$DATA_DIR"
 
 echo "  provider: $PROVIDER"
