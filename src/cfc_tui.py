@@ -48,6 +48,7 @@ import db  # noqa: E402
 import expected_forecast  # noqa: E402
 import expected_store  # noqa: E402
 import expected_suggest  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -1344,7 +1345,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))
 
 
 # %%

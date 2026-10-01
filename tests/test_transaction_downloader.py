@@ -35,7 +35,7 @@ CHASE_ROW_CAP = store.provider_def("chase")["row_cap"]
 
 CHECKING_CSV = (
     "Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #,\n"
-    'DEBIT,08/19/2026,"HEB #0567 AUSTIN TX",-96.31,DEBIT_CARD,5210.09,,\n'
+    'DEBIT,08/19/2026,"GROCER #0001 TESTVILLE TX",-96.31,DEBIT_CARD,5210.09,,\n'
     'CREDIT,08/07/2026,"ACME CORP DIRECT DEP",3120.44,ACH_CREDIT,5306.40,,\n'
     "Totals,,,,,,,\n"
 )

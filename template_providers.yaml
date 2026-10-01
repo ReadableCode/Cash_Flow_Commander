@@ -1,14 +1,21 @@
 # template_providers.yaml — committed shape of providers.local.yaml
 #
 # Usage:
-#   1. Copy this file to providers.local.yaml at the repo root (gitignored).
+#   1. The first script you run copies this file to providers.local.yaml at
+#      the repo root (gitignored) and says so. Copying it by hand works too.
 #   2. Fill in your real values there — account numbers, IDs, local paths.
-#   3. NEVER commit providers.local.yaml. This repo is public; only this
+#   3. NEVER commit providers.local.yaml here. This repo is public; only this
 #      placeholder template belongs in git.
+#   4. To keep your real file under version control, move it into a private
+#      repo of your own and symlink it back to providers.local.yaml. The
+#      scripts follow the link, and refuse to run if it dangles.
 #
 # One top-level key per provider. The key is the provider slug: lowercase
 # (a-z, 0-9, '_', '-'), and it must match both the ingest CLI's --provider
-# value and the /bills-<slug> command name.
+# value and the /bills-<slug> command name. A provider that serves one city or
+# neighbourhood (a municipal utility, an HOA, a local contractor) gets a
+# generic slug such as city_utility, and its real name goes in display_name
+# below, so nothing in the public repo places your home.
 #
 # Path fields (archive_dir, raw_dir, data_dir, download_dir) accept:
 #   - a repo-relative path      "local/chase"  (resolved against the repo

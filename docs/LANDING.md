@@ -56,7 +56,7 @@ Raw is the source of truth — the `raw_documents` table. Every structured table
 
 ## 3. Config loading
 
-Step zero of every provider command: read your entry from `providers.local.yaml` (repo root, gitignored). If your entry is missing, STOP and direct the user to `/bills-add-company` (or to copy `template_providers.yaml`). Personal values — account numbers, `premise_id`, credentials, directories — come only from there; they never appear in commands, code, or docs.
+Step zero of every provider command: read your entry from `providers.local.yaml` (repo root, gitignored). The file itself is created from `template_providers.yaml` by the first script that runs. If your entry is missing or blank, STOP and direct the user to `/bills-add-company`. Personal values — account numbers, `premise_id`, credentials, directories — come only from there; they never appear in commands, code, or docs. The same goes for anything that places the user's home: a provider that serves one city or neighbourhood gets a generic slug, and its name and portal host live in the entry's `display_name` and `notes`, never in this repo.
 
 ## 4. Artifact naming
 

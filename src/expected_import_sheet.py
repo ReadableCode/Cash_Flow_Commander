@@ -47,6 +47,7 @@ if _SRC_DIR not in sys.path:
 import bootstrap  # noqa: E402
 import db  # noqa: E402
 import expected_store  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -496,7 +497,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))
 
 
 # %%

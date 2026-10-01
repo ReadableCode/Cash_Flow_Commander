@@ -28,7 +28,7 @@ CARD_CAPTURE = "chase_csv_export_0002_20260801_20260822_captured20260822.csv"
 
 CHECKING = (
     "Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #,\n"
-    'DEBIT,08/19/2026,"HEB #0567  AUSTIN TX",-96.31,DEBIT_CARD,5210.09,,\n'
+    'DEBIT,08/19/2026,"GROCER #0001  TESTVILLE TX",-96.31,DEBIT_CARD,5210.09,,\n'
     'DEBIT,08/18/2026,"STARBUCKS 04412",-4.75,DEBIT_CARD,5306.40,,\n'
     'DEBIT,08/18/2026,"STARBUCKS 04412",-4.75,DEBIT_CARD,5311.15,,\n'
     'CHECK,08/12/2026,"CHECK #1042",-250.00,CHECK_PAID,5315.90,1042,\n'
@@ -123,7 +123,8 @@ def test_parses_the_checking_layout() -> None:
     assert first["post_date"] == dt.date(2026, 8, 19)
     assert first["txn_date"] == first["post_date"]
     assert first["amount"] == -96.31
-    assert first["description"] == "HEB #0567 AUSTIN TX"  # inner whitespace collapsed
+    # inner whitespace collapsed
+    assert first["description"] == "GROCER #0001 TESTVILLE TX"
     assert first["balance"] == 5210.09
 
 
@@ -291,7 +292,7 @@ def test_every_source_column_is_kept_verbatim() -> None:
     assert row["extra"]["columns"] == {
         "Details": "DEBIT",
         "Posting Date": "08/19/2026",
-        "Description": "HEB #0567  AUSTIN TX",
+        "Description": "GROCER #0001  TESTVILLE TX",
         "Amount": "-96.31",
         "Type": "DEBIT_CARD",
         "Balance": "5210.09",
@@ -307,8 +308,8 @@ def test_raw_strings_are_stored_unparsed_and_untrimmed() -> None:
     row = _parse(CHECKING)[0]
 
     # Typed column is normalized; the verbatim copy keeps the double space.
-    assert row["description"] == "HEB #0567 AUSTIN TX"
-    assert row["extra"]["columns"]["Description"] == "HEB #0567  AUSTIN TX"
+    assert row["description"] == "GROCER #0001 TESTVILLE TX"
+    assert row["extra"]["columns"]["Description"] == "GROCER #0001  TESTVILLE TX"
     assert row["extra"]["columns"]["Amount"] == "-96.31"      # string, not float
 
 
@@ -352,9 +353,9 @@ def test_extra_survives_the_round_trip_to_the_database(engine: Any) -> None:
 
     with engine.connect() as conn:
         stored = conn.execute(
-            select(db.transactions.c.extra).where(db.transactions.c.description == "HEB #0567 AUSTIN TX")
+            select(db.transactions.c.extra).where(db.transactions.c.description == "GROCER #0001 TESTVILLE TX")
         ).scalar_one()
-    assert stored["columns"]["Description"] == "HEB #0567  AUSTIN TX"
+    assert stored["columns"]["Description"] == "GROCER #0001  TESTVILLE TX"
     assert stored["layout"] == "checking"
 
 
@@ -476,7 +477,7 @@ def test_reconciliation_only_prunes_inside_its_own_window(engine: Any) -> None:
     # Newer but narrower: covers Aug 15-22 only, so the Aug 12 check is out of scope.
     tail_only = (
         "Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #,\n"
-        'DEBIT,08/19/2026,"HEB #0567  AUSTIN TX",-96.31,DEBIT_CARD,5210.09,,\n'
+        'DEBIT,08/19/2026,"GROCER #0001  TESTVILLE TX",-96.31,DEBIT_CARD,5210.09,,\n'
         'DEBIT,08/18/2026,"STARBUCKS 04412",-4.75,DEBIT_CARD,5306.40,,\n'
         'DEBIT,08/18/2026,"STARBUCKS 04412",-4.75,DEBIT_CARD,5311.15,,\n'
     )

@@ -262,6 +262,11 @@ Before committing the filled-in command file, verify it contains:
 - [ ] No paths containing a username (no `/Users/<name>/...`, `/home/<name>/...`).
 - [ ] No email addresses.
 - [ ] No contract history (rates, terms, renewal dates).
+- [ ] Nothing that places the user's home. A provider that serves one city or
+      neighbourhood (a municipal utility, an HOA, a local contractor) is not
+      named: its slug is generic (`city_utility`, `hoa`, `pest_control`), and
+      its name, portal host and folder live only in `providers.local.yaml`
+      under `display_name`. A national company may be named.
 - [ ] No credentials, tokens, or session cookies.
 - [ ] Personal values appear only symbolically — referenced from
       `providers.local.yaml`, never inlined.

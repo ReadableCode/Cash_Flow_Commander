@@ -370,7 +370,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         if account_id is None:
             print(
-                f"No account_number for provider '{args.provider}' in providers.local.yaml",
+                f"No account_number for provider '{args.provider}' in providers.local.yaml. "
+                + user_paths.setup_hint(args.provider),
                 file=sys.stderr,
             )
             return 2
@@ -407,4 +408,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))

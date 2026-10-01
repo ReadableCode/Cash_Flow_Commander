@@ -4,6 +4,19 @@
 - The initial project will not have a split frontend and backend since the initial use case will be with a TUI
 - It runs on SQLite or Postgres today (see [Database](#database)); further backends such as google sheets and excel files are a goal.
 
+## Getting started
+
+1. Install [uv](https://docs.astral.sh/uv/), then the dependencies: `uv sync`. Details are under [Running with uv](#running-with-uv).
+2. Run any script, for example `uv run python src/checks.py`. The first run on a checkout creates `providers.local.yaml` from `template_providers.yaml`, prints what to do next and stops with exit code 2. Nothing else happens on that run.
+3. Add your providers. In Claude Code, `/bills-add-company` (bills and usage) and `/transactions-add-company` (bank and card exports) each fill one entry by interview and write that company's command. Or edit `providers.local.yaml` by hand; its comments explain every key. Delete the template's entries for providers you do not use.
+4. Pick a database. With no `.env` the app uses a SQLite file under `data/` and says so on every run. For Postgres see [Database](#database).
+5. Acquire. Run a company's command (`/bills-<slug>`, `/transactions-<slug>`), or `/cfc-update` for all of them.
+6. Look at it: [the TUI](#running-the-tui), [the pairing board](#running-the-pairing-board), or the Grafana dashboards in `deploy/grafana/`.
+
+A script that needs a value you have not filled in stops with one line naming the provider and the key, says what to do, and exits with code 2. It does not print a traceback and it does not carry on with an empty config.
+
+`providers.local.yaml` is gitignored because this repo is public. To keep yours under version control, move it into a private repo of your own and symlink it back; see [Personal config](#personal-config).
+
 ## Setting Up
 
 ### Database
@@ -127,7 +140,9 @@ looks exactly like a run that worked, and that has happened here before.
 
 ### Personal config
 
-- Personal values (account numbers, IDs, archive paths) live in `providers.local.yaml`, which is gitignored. Copy `template_providers.yaml` to start.
+- Personal values (account numbers, IDs, archive paths) live in `providers.local.yaml`, which is gitignored. The first script you run creates it from `template_providers.yaml` and says so; every value starts blank.
+- Keep the real file under version control somewhere private: move it into a private repo of your own and symlink it back to `providers.local.yaml`. The scripts follow the link. If the link dangles they stop with an error and never write a blank file over it.
+- A provider that serves one city or neighbourhood gets a generic slug (`city_utility`, `hoa`), and its real name goes in that entry's `display_name`, so nothing committed here places your home.
 - Committed command files contain ONLY company knowledge and reference your values symbolically.
 
 ### Hygiene

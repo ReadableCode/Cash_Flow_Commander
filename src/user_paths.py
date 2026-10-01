@@ -32,6 +32,8 @@ never be written into a work account.
 
 import os
 import platform
+import shutil
+import sys
 
 # %%
 # Constants #
@@ -216,6 +218,88 @@ def check_not_desymlinked(path: str, loaded: object) -> None:
             "by a plain file holding its target path. Restore the symlink, or put a real copy "
             "of the target there."
         )
+
+
+TEMPLATE_PROVIDERS_NAME = "template_providers.yaml"
+
+# A run that stopped because setup is not finished. Distinct from 1, which the
+# check scripts return when they find something.
+SETUP_EXIT_CODE = 2
+
+
+class SetupIncomplete(ValueError):
+    """The run needs a config value or data that is not there yet.
+
+    The message says what is missing and what to do about it, so an entry point
+    can print it as is. A ValueError subclass, so callers that already treat a
+    missing value as a ValueError keep working.
+    """
+
+
+def setup_hint(provider: str | None = None) -> str:
+    """The next step for a provider value that is missing or blank."""
+    entry = f"the `{provider}` entry" if provider else "that provider's entry"
+    return (
+        f"Fill in {entry} in providers.local.yaml (the comments in "
+        f"{TEMPLATE_PROVIDERS_NAME} explain each key), or run /bills-add-company "
+        "(bank and card sources: /transactions-add-company), which fills it by interview."
+    )
+
+
+def first_run_message(path: str) -> str:
+    """What a new checkout is told once, when its config has just been created."""
+    return (
+        "Cash Flow Commander: first run on this checkout.\n\n"
+        f"Created {path} from {TEMPLATE_PROVIDERS_NAME}.\n"
+        "Every value in it is blank, so nothing was run.\n\n"
+        "Next:\n"
+        "  1. Add a provider. In Claude Code, /bills-add-company (bills and usage) or\n"
+        "     /transactions-add-company (bank and card exports) fills an entry by interview.\n"
+        "     Or edit the file by hand: its comments explain each key.\n"
+        "  2. Delete the entries for providers you do not use.\n"
+        "  3. Run this command again.\n\n"
+        "The file is gitignored because this repo is public. To keep it under version\n"
+        "control, move it into a private repo of your own and symlink it back to this path.\n"
+        "README.md, \"Getting started\", has the whole setup."
+    )
+
+
+def ensure_providers_file(path: str) -> bool:
+    """Create providers.local.yaml from the committed template on a first run.
+
+    Returns True when the file was created, after printing what to do next. An
+    existing file, or a working symlink to one, is left alone. A dangling
+    symlink is never replaced: that is a moved private config, and writing a
+    blank file over the link would hide it, so `check_config_readable` raises
+    instead.
+    """
+    check_config_readable(path)
+    if os.path.lexists(path):
+        return False
+    template = os.path.join(os.path.dirname(path), TEMPLATE_PROVIDERS_NAME)
+    shutil.copyfile(template, path)
+    print(first_run_message(path), file=sys.stderr)
+    return True
+
+
+def run_entry_point(main, path: str) -> int:
+    """Run a script's main() the way a person at a terminal needs it to behave.
+
+    On a first run the config is created and the run stops there: every value
+    is blank, so doing the work would only fail further down. A SetupIncomplete
+    raised by the work is printed as its one message, without a traceback.
+    Both return SETUP_EXIT_CODE.
+
+    Called from each script's `__main__` block, never from main() itself, so
+    tests that call main() neither write into the checkout nor lose a traceback.
+    """
+    if ensure_providers_file(path):
+        return SETUP_EXIT_CODE
+    try:
+        return main()
+    except SetupIncomplete as error:
+        print(str(error), file=sys.stderr)
+        return SETUP_EXIT_CODE
 
 
 # %%

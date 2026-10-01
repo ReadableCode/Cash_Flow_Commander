@@ -102,7 +102,10 @@ def download_dir_for(provider: str) -> str:
     """The provider's download_dir, expanded for this machine. Raises when unset."""
     configured = _provider_entry(provider).get("download_dir")
     if not configured:
-        raise ValueError(f"no download_dir for provider '{provider}' in providers.local.yaml")
+        raise user_paths.SetupIncomplete(
+            f"no download_dir for provider '{provider}' in providers.local.yaml. "
+            + user_paths.setup_hint(provider)
+        )
     return user_paths.expand_config_path(str(configured), _REPO_ROOT)
 
 
@@ -295,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
 # Main #
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))
 
 
 # %%

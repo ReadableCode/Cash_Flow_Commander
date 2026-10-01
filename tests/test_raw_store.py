@@ -348,7 +348,7 @@ def test_gather_files_skips_hidden_and_underscore_dirs(tmp_path: Any) -> None:
     ("folder", "expected"),
     [
         ("Rythm", "rhythm"),  # alias: archive folder keeps the provider's spelling
-        ("City of Georgetown", "city_of_georgetown"),
+        ("City Utility", "city_utility"),
         ("Just Energy", "just_energy"),
         ("Atmos", "atmos"),
         ("---", None),

@@ -151,8 +151,8 @@ def guess_mime(name: str) -> str | None:
 
 
 def slugify_provider(name: str) -> str | None:
-    """Turn a provider folder name into a provider slug, e.g. 'City of Georgetown'
-    -> 'city_of_georgetown'. Applies PROVIDER_ALIASES; None when nothing usable."""
+    """Turn a provider folder name into a provider slug, e.g. 'Just Energy'
+    -> 'just_energy'. Applies PROVIDER_ALIASES; None when nothing usable."""
     slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return PROVIDER_ALIASES.get(slug, slug) or None
 

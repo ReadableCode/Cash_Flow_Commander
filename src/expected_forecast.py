@@ -41,6 +41,7 @@ if _SRC_DIR not in sys.path:
 import bootstrap  # noqa: E402
 import db  # noqa: E402
 import expected_store  # noqa: E402
+import user_paths  # noqa: E402
 
 # %%
 # Constants #
@@ -102,6 +103,12 @@ def get_anchor(engine, account_id: str):
     this, a payday anchor could read the pre-autopay balance and overstate
     the whole forecast.
     """
+    if not account_id:
+        raise user_paths.SetupIncomplete(
+            "No forecast_anchor_account under our_cash in providers.local.yaml. Set it to "
+            "the account whose balance the forecast starts from; the comments in "
+            f"{user_paths.TEMPLATE_PROVIDERS_NAME} show the shape."
+        )
     day_stmt = select(func.max(db.transactions.c.post_date)).where(
         db.transactions.c.account_id == account_id,
         db.transactions.c.balance.is_not(None),
@@ -109,7 +116,11 @@ def get_anchor(engine, account_id: str):
     with engine.connect() as conn:
         anchor_date = conn.execute(day_stmt).scalar()
     if anchor_date is None:
-        raise ValueError(f"No balance-bearing transactions for account {account_id!r}")
+        raise user_paths.SetupIncomplete(
+            f"No balance-bearing transactions for account {account_id!r}, so there is no "
+            "balance to forecast from. Land that account's transactions first "
+            "(/transactions-<slug>), then run this again."
+        )
 
     rows_stmt = (
         select(db.transactions.c.amount, db.transactions.c.balance)
@@ -446,7 +457,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))
 
 
 # %%

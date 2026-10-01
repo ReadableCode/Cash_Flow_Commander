@@ -23,6 +23,13 @@ If `$ARGUMENTS` contains a company name, use it as the starting point; otherwise
 
 1. **Company name** → derive the **slug**: lowercase snake_case (e.g. "City Gas & Power" → `city_gas_power`). Confirm the slug with the user.
 2. **Service type**: electricity / gas / water / internet / cellular / other.
+   Then ask: **does naming this company place the user's home?** A municipal
+   utility, an HOA, a local contractor or any company that serves one city or
+   neighbourhood does. For those the slug is generic (`city_utility`, `hoa`,
+   `pest_control`, `garage_door_service`), the command file never names the
+   company or its portal host, and the name goes into `display_name` in
+   `providers.local.yaml` for the command to use at run time. A national
+   company keeps its name as the slug.
 3. **How bills arrive**: portal with API / portal PDF-only / email-only / paper scans. (Multiple can apply.)
 4. **Known retention limits** on portal data (e.g. "only 24 months of bills online") — this drives backfill urgency. Treat what the portal or the user *believes* as unverified until probed live in the discovery session — labels lie (a Chase export labelled "All transactions" meant 24 months).
 5. **Export caps** — rows or size per download, and whether hitting the cap fails loudly or truncates silently. Silent truncation is the dangerous kind; it needs a guard, not a habit.
@@ -38,9 +45,9 @@ If `.claude/commands/bills-<slug>.md` already exists, STOP and tell the user —
 
 ## 3. Local config stub
 
-1. If `providers.local.yaml` does not exist at the repo root, create it by copying `template_providers.yaml`.
+1. If `providers.local.yaml` does not exist at the repo root, create it by copying `template_providers.yaml` (any script does the same on its first run). If it is a symlink, leave the link alone and edit the file it points at.
 2. Append a stub entry for `<slug>`, following the shape in `template_providers.yaml`, with placeholder values for the user to fill in (account number, `archive_dir`, `raw_dir`, `data_dir`, `download_dir`, etc.). `raw_dir` is the archive of verbatim captures and `download_dir` is where this machine's browser drops the portal's downloads.
-3. NEVER commit `providers.local.yaml`. Remind the user it is gitignored and stays local — it is where all personal values belong.
+3. NEVER commit `providers.local.yaml` to this repo. Remind the user it is gitignored here, that it is where all personal values belong, and that the way to version it is a private repo of their own with a symlink back to this path.
 
 ## 4. Discovery session (offer, don't force)
 

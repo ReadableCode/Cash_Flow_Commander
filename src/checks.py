@@ -557,6 +557,15 @@ def main(argv: list[str] | None = None) -> int:
     account_id = args.account
     if account_id is None and args.provider:
         account_id = account_id_for_provider(args.provider, _load_providers_config(PROVIDERS_YAML_PATH))
+        if account_id is None:
+            # Without this the checks run over every account and report on
+            # none of this provider's, which reads as a clean bill of health.
+            print(
+                f"No account_number for provider '{args.provider}' in providers.local.yaml. "
+                + user_paths.setup_hint(args.provider),
+                file=sys.stderr,
+            )
+            return user_paths.SETUP_EXIT_CODE
 
     engine = db.get_engine()
     bootstrap.ensure_schema(engine)
@@ -571,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(user_paths.run_entry_point(main, PROVIDERS_YAML_PATH))
 
 
 # %%

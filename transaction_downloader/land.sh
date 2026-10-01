@@ -82,6 +82,10 @@ if provider not in store.PROVIDERS:
         % (provider, ", ".join(sorted(store.PROVIDERS)))
     )
 path = os.path.join(repo, "providers.local.yaml")
+sys.path.insert(0, os.path.join(repo, "src"))
+import user_paths
+if user_paths.ensure_providers_file(path):
+    sys.exit(user_paths.SETUP_EXIT_CODE)
 if not os.path.isfile(path):
     sys.exit("providers.local.yaml not found (or its symlink target is missing)")
 entry = (yaml.safe_load(open(path)) or {}).get(provider)
@@ -89,9 +93,7 @@ if not isinstance(entry, dict):
     sys.exit("no %s entry in providers.local.yaml" % provider)
 missing = [k for k in ("raw_dir", "data_dir") if not entry.get(k)]
 if missing:
-    sys.exit("%s entry is missing: %s" % (provider, ", ".join(missing)))
-sys.path.insert(0, os.path.join(repo, "src"))
-import user_paths
+    sys.exit("%s entry is missing: %s. %s" % (provider, ", ".join(missing), user_paths.setup_hint(provider)))
 def resolve(v):
     # user_paths also expands ${ONEDRIVE_DOCS}, so a config path stays correct
     # on every machine the sync folder lands on.
@@ -112,8 +114,8 @@ ARCHIVE_DIR=""; RAW_DIR=""; DATA_DIR=""
 } < <(uv run python -c "$_paths_script" "$PROVIDER")
 
 if [ -z "$RAW_DIR" ] || [ -z "$DATA_DIR" ]; then
-  echo "could not read raw_dir/data_dir from providers.local.yaml" >&2
-  exit 1
+  echo "could not read raw_dir/data_dir from providers.local.yaml; the message above says what to do" >&2
+  exit 2
 fi
 mkdir -p "$RAW_DIR" "$DATA_DIR"
 

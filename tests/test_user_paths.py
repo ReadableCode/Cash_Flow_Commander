@@ -173,3 +173,96 @@ def test_real_mapping_passes():
 def test_empty_file_still_passes():
     """yaml.safe_load of an empty file is None; that stays a soft {} fallback."""
     user_paths.check_not_desymlinked("providers.local.yaml", None)
+
+
+# %%
+# First-run config #
+
+
+def _repo_with_template(tmp_path):
+    (tmp_path / user_paths.TEMPLATE_PROVIDERS_NAME).write_text("chase:\n  raw_dir: \"\"\n")
+    return tmp_path / "providers.local.yaml"
+
+
+def test_missing_config_is_created_from_the_template(tmp_path, capsys):
+    path = _repo_with_template(tmp_path)
+    assert user_paths.ensure_providers_file(str(path)) is True
+    assert path.read_text() == (tmp_path / user_paths.TEMPLATE_PROVIDERS_NAME).read_text()
+    assert not path.is_symlink()
+    message = capsys.readouterr().err
+    assert "Created" in message and "private repo" in message
+    assert "/bills-add-company" in message and "Run this command again" in message
+
+
+def test_existing_config_is_left_alone(tmp_path, capsys):
+    path = _repo_with_template(tmp_path)
+    path.write_text("chase:\n  raw_dir: mine\n")
+    assert user_paths.ensure_providers_file(str(path)) is False
+    assert path.read_text() == "chase:\n  raw_dir: mine\n"
+    assert capsys.readouterr().err == ""
+
+
+def test_working_symlink_is_left_alone(tmp_path):
+    path = _repo_with_template(tmp_path)
+    target = tmp_path / "private" / "providers.yaml"
+    target.parent.mkdir()
+    target.write_text("chase: {}\n")
+    path.symlink_to(target)
+    assert user_paths.ensure_providers_file(str(path)) is False
+    assert path.is_symlink() and target.read_text() == "chase: {}\n"
+
+
+def test_dangling_symlink_is_never_replaced(tmp_path):
+    """A moved private config must stay visible as a broken link, not become a blank file."""
+    path = _repo_with_template(tmp_path)
+    path.symlink_to(tmp_path / "gone" / "providers.yaml")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        user_paths.ensure_providers_file(str(path))
+    assert path.is_symlink()
+
+
+# %%
+# Entry points #
+
+
+def test_first_run_stops_before_the_work(tmp_path, capsys):
+    """A just-created config is all blanks, so the work is not attempted."""
+    path = _repo_with_template(tmp_path)
+    ran = []
+    code = user_paths.run_entry_point(lambda: ran.append(True) or 0, str(path))
+    assert code == user_paths.SETUP_EXIT_CODE
+    assert ran == []
+    assert path.exists()
+    assert "first run" in capsys.readouterr().err
+
+
+def test_second_run_does_the_work(tmp_path, capsys):
+    path = _repo_with_template(tmp_path)
+    path.write_text("chase:\n  raw_dir: mine\n")
+    assert user_paths.run_entry_point(lambda: 7, str(path)) == 7
+    assert capsys.readouterr().err == ""
+
+
+def test_setup_incomplete_is_one_message_not_a_traceback(tmp_path, capsys):
+    path = _repo_with_template(tmp_path)
+    path.write_text("chase:\n  raw_dir: \"\"\n")
+
+    def work():
+        raise user_paths.SetupIncomplete("no raw_dir for provider 'chase'. " + user_paths.setup_hint("chase"))
+
+    assert user_paths.run_entry_point(work, str(path)) == user_paths.SETUP_EXIT_CODE
+    message = capsys.readouterr().err
+    assert message.startswith("no raw_dir for provider 'chase'")
+    assert "the `chase` entry" in message and "Traceback" not in message
+
+
+def test_other_errors_still_raise(tmp_path):
+    """Only a setup gap is softened; a real bug keeps its traceback."""
+    path = _repo_with_template(tmp_path)
+    path.write_text("chase: {}\n")
+
+    def work():
+        raise KeyError("a bug")
+
+    with pytest.raises(KeyError):
+        user_paths.run_entry_point(work, str(path))
