@@ -23,6 +23,11 @@
 #   bash transaction_downloader/land.sh --legacy FILE [FILE ...]
 #       import archived exports with an inferred window, then ingest + parse.
 #
+#   bash transaction_downloader/land.sh [--provider SLUG] --no-forecast ...
+#       same as above, but the parse skips its forecast_days rebuild. Only
+#       /cfc-update passes it: it lands every provider this way and rebuilds
+#       the forecast once after the last one. A standalone run omits it.
+#
 #   bash transaction_downloader/land.sh [--provider SLUG] --dry-run
 #       resolve and print the provider and its directories, then stop. Nothing
 #       is filed, ingested or parsed. Use it to confirm what a run would touch.
@@ -56,6 +61,13 @@ else
   case "${1:-}" in
     --provider=*) PROVIDER="${1#--provider=}"; shift ;;
   esac
+fi
+
+# Unquoted where it is used, so an empty value adds no argument. bash 3.2 on
+# macOS treats an empty array as unset under `set -u`.
+NO_FORECAST=""
+if [ "${1:-}" = "--no-forecast" ]; then
+  NO_FORECAST="--no-forecast"; shift
 fi
 
 DRY_RUN=0
@@ -172,7 +184,7 @@ else
 fi
 echo
 echo "=== 3. parse (transactions) ==="
-uv run python src/parse_raw.py --provider "$PROVIDER"
+uv run python src/parse_raw.py --provider "$PROVIDER" $NO_FORECAST
 echo
 echo "=== 4. what is still missing ==="
 uv run python transaction_downloader/plan.py --provider "$PROVIDER" || true

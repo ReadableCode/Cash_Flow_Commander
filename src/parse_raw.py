@@ -362,6 +362,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="parse and report per-sink row counts only; no upserts and no parse_status updates",
     )
     parser.add_argument(
+        "--no-forecast",
+        action="store_true",
+        help="skip the end-of-run forecast_days rebuild; /cfc-update lands every provider this way and rebuilds once at the end",
+    )
+    parser.add_argument(
         "--account-id",
         default=None,
         help="override the account id for every parsed document instead of reading providers.local.yaml",
@@ -392,10 +397,11 @@ def main(argv: list[str] | None = None) -> int:
         if reason is not None:
             errors.append((doc["original_name"], reason))
     _print_summary(counts, rows_by_key, errors, args.dry_run)
-    if not args.dry_run:
+    if not args.dry_run and not args.no_forecast:
         # Landed rows move the anchor balance and can resolve or break
         # matches, so the forecast follows every real parse; Grafana reads
-        # the table.
+        # the table. A multi-provider run passes --no-forecast and rebuilds
+        # once after its last landing instead.
         expected_forecast.rebuild_after(engine, "parse")
     return 1 if any(counter["error"] for counter in counts.values()) else 0
 

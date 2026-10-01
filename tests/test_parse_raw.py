@@ -1,4 +1,4 @@
-"""parse_raw's end-of-run forecast rebuild: once per real run, never on a dry run."""
+"""parse_raw's end-of-run forecast rebuild: once per real run, never on a dry run or with --no-forecast."""
 
 import importlib
 import os
@@ -59,4 +59,10 @@ def test_a_real_run_rebuilds_the_forecast_once(engine, monkeypatch):
 def test_a_dry_run_leaves_the_forecast_alone(engine, monkeypatch):
     events = _capture_rebuilds(monkeypatch)
     assert parse_raw.main(["--account-id", "ACCT-TEST-1", "--dry-run"]) == 0
+    assert events == []
+
+
+def test_no_forecast_leaves_the_forecast_alone(engine, monkeypatch):
+    events = _capture_rebuilds(monkeypatch)
+    assert parse_raw.main(["--account-id", "ACCT-TEST-1", "--no-forecast"]) == 0
     assert events == []

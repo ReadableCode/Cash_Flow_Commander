@@ -127,8 +127,9 @@ Give each agent this brief, filled in for its provider:
 
 What the agents run before filing only reads the database (`plan.py`,
 `coverage.py`) and writes files in that provider's own folders, so they do not
-collide. Landing is held back because every `parse_raw.py` run rebuilds the
-cash forecast table.
+collide. Landing is held back so it runs one provider at a time, and so the
+cash forecast table is rebuilt once for the whole run instead of once per
+provider.
 
 ## 4. Land, one provider at a time
 
@@ -144,6 +145,21 @@ read the interval data).
   it; do not relabel anything without the user.
 - A parse error is fixed in the parser, never by editing rows (each command's
   Normalize section).
+- Add `--no-forecast` to every `parse_raw.py` and `land.sh` call made here
+  (`land.sh --provider <slug> --no-forecast ...`). Run on its own, each command
+  rebuilds the forecast at the end of its parse. Inside this run that would
+  rebuild it once per provider, so it is held for step 4.1.
+
+## 4.1 Rebuild the forecast, once
+
+After the last provider has landed:
+
+```sh
+uv run python src/expected_forecast.py
+```
+
+Without `--publish` this rebuilds `forecast_days` (the table the Grafana cash
+forecast reads) and prints a preview; it writes no sheet.
 
 ## 5. Check, once
 

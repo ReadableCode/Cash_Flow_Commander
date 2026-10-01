@@ -35,6 +35,12 @@ be invoked from anywhere; the `uv run python ...` calls cannot.
 - **STOP if the entry is absent.** Do not guess paths or account numbers — copy
   the `chase` block from `template_providers.yaml` into `providers.local.yaml`,
   have the user fill it in, then re-run.
+- **Ask for database reads now, not at the end.** The checks in §7 query the
+  shared database directly, and the permission layer refuses ad-hoc reads
+  until the user has said so outright in the session (for example "you can
+  read real data however you want"). Ask once, here, in those terms, so the
+  checks run without a second round trip. The pipeline scripts themselves
+  (`plan.py`, `capture.py`, `land.sh`) need no such permission.
 
 ## 0.1 Plan — decide what to download
 
@@ -489,6 +495,11 @@ uv run python src/parse_raw.py --provider chase
 `src/providers/chase.py` handles all three layouts and upserts into
 `transactions`. Report parsed / errored / no_parser counts and rows upserted.
 
+The parse then rebuilds `forecast_days`, so the Grafana cash forecast is
+current when a standalone run ends (`forecast_days rebuilt after parse`).
+`/cfc-update` passes `--no-forecast` here instead and rebuilds once after
+every provider has landed.
+
 Facts the parser encodes, repeated here because they are the ones that bite:
 
 - **Chase CSVs have no transaction id**, and genuinely identical same-day rows
@@ -547,14 +558,75 @@ transactions upserted, and any popup or flow change you had to work around.
 - [ ] `parse_raw.py` reports zero errored and zero no_parser
 - [ ] re-run `parse_raw.py --status all` → same row count in `transactions`
       (reprocessing must be idempotent)
-- [ ] a spot-checked month's transaction count and net total match what the
-      Chase UI shows for that account and period
-- [ ] sign spot-check: card payments land POSITIVE in `transactions` and bank
-      debits negative — an account with zero rows in one direction means the
-      parser's sign projection is wrong (Citi shipped that way once)
+- [ ] every account's counts and net totals match the Chase website (§7.1)
+- [ ] signs are right (§7.1): card payments POSITIVE and card sales and fees
+      negative, and both bank accounts have rows in both directions. An
+      account with zero rows in one direction means the parser's sign
+      projection is wrong (Citi shipped that way once)
 - [ ] months reported as inferred are ones you actually imported from an archive
 - [ ] `uv run python src/downloads.py leftovers --provider chase` exits 0
       (prints nothing)
+
+Run every check yourself, including the website comparison. None of them is a
+step to hand to the user.
+
+### 7.1 Compare against the Chase website (as last done 2026-10-01)
+
+Read the account activity pages in the same signed-in tab, by AppleScript
+`execute ... javascript` as in §1, and compare against `transactions` joined to
+`raw_documents` on `provider = 'chase'`. The database side has no provider
+column on `transactions`; the join is what scopes it.
+
+**Sign check, database only.** Per account, count rows with `amount > 0` and
+`amount < 0`. For the cards also group by `txn_type`: `Payment`, `Return` and
+`Adjustment` must be positive, `Sale` and `Fee` negative.
+
+**Bank accounts: compare a calendar month by posting date.**
+
+- Page: `.../dashboard#/dashboard/summary/<internal id>/DDA/CHK` for checking,
+  `.../DDA/SAV` for savings. Give it ~9 s.
+- Rows are `<tr>` elements in the light DOM: the date is in the `th`, and the
+  amount is the first `td` matching a dollar amount (`−$1.23` uses U+2212, not
+  a hyphen). Bank pages sign amounts the same way the database does.
+- Pending rows come first, with `Pending` or nothing in the `th`. Skip them;
+  the export does not include them.
+- The date shows as `Sep 30, 2026` on one row and `09/30/2026` on the next.
+  Both are real dates, so parse both forms.
+- The list is paged. Click `#see-more-button_id` (an `mds-button`; click the
+  button in its shadow root) until the oldest row is before the month, then
+  sum the month.
+- Database side: `post_date` within the month.
+
+**Cards: compare statement cycles by posting date, not calendar months.**
+
+- Page: `.../dashboard#/dashboard/summary/<internal id>/CARD/BAC`. The date it
+  shows is the transaction date, while its periods are cut by posting date,
+  so a calendar month cannot be compared cleanly. Compare whole cycles.
+- The period selector is the `mds-select` `#ACTIVITY-header-selector-label`.
+  Its options (light DOM or shadow root, check both) are labelled `Activity
+  since last statement`, `All transactions`, `Last year`, `Year to date` and
+  `<Mon D, YYYY> statement`. After selection its `value` attribute holds the
+  cycle as JSON (`CARD_CYCLE_START_DATE`, `CARD_CYCLE_END_DATE`). Those are
+  posting dates, so they are the database window.
+- **The selection persists across navigation**, and clicking the option that
+  is already selected leaves the menu open, so the next click only closes it.
+  Read the shadow button's text first and click only when it differs.
+- Card pages show charges POSITIVE and payments negative, the opposite of the
+  database. Flip the sign before comparing.
+- Pending charges sit in a separate first table with 3 `td`s per row. Posted
+  rows are in the last table and have 4 (description, category, amount,
+  action). Read the last table only.
+- `#see-more-button_id` pages the card list too. It renders a moment after
+  the rows, so a check made too early misses it.
+- A card with no activity in the period shows "You have no activity to display
+  from this time" and has no table at all. That counts as zero rows.
+- Compare the newest statement and `Activity since last statement`. Database
+  side: `post_date` between the cycle's start and end, and after the end for
+  the since-last-statement view.
+
+Every count and net total must match exactly. A difference means a capture
+missed or duplicated rows, and the planner's coverage cannot be trusted for
+that account until it is explained.
 
 ## 8. Keeping this command current
 
