@@ -568,7 +568,7 @@ transactions upserted, and any popup or flow change you had to work around.
 Run every check yourself, including the website comparison. None of them is a
 step to hand to the user.
 
-### 7.1 Compare against the Chase website (as last done 2026-10-01)
+### 7.1 Compare against the Chase website (as last done 2026-10-13)
 
 Read the account activity pages in the same signed-in tab, by AppleScript
 `execute ... javascript` as in §1, and compare against `transactions` joined to
@@ -586,8 +586,11 @@ column on `transactions`; the join is what scopes it.
 - Rows are `<tr>` elements in the light DOM: the date is in the `th`, and the
   amount is the first `td` matching a dollar amount (`−$1.23` uses U+2212, not
   a hyphen). Bank pages sign amounts the same way the database does.
-- Pending rows come first, with `Pending` or nothing in the `th`. Skip them;
-  the export does not include them.
+- Pending rows come first, with `Pending` or nothing in the `th`. Skip them
+  on the page. **The checking export does include them** (seen 2026-10-13:
+  the four pending rows were in that day's capture, each with an empty
+  balance), so a comparison that reaches the current month must leave out
+  the database rows whose `balance` is null. A closed month is unaffected.
 - The date shows as `Sep 30, 2026` on one row and `09/30/2026` on the next.
   Both are real dates, so parse both forms.
 - The list is paged. Click `#see-more-button_id` (an `mds-button`; click the
@@ -605,7 +608,17 @@ column on `transactions`; the join is what scopes it.
   since last statement`, `All transactions`, `Last year`, `Year to date` and
   `<Mon D, YYYY> statement`. After selection its `value` attribute holds the
   cycle as JSON (`CARD_CYCLE_START_DATE`, `CARD_CYCLE_END_DATE`). Those are
-  posting dates, so they are the database window.
+  posting dates, so they are the database window. The options are
+  `mds-select-option` children in the light DOM under year group headers, and
+  each statement option already carries that JSON in its own `value`, so the
+  cycle can be read without selecting it. With `Activity since last statement`
+  selected the selector's `value` is the literal `SINCE_LAST_STATEMENT`; take
+  the window start from the newest statement option's end date.
+- To select a period, click the selector's shadow `button`, wait about 600 ms,
+  then click the first `div` inside the option's own shadow root.
+- The account links on `#/dashboard/overview` carry no id. Click one and read
+  the internal id from the resulting hash; after that, setting `location.hash`
+  to the summary path works directly.
 - **The selection persists across navigation**, and clicking the option that
   is already selected leaves the menu open, so the next click only closes it.
   Read the shadow button's text first and click only when it differs.
@@ -613,9 +626,12 @@ column on `transactions`; the join is what scopes it.
   database. Flip the sign before comparing.
 - Pending charges sit in a separate first table with 3 `td`s per row. Posted
   rows are in the last table and have 4 (description, category, amount,
-  action). Read the last table only.
+  action). Read the last table only. The table ids say which is which:
+  `PENDING-dataTableId-...` and `ACTIVITY-dataTableId-...`; a card with no
+  pending charges has only the second.
 - `#see-more-button_id` pages the card list too. It renders a moment after
-  the rows, so a check made too early misses it.
+  the rows, so a check made too early misses it. On 2026-10-13 it never
+  appeared on any card view, and lists of 133 and 79 rows rendered in full.
 - A card with no activity in the period shows "You have no activity to display
   from this time" and has no table at all. That counts as zero rows.
 - Compare the newest statement and `Activity since last statement`. Database
