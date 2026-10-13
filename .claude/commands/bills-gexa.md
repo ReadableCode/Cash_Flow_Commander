@@ -218,11 +218,17 @@ As last observed 2026-09-28.
 - **The token rides in the query string.** The page opens this URL in a new
   tab; do not. `fetch` it inside the signed-in tab, check that the body starts
   with `%PDF-`, and hand it to `Blob` + `a.download`. Never print the URL.
-- Auto mode refused this fetch twice on 2026-10-13 as credential exploration,
-  from an agent and from the main session, the second time after the user had
-  asked for it. Do not retry it another way. When it is refused, report the
-  PDF as not obtained; a new invoice's PDF then needs the user to allow the
-  step or to download it themselves.
+- Auto mode refused this fetch on 2026-10-13 as credential exploration until
+  the user had allowed `osascript` in the settings and a new session had
+  loaded that rule; it then ran. When it is refused, do not retry it another
+  way: report the PDF as not obtained.
+- **A timed-out session answers `200` with the login page**, not an error
+  (seen 2026-10-13, a few hours after sign-in: 175 KB of HTML, while the tab
+  still showed the dashboard). The `%PDF-` check is what catches it. Reload
+  the tab onto the sign-in form and ask the user to sign in.
+- For a restatement re-pull, hash the body in the page and compare it with
+  `shasum -a 256` of the held PDF before downloading anything. Identical
+  bytes need no download and no filing.
 - Naming: `gexa_bill_{invoice_number}_{YYYY-MM-DD}.pdf`, the date being the
   invoice date. `src/ingest_raw.py` classifies this pattern as `bill_pdf`.
 - Compute the sha256 in the page before triggering the download and compare it
