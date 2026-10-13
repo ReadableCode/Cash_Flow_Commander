@@ -34,6 +34,11 @@ rhythm:
   # (e.g. electricity, gas, water, internet, insurance).
   service_type: electricity
 
+  # Optional, on any provider: the date you decided a closed account has
+  # nothing more to send. /cfc-update leaves a settled provider out of its
+  # runs; the provider's own command still works.
+  # settled: "YYYY-MM-DD"
+
   # Your account number with the provider, exactly as it appears on bills.
   account_number: ""
 

@@ -35,12 +35,10 @@ be invoked from anywhere; the `uv run python ...` calls cannot.
 - **STOP if the entry is absent.** Do not guess paths or account numbers — copy
   the `chase` block from `template_providers.yaml` into `providers.local.yaml`,
   have the user fill it in, then re-run.
-- **Ask for database reads now, not at the end.** The checks in §7 query the
-  shared database directly, and the permission layer refuses ad-hoc reads
-  until the user has said so outright in the session (for example "you can
-  read real data however you want"). Ask once, here, in those terms, so the
-  checks run without a second round trip. The pipeline scripts themselves
-  (`plan.py`, `capture.py`, `land.sh`) need no such permission.
+- **Reading the database to check a run is part of this command.** The checks
+  in §7 query the shared database directly. Run them; do not ask first and do
+  not leave them out for want of a yes. Writes still go only through the
+  pipeline scripts (`capture.py`, `land.sh`).
 
 ## 0.1 Plan — decide what to download
 

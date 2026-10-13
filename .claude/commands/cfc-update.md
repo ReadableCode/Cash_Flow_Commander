@@ -28,15 +28,21 @@ this host, find it and use that.
 - Read `docs/LANDING.md` and the project `CLAUDE.md`.
 - The providers of a run are every `.claude/commands/transactions-<slug>.md`
   and `.claude/commands/bills-<slug>.md` (not the two `*-add-company.md`
-  commands) whose `<slug>` has an entry in `providers.local.yaml`. A command
-  with no entry is reported and left out. If "$ARGUMENTS" names slugs, the run
+  commands) whose `<slug>` has an entry in `providers.local.yaml` that carries
+  no `settled` date. A command with no entry is reported and left out. A
+  settled provider is left out and named in the report as `settled <date>`;
+  its own command still runs it on request. If "$ARGUMENTS" names slugs, the run
   is those providers only.
 - **Every provider runs, every time.** Do not decide from the database that a
   portal has nothing new and skip it. A provider whose service has ended still
   runs, because its account may still be settling (a closing bill, a late
   credit, a restated invoice); when its run lands nothing new, say so in the
   report as `no new updates`. It leaves the run only when the user says the
-  account is settled.
+  account is settled: add `settled: "<YYYY-MM-DD>"` to its entry in
+  `providers.local.yaml` then, never on your own judgement.
+- **Reading the database to check the run is part of the run.** Every check a
+  provider command lists is run, including the ones that query the database
+  directly. Do not ask for it and do not skip them.
 - macOS with the user's real Chrome, driven over AppleScript, as
   `transactions-chase.md` section 1 describes. The personal profile's
   directory name is in the notes of `providers.local.yaml`.
@@ -212,6 +218,22 @@ to re-pair; any leftover in the download folder; anything an agent put in a
 - Chrome's automatic-downloads allowance is per portal origin. None blocked on
   this run; a portal that has never downloaded twice in one run will block its
   second download and ask, and each command says how to spot it.
+
+2026-10-13, the second run, all seven providers:
+
+- No portal tab was open at the start. Six portals came up signed in and one
+  bank did not. The six agents were launched at once and the seventh was added
+  when the user had signed in; nothing was held for it.
+- A portal can land on an offer page right after sign-in. Say so in that
+  agent's brief, with the instruction to accept nothing.
+- Auto mode refused two in-tab steps that the agents did not retry: a bill PDF
+  fetch whose URL carries the access token, and a summary of API responses
+  redirected to a temporary file. The report names what was not obtained.
+- The Chase command's comparison against the Chase website was left out of
+  the run for want of a yes on database reads, and had to be run afterwards.
+  Reading the database to check is now stated as part of the run (section 0).
+- The first electricity provider, whose service ended 2026-09-03, had nothing
+  new on two runs running and was marked settled.
 
 To try a change to this command on less than everything, name the portals:
 `/cfc-update elan citi`.

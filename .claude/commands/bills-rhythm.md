@@ -74,6 +74,12 @@ invoice's usage is captured, the `hour` `FETCH:` window stays open for good; sto
 The meter's `15min` series does not end, because Smart Meter Texas keeps the meter's data
 whoever the retail provider is; `/bills-smt` lands it.
 
+Confirmed 2026-10-13: no invoice has posted since the 2026-09-09 closing bill. Both
+invoice-history pages were byte-identical to the 2026-09-30 capture, the home page still shows
+the re-enroll banner, and the `hour` `FETCH:` window (2026-08-27 onward) is the permanent
+residual described above. A run now only needs the invoice-history pages, to prove nothing new
+posted; never click the re-enroll banner or any offer.
+
 ## 1. Portal session
 
 - Portal: `https://app.gotrhythm.com` · API: `https://api.gotrhythm.com`.
@@ -118,6 +124,9 @@ whoever the retail provider is; `/bills-smt` lands it.
   cross-subdomain, and `javascript_tool` now refuses it outright as a cookie-exfiltration
   pattern, returning `[BLOCKED: Cookie/query string data]`. Do not try to phrase around that
   block — switch origin instead.
+- Keep page-derived data out of scratch files too (2026-10-13): auto mode refused a step that
+  redirected a per-response summary (names, sizes, hashes, invoice rows) into a temp file.
+  Return a few counts to the tool result and compare bytes on disk after `claim` instead.
 - `javascript_tool` also returns `[BLOCKED: ...]` when the *result* of your JS is a blob of
   API JSON (long hex ids read as tokens). Return only a small summary — status, byte count,
   filename — and let the download carry the payload.
@@ -145,6 +154,9 @@ inline — JS tool results truncate):
 - Per invoice id:
   - Plan snapshot: `GET /api/portal/invoices/{id}/orders` → `rhythm_api_orders_{invoice_number}.json`
   - Hourly interval data: `GET /api/portal/invoices/{id}/bill-explanation/usage` → `rhythm_api_usage_{invoice_number}.json`
+- The usage endpoint answers `404` with a ~114-byte body for an invoice older than the ~12-month
+  retention (seen 2026-10-13 on the 2025-08 and 2025-09 invoices; their orders endpoint still
+  answered 200). That is the retention edge, not a broken session; do not save the 404 body.
 - Scope: whatever step 0.1 reported, plus any new invoices. Default to the trailing ~13 months
   to catch restatements. If "$ARGUMENTS" says `full`, re-pull everything. Over-capturing is
   free — the raw store dedups by sha256, and restatements are preserved as distinct documents.
@@ -220,6 +232,10 @@ Therefore:
 - Move all `rhythm_api_*.json` captures into your `raw_dir`.
 - **Never overwrite an existing month's file** — put collisions in `_to_delete/` and tell the
   user what's there so they can review and trash it.
+- A recaptured `rhythm_api_orders_*` / `rhythm_api_usage_*` file collides with the name already
+  in `raw_dir`. Compare sha256: a byte-identical one goes to `_to_delete/` as
+  `<name> identical-recapture YYYY-MM-DD.json`; one that differs is a restatement, so stop and
+  tell the user instead of filing it.
 
 ## 5. Optional Gmail supplements
 

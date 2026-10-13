@@ -133,7 +133,11 @@ Observed at least once (2026-08-24):
   — the interstitial page has no account link, but its header carries
   `a[href="/dashboard"]` (the Citi logo, "citi-Home"); clicking it routes to
   the card dashboard in ~9s. Do not click the interstitial's "Continue" or
-  "No thanks" buttons, and do not deep-link (§3, 404s).
+  "No thanks" buttons, and do not deep-link (§3, 404s). The page's content
+  varies under the same URL and title: on 2026-10-13 it was a single
+  promotional-APR offer ("Activate your promo rate with one click") with
+  "Activate Offer", "Remind Me Later" and "No Thanks" buttons. The home link
+  was there and worked the same way; no button was touched.
 - **A card-conversion notice modal** ("We're Converting Your Card") exists in
   the page's modal stack. It is an account-lifecycle notice, not marketing —
   never click through it, and tell the user it exists: a conversion changes
@@ -141,9 +145,12 @@ Observed at least once (2026-08-24):
   continuity.
 - The dashboard pre-renders MANY invisible modal templates (app upsells,
   screen-share-with-rep, cookie settings). A `[role=dialog]` existing in the
-  DOM does not mean a dialog is open — check visibility.
+  DOM does not mean a dialog is open — check visibility. A non-zero size is
+  not enough either: `div.mfa-swap-trap` (`role=dialog`, `aria-hidden=true`,
+  empty) measures 1x1 px on the card dashboard (seen 2026-10-13) and is not
+  a dialog. Require a size above 1 px or skip `aria-hidden` elements.
 
-## 3. The export flow — as last observed 2026-09-30
+## 3. The export flow — as last observed 2026-10-13
 
 Verified live against the real portal on that date. Citi will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -288,8 +295,11 @@ Header: `Status,Date,Description,Debit,Credit,Member Name`.
 - **One Date column only.** All observed rows had Status `Cleared`.
   **Pending rows did not export** when checked 2026-09-30: the list showed
   two rows labelled Pending inside the requested range and neither was in
-  the CSV, which held only `Cleared` rows. One observation, so whether a
-  pending row can ever export (and with what Status value) is still open.
+  the CSV, which held only `Cleared` rows. On 2026-10-13 the word Pending was on the page four times
+  with the range applied and the CSV again held only `Cleared` rows, but
+  whether those were transaction rows inside the range was not checked. One
+  confirmed observation, so whether a pending row can ever export (and with
+  what Status value) is still open.
 - `Member Name` distinguishes cardholders/authorized users.
 - The filename is the **scope label, not the account or window**:
   `Since Aug 06, 2026.CSV`, `Date range.CSV`, and collisions get

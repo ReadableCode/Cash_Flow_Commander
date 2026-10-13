@@ -139,6 +139,15 @@ The plan capture, as first observed 2026-09-30:
   row, and a renewal lands as a new term by itself.
 - To tell whether the plan itself changed, compare the parsed JSON with the
   newest held capture ignoring `CurrentPlan.Id`, not the sha256.
+- **The advertised averages move while the plan stays the same.** Observed
+  2026-10-13: `EFL_Rate500`, `EFL_Rate1000`, `EFL_Rate2000` and `EFLRatePrice`
+  had each risen by the same 0.8378 cents per kWh since the 2026-09-30 capture,
+  with the energy charge, monthly fee, `PricePlanId`, contract dates and
+  `EFLLink` unchanged. The portal recomputes them from the delivery utility's
+  current per-kWh charge (the page in section 2.2 was dated 10/4/2026). So a
+  difference confined to those four fields is a delivery pass-through change,
+  not a new plan, and the Electricity Facts Label behind the same `EFLLink`
+  was byte-identical to the held one.
 - A second capture on the same day has the same filename and different bytes,
   so it is a collision under section 4 and goes to `_to_delete/`.
 - `RenewedPlan` was null. Its shape once a renewal is signed is unknown; the
@@ -209,6 +218,11 @@ As last observed 2026-09-28.
 - **The token rides in the query string.** The page opens this URL in a new
   tab; do not. `fetch` it inside the signed-in tab, check that the body starts
   with `%PDF-`, and hand it to `Blob` + `a.download`. Never print the URL.
+- Auto mode refused this fetch twice on 2026-10-13 as credential exploration,
+  from an agent and from the main session, the second time after the user had
+  asked for it. Do not retry it another way. When it is refused, report the
+  PDF as not obtained; a new invoice's PDF then needs the user to allow the
+  step or to download it themselves.
 - Naming: `gexa_bill_{invoice_number}_{YYYY-MM-DD}.pdf`, the date being the
   invoice date. `src/ingest_raw.py` classifies this pattern as `bill_pdf`.
 - Compute the sha256 in the page before triggering the download and compare it
@@ -253,6 +267,10 @@ The Electricity Facts Label, as first observed 2026-09-30:
   being the label's own date. It is the contract document behind the plan
   capture. It is kept, not ingested: ingest skips folders whose name starts
   with `_`, and the plan capture is what the parser reads.
+- Fetch it to a temporary path first and compare its sha256 with the held
+  label of the same name. Identical bytes need no filing (2026-10-13: the
+  capture differed only in the advertised averages and the label had not
+  changed).
 - The label's line on purchasing excess generation is boilerplate about the
   provider's eligible plans. It states no rate for this plan.
 
