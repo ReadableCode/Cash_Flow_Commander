@@ -7,6 +7,7 @@ before acting on it — reality moves.
 
 | Issue | Found | Status |
 |-------|-------|--------|
+| [the Postgres role and schema are still a hand-run superuser step](postgres-role-and-schema-created-by-hand.md) | 2026-10-14 | open |
 | [a same-day Enphase capture stores the rest of today as zero production](enphase-current-day-stored-as-zeros.md) | 2026-09-30 | open |
 | [the city's water statements are not captured](bills-city_utility.md) | 2026-09-30 | open |
 | [Atmos Energy gas bills are not captured](bills-atmos_energy.md) | 2026-09-30 | open |
