@@ -1,8 +1,9 @@
 # %%
-"""Upserts for account_balances and account_activity.
+"""Upserts for account_balances, account_activity and loan_transactions.
 
-Investment accounts: what an account held on a date, and the activity lines
-that moved it. Both upsert on natural keys, so re-parsing is idempotent.
+Investment and loan accounts: what an account held (or owed) on a date, and
+the lines that moved it. All upsert on natural keys, so re-parsing is
+idempotent.
 """
 
 # %%
@@ -39,6 +40,9 @@ ACTIVITY_NATURAL_KEY = [
     "amount",
     "occurrence",
 ]
+
+# Natural key of one loan transaction; upserts conflict on these.
+LOAN_TRANSACTIONS_NATURAL_KEY = ["account_id", "trans_date", "description", "amount", "occurrence"]
 
 
 # %%
@@ -88,3 +92,8 @@ def upsert_balances(engine: Engine, rows: list[dict[str, Any]]) -> dict[str, Any
 def upsert_activity(engine: Engine, rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Upsert activity rows on their natural key. Returns {'upserted': <rows sent>}."""
     return _upsert(engine, db.account_activity, ACTIVITY_NATURAL_KEY, rows)
+
+
+def upsert_loan_transactions(engine: Engine, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Upsert loan transaction rows on their natural key. Returns {'upserted': <rows sent>}."""
+    return _upsert(engine, db.loan_transactions, LOAN_TRANSACTIONS_NATURAL_KEY, rows)

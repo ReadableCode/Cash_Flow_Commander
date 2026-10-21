@@ -301,7 +301,8 @@ plans = Table(
 
 
 # One row per account and date the source states a balance for: what an
-# account held, as opposed to the cash that moved through it. A statement
+# account held (or, for a loan, the principal still owed), as opposed to the
+# cash that moved through it. A statement
 # states its closing balance and the flows over its period; a balance snapshot
 # states only the balance, and leaves the flow columns of a row it lands on
 # alone. A source that does not state a column sends NULL, never zero.
@@ -311,7 +312,7 @@ account_balances = Table(
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("provider", Text, nullable=False),
     Column("account_id", Text, nullable=False),
-    Column("account_kind", Text, nullable=False),  # 'retirement'
+    Column("account_kind", Text, nullable=False),  # 'retirement' | 'loan'
     Column("as_of_date", Date, nullable=False),
     Column("balance", Numeric(14, 2), nullable=False),
     Column("vested_balance", Numeric(14, 2), nullable=True),
@@ -332,6 +333,35 @@ account_balances = Table(
     ),
     Column("parser_version", Text, nullable=False),
     UniqueConstraint("account_id", "as_of_date", name="uq_account_balances_account_date"),
+)
+
+
+# One row per transaction on a loan statement: a payment and how it split
+# between principal and interest. The loan's balance on each statement date is
+# an account_balances row (account_kind 'loan'); this is what moved it.
+loan_transactions = Table(
+    "loan_transactions",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("provider", Text, nullable=False),
+    Column("account_id", Text, nullable=False),
+    Column("trans_date", Date, nullable=False),
+    Column("description", Text, nullable=False),  # the source's word: 'Payment', ...
+    Column("amount", Numeric(14, 2), nullable=False),  # signed; a payment is negative
+    Column("principal", Numeric(14, 2), nullable=False),  # signed share of amount
+    Column("interest", Numeric(14, 2), nullable=False),  # signed share of amount
+    Column("principal_balance", Numeric(14, 2), nullable=False),  # owed after this transaction
+    Column("occurrence", Integer, nullable=False, server_default=text("0")),
+    Column(
+        "raw_document_id",
+        Integer,
+        ForeignKey(raw_documents.c.id, name="fk_loan_transactions_raw_document"),
+        nullable=True,
+    ),
+    Column("parser_version", Text, nullable=False),
+    UniqueConstraint(
+        "account_id", "trans_date", "description", "amount", "occurrence", name="uq_loan_transactions_natural"
+    ),
 )
 
 

@@ -3,7 +3,7 @@
 
 from typing import Any, Callable
 
-from . import chase, citi, elan, enphase_enlighten, gexa, rhythm, smt, voya
+from . import chase, citi, elan, enphase_enlighten, gexa, keybank_solar_loan, rhythm, smt, voya
 
 
 # %%
@@ -128,6 +128,13 @@ _REGISTRY: list[tuple[str, str, NamePredicate, ParseFn, str]] = [
     ("voya", "statement_pdf", _any_name, voya.parse_statement_pdf, voya.PARSER_VERSION),
     ("voya", "api_balance_json", _any_name, voya.parse_accounts_json, voya.PARSER_VERSION),
     ("voya", "csv_export", _any_name, voya.parse_activity_csv, voya.PARSER_VERSION),
+    (
+        "keybank_solar_loan",
+        "statement_pdf",
+        _any_name,
+        keybank_solar_loan.parse_statement_pdf,
+        keybank_solar_loan.PARSER_VERSION,
+    ),
 ]
 
 

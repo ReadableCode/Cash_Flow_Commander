@@ -69,7 +69,7 @@ Examples:
 
 `doc_type` vocabulary comes from the ingest layer: `bill_pdf`, `statement_pdf`, `api_invoice_json`, `api_usage_json`, `api_orders_json`, `api_balance_json`, `weekly_email`, `payment_email`, `csv_export`, `smt_export`, `other`.
 
-An account that holds money rather than billing it (a retirement account) lands in `account_balances`, one row per account and date with the statement period's flows, and `account_activity`, one row per activity line. `bills` and `usage_intervals` do not apply to it.
+An account that holds money rather than billing it (a retirement account) lands in `account_balances`, one row per account and date with the statement period's flows, and `account_activity`, one row per activity line. A loan lands in `account_balances` too (account_kind `loan`, the principal owed) with its payments in `loan_transactions`. `bills` and `usage_intervals` do not apply to either.
 
 ## 5. Filing captures
 

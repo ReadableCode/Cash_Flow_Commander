@@ -35,6 +35,7 @@ SAMPLES: dict[str, list[str]] = {
     "gexa": ["gexa_api_invoice-history_20260928.json", "gexa_bill_90000002_2026-09-28.pdf"],
     "enphase_enlighten": ["enphase_enlighten_api_usage_daily_energy_2026-09-01_2026-09-28.json"],
     "voya": ["voya_statement_2026-09-30.pdf"],
+    "keybank_solar_loan": ["keybank_solar_loan_statement_2026-10-09.pdf"],
 }
 
 MARKER = 1000.0

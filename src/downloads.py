@@ -72,6 +72,7 @@ DOWNLOAD_NAME_PATTERNS: dict[str, tuple[str, ...]] = {
     "gexa": (r"gexa_.+",),
     "enphase_enlighten": (r"enphase_enlighten_.+",),
     "voya": (r"voya_.+",),
+    "keybank_solar_loan": (r"keybank_solar_loan_.+",),
 }
 
 # A download Chrome has not finished writing.
