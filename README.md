@@ -1,8 +1,105 @@
 # Cash_Flow_Commander
 
-- The goal of this project is to allow anyone to manage their finances with a python application that can be interfaced with using an api, TUI, CLI, or Web Application.
-- The initial project will not have a split frontend and backend since the initial use case will be with a TUI
-- It runs on SQLite or Postgres today (see [Database](#database)); further backends such as google sheets and excel files are a goal.
+A personal finance pipeline in Python. It collects bills, utility usage, solar
+production and bank and card transactions from the providers' own portals,
+keeps every downloaded file verbatim, parses them into a database, and answers
+two questions from that data: did each expected bill and paycheck actually
+happen, and what will the bank balance be over the coming weeks.
+
+It exists to replace a hand-maintained Google Sheet where paid amounts and
+dates were typed in by hand. The database is now the source of truth, and the
+sheet is a report the forecast writes out.
+
+![Pairing and forecast screen of the TUI, on sample data](docs/screenshots/tui_pairing_forecast.png)
+
+## What it does
+
+- **Acquires** raw artifacts per provider: portal API JSON, bill PDFs, emails,
+  meter interval CSVs and bank or card CSV exports. Acquisition is done by
+  Claude Code slash commands in `.claude/commands/` that drive your own Chrome
+  (AppleScript or Claude in Chrome). `/cfc-update` runs every provider at once.
+- **Lands** each artifact byte-for-byte in a `raw_documents` table, deduplicated
+  by sha256 (`src/ingest_raw.py`).
+- **Parses** raw documents into typed tables (`bills`, `bill_line_items`,
+  `usage_intervals`, `plans`, `transactions`) with versioned, deterministic
+  per-provider parsers (`src/parse_raw.py`, `src/providers/`). A parser fix is
+  applied by reprocessing; parsed rows are never hand-edited.
+- **Tracks expected money**: recurring bills, paychecks and transfers as
+  series, their occurrences, and which real transactions paid them. Matching is
+  suggest-then-confirm; nothing is paired without a person choosing it. See
+  [`docs/EXPECTED.md`](docs/EXPECTED.md).
+- **Forecasts** the balance: the anchor account's newest bank running balance
+  plus every unpaid, unskipped occurrence from there forward
+  (`src/expected_forecast.py`).
+- **Reports quiet failures**: data holes that dashboards would render as
+  plausible numbers (`src/checks.py`), and broken, net-zero, past-due, one-leg
+  and drifting matches (`src/expected_checks.py`).
+- **Shows it** in a terminal UI, a browser pairing board, and Grafana
+  dashboards committed in `deploy/grafana/` (cash forecast, transactions,
+  energy, solar net metering).
+
+Providers with commands today:
+
+| Kind | Provider | Command |
+| --- | --- | --- |
+| Electricity bills | Rhythm Energy, Gexa Energy | `/bills-rhythm`, `/bills-gexa` |
+| Meter intervals | Smart Meter Texas | `/bills-smt` |
+| Solar production | Enphase Enlighten | `/bills-enphase_enlighten` |
+| Bank and card transactions | Chase, Citi, Elan | `/transactions-chase`, `/transactions-citi`, `/transactions-elan` |
+
+The acquisition side is macOS only, since it drives the browser through
+AppleScript. Everything after landing is plain Python.
+
+### Goals
+
+- Let anyone manage their finances with a Python application that can be used
+  through an API, TUI, CLI, or web application.
+- The initial project does not split frontend and backend, since the initial
+  use case is a TUI.
+- It runs on SQLite or Postgres today (see [Database](#database)); further
+  backends such as Google Sheets and Excel files are a goal.
+
+## How it works
+
+Bills and usage follow the shared contract in
+[`docs/LANDING.md`](docs/LANDING.md). A provider run is done when the data is
+visible in Grafana, not when files are on disk:
+
+```
+coverage  ->  acquire  ->  ingest_raw  ->  parse_raw  ->  Grafana
+(what's       (agent,      (raw_          (typed rows,    (dashboards
+ missing)      only the     documents)     usage_          committed in
+               gap)                        intervals)      deploy/grafana/)
+```
+
+- `src/coverage.py --provider <slug>` reports what is held and recommends the
+  window to fetch. Overlap is free (raw dedups by sha256, tables upsert on
+  natural keys), so windows always err wide.
+- Agents acquire; scripts land and normalize; on failure the fix is to parser
+  code, never to the data.
+
+Bank and card transactions use `transaction_downloader/`, which tracks
+coverage by requested window instead of by missing readings, because a card
+can go ten days with no activity. See
+[`transaction_downloader/README.md`](transaction_downloader/README.md).
+
+```
+plan.py  ->  agent downloads  ->  capture.py  ->  src/ingest_raw.py  ->  src/parse_raw.py
+```
+
+`bash transaction_downloader/land.sh --provider <slug>` files downloads and
+runs ingest and parse in one step.
+
+Every portal command shares one download folder and `/cfc-update` runs them at
+the same time, so a run claims its own file with `src/downloads.py` (`mark`
+before the click, then `claim --provider <slug>`), never by taking the newest
+file.
+
+Expected transactions live in three tables: `expected_series` (the
+obligation, append-only), `expected_occurrences` (one instance) and
+`expected_matches` (occurrence to real transaction, chosen by a person). Paid
+status is derived every time, never stored, so a restated or reversed
+transaction flips its occurrence back on its own.
 
 ## Getting started
 
@@ -23,18 +120,18 @@ A script that needs a value you have not filled in stops with one line naming th
 
 Two supported backends. Both are driven by one variable, `CFC_DATABASE_URL`.
 
-**SQLite — the default for a fresh clone.** Clone, `uv sync`, and run something.
+**SQLite: the default for a fresh clone.** Clone, `uv sync`, and run something.
 With no `.env` file and no `CFC_DATABASE_URL`, the app uses
 `data/cash_flow_commander.db` and prints a warning saying so. Every entry point
 creates its own tables on first run, so there is no setup step.
 
 > **Back up that file yourself.** `data/` is gitignored, so nothing in this repo
-> and nothing on any server has a copy of it. It is a single file — copy it
+> and nothing on any server has a copy of it. It is a single file: copy it
 > somewhere else on a schedule, or use `sqlite3 data/cash_flow_commander.db
 > ".backup 'somewhere/else.db'"`, which is safe to run while the app is open.
 > Losing it loses every bill, transaction, and expected series you have entered.
 
-**Postgres — for a shared or backed-up database.** Copy `template.env` to
+**Postgres: for a shared or backed-up database.** Copy `template.env` to
 `.env`, set:
 
 | Variable | Value |
@@ -47,7 +144,7 @@ The role and schema are a one-time superuser step; tables are not. See
 
 **SQLite is a choice, never a fallback.** If a `.env` exists but sets no
 `CFC_DATABASE_URL`, the app refuses to start rather than quietly opening an
-empty local file — a run against "the database" that silently finds nothing
+empty local file. A run against "the database" that silently finds nothing
 looks exactly like a run that worked, and that has happened here before.
 
 ## Running with uv
@@ -114,6 +211,10 @@ looks exactly like a run that worked, and that has happened here before.
   uv run python src/cfc_tui.py
   ```
 
+- One app, three screens: pairing and forecast (`p` or `f`), every real
+  transaction and the series it pays (`t`), and the series themselves (`e`).
+  The screenshot at the top of this page is the pairing and forecast screen.
+
 - On exit it rebuilds `forecast_days` once, so the Grafana forecast follows
   the session.
 
@@ -129,6 +230,18 @@ looks exactly like a run that worked, and that has happened here before.
   uv run python src/pairing_web.py --days-back 90  # wider window
   ```
 
+  ![Pairing board, on sample data](docs/screenshots/pairing_board.png)
+
+## Other scripts
+
+```bash
+uv run python src/expected_checks.py     # broken / past-due / net-zero / drift report
+uv run python src/expected_discover.py   # recurring transactions no series accounts for
+uv run python src/expected_forecast.py   # cash forecast preview; --publish writes the sheet
+uv run python src/checks.py              # data holes the dashboards would hide
+uv run python deploy/grafana_sync.py list  # move dashboards between the repo and Grafana
+```
+
 ## Bill providers: /bills-<company> commands
 
 - Billing artifacts (portal API JSON, bill PDFs, emails) are acquired by per-company Claude Code slash commands committed in `.claude/commands/` (e.g. `/bills-rhythm`).
@@ -137,6 +250,7 @@ looks exactly like a run that worked, and that has happened here before.
 ### Adding a company
 
 - Run `/bills-add-company`. It interviews you, scaffolds `.claude/commands/bills-<slug>.md` from `templates/provider-command.md`, and stubs your entry in `providers.local.yaml`.
+- For a bank or card, run `/transactions-add-company`.
 
 ### Personal config
 
@@ -152,3 +266,16 @@ looks exactly like a run that worked, and that has happened here before.
   ```bash
   git diff --cached -U0 | grep -inE "RH-[0-9]|[0-9]{15,}|/Users/|OneDrive|@(gmail|outlook)|premise_id.*[0-9]"
   ```
+
+## Repository layout
+
+| Path | What it holds |
+| --- | --- |
+| `src/` | Entry points, stores, parsers (`src/providers/`), schema (`db.py`, `bootstrap.py`) |
+| `transaction_downloader/` | Bank and card window planning, capture and landing |
+| `.claude/commands/` | Per-provider acquisition commands and `/cfc-update` |
+| `docs/` | `LANDING.md` (acquisition contract), `EXPECTED.md` (expected transactions) |
+| `deploy/` | Postgres role setup, Grafana dashboards and sync |
+| `templates/` | Provider command template, pairing board page |
+| `backlog/` | Known open issues and planned providers |
+| `tests/` | pytest suite (`uv run pytest`) |
