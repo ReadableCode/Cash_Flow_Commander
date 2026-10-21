@@ -82,8 +82,9 @@ As last observed 2026-10-21. pypdf extracts page 1 one value per line.
 - `raw_dir` is the archive of the statements; files stay there after ingest.
 - **Never overwrite** a file in `raw_dir`. On a collision the existing file
   stays and the new copy goes to `<raw_dir>/_to_delete/` for the user.
-- `archive_dir` holds the original loan disclosure and other solar papers.
-  Never ingest it.
+- `archive_dir` is blank: `raw_dir` is the archive. The solar folder around it
+  holds the original loan disclosure and other hand-filed papers. Never ingest
+  it.
 
 ## 4. Land it
 

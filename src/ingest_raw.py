@@ -18,6 +18,7 @@ import bootstrap  # noqa: E402
 import db  # noqa: E402
 import raw_store  # noqa: E402
 import user_paths  # noqa: E402
+import yaml  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
 
 # %%
@@ -38,6 +39,10 @@ VALID_DOC_TYPES = (
 )
 
 SOURCES = ("portal_api", "gmail", "manual")
+
+# providers.local.yaml at the repo root; its raw_dirs are the no-argument default.
+_REPO_ROOT = os.path.dirname(_SRC_DIR)
+PROVIDERS_YAML_PATH = os.path.join(_REPO_ROOT, "providers.local.yaml")
 
 CSV_EXPORT_NAMES = frozenset(
     {
@@ -222,6 +227,29 @@ def gather_files(paths: list[str]) -> tuple[list[tuple[str, str | None]], list[t
     return files, skips
 
 
+def configured_raw_dirs(path: str | None = None) -> list[tuple[str, str]]:
+    """(provider, raw_dir) for every providers.local.yaml entry that sets a raw_dir.
+
+    The no-argument default walks these and nothing else: every capture is
+    filed into its provider's raw_dir, while archive_dir and the subject folder
+    around it are where paper and correspondence are filed by hand.
+    """
+    path = path or PROVIDERS_YAML_PATH
+    user_paths.check_config_readable(path)
+    if not os.path.isfile(path):
+        return []
+    with open(path, "r", encoding="utf-8") as handle:
+        loaded = yaml.safe_load(handle)
+    user_paths.check_not_desymlinked(path, loaded)
+    if not isinstance(loaded, dict):
+        return []
+    return [
+        (provider, user_paths.expand_config_path(entry["raw_dir"], _REPO_ROOT))
+        for provider, entry in loaded.items()
+        if isinstance(entry, dict) and entry.get("raw_dir")
+    ]
+
+
 def _read_file(path: str) -> tuple[bytes | None, datetime.datetime | None, str | None]:
     """Read one file; returns (content, mtime_utc, skip_reason).
 
@@ -347,8 +375,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "paths",
         nargs="*",
         metavar="DIR_OR_FILE",
-        help="files or directories to ingest; when omitted, defaults to CFC_RAW_INGEST_DIRS "
-        "(colon-separated) -- but only if --provider is not set, since that fallback spans providers",
+        help="files or directories to ingest; when omitted, every provider's raw_dir from "
+        "providers.local.yaml, each under its own slug -- but only if --provider is not set",
     )
     parser.add_argument(
         "--provider",
@@ -367,33 +395,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.provider is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.provider):
         parser.error("--provider must be a lowercase slug (a-z, 0-9, '_', '-')")
+    args.provider_dirs = []
     if not args.paths:
-        # --provider forces that slug onto EVERY file ingested, while
-        # CFC_RAW_INGEST_DIRS is a shared, multi-provider set of directories.
-        # Combining them silently mislabels whatever else happens to be sitting
-        # there -- once observed filing five rhythm documents under elan. The
-        # env fallback is only safe when provider is inferred per file, so make
-        # the caller name the directory whenever they override it.
+        # --provider forces that slug onto EVERY file ingested. The default
+        # spans every provider, so combining them would mislabel the others'
+        # documents -- once observed filing five rhythm documents under elan.
+        # Make the caller name the directory whenever they override it.
         if args.provider is not None:
             parser.error(
                 f"--provider {args.provider} needs an explicit DIR_OR_FILE: it labels every "
-                "file ingested, and the CFC_RAW_INGEST_DIRS fallback spans providers, so it "
+                "file ingested, and the default walks every provider's raw_dir, so it "
                 f"would stamp '{args.provider}' onto other providers' documents. Pass that "
-                "provider's raw_dir (from its providers.local.yaml entry), or drop --provider to "
-                "infer each file's provider from its folder."
+                "provider's raw_dir (from its providers.local.yaml entry)."
             )
-        # Entries go through expand_config_path so $ONEDRIVE_DOCS resolves; an
-        # unexpanded one raises rather than becoming a literal "$..." directory.
-        raw_dirs = os.environ.get("CFC_RAW_INGEST_DIRS", "").split(":")
-        args.paths = [user_paths.expand_config_path(p) for p in raw_dirs if p]
-        if not args.paths:
-            parser.error("no paths given and CFC_RAW_INGEST_DIRS is not set")
+        args.provider_dirs = configured_raw_dirs()
+        if not args.provider_dirs:
+            parser.error("no paths given and no provider in providers.local.yaml sets a raw_dir")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    files, path_skips = gather_files(args.paths)
+    if args.provider_dirs:
+        files, path_skips = [], []
+        for provider, raw_dir in args.provider_dirs:
+            provider_files, provider_skips = gather_files([raw_dir])
+            files += [(path, provider) for path, _ in provider_files]
+            path_skips += provider_skips
+    else:
+        files, path_skips = gather_files(args.paths)
     engine: Engine | None = None
     if not args.dry_run:
         engine = db.get_engine()

@@ -113,10 +113,6 @@ def resolve(v):
     # user_paths also expands ${ONEDRIVE_DOCS}, so a config path stays correct
     # on every machine the sync folder lands on.
     return user_paths.expand_config_path(v, repo)
-# archive_dir is optional: the card providers have no bill PDFs to file, and
-# pointing it at a correspondence folder makes ingest re-walk unrelated
-# documents every run.
-print(resolve(entry["archive_dir"]) if entry.get("archive_dir") else "")
 print(resolve(entry["raw_dir"]))
 print(resolve(entry["data_dir"]))
 '
@@ -127,9 +123,8 @@ print(resolve(entry["data_dir"]))
 # would fail with a bare 1.
 _paths="$(uv run python -c "$_paths_script" "$PROVIDER")" || exit $?
 
-ARCHIVE_DIR=""; RAW_DIR=""; DATA_DIR=""
+RAW_DIR=""; DATA_DIR=""
 {
-  IFS= read -r ARCHIVE_DIR
   IFS= read -r RAW_DIR
   IFS= read -r DATA_DIR
 } <<EOF_PATHS
@@ -140,11 +135,6 @@ mkdir -p "$RAW_DIR" "$DATA_DIR"
 echo "  provider: $PROVIDER"
 echo "  raw_dir:  $RAW_DIR"
 echo "  data_dir: $DATA_DIR"
-if [ -n "$ARCHIVE_DIR" ]; then
-  echo "  archive_dir: $ARCHIVE_DIR"
-else
-  echo "  archive_dir: (unset - only raw_dir is walked)"
-fi
 echo
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -180,14 +170,11 @@ if [ "$#" -gt 0 ]; then
 fi
 
 echo "=== 2. ingest (raw_documents) ==="
-# Only directories that actually hold captures are walked. data_dir is the
-# provider's work directory -- it holds derived output, not captures, and every
-# configured one is empty today, so leaving it out changes nothing that lands.
-if [ -n "$ARCHIVE_DIR" ]; then
-  uv run python src/ingest_raw.py --provider "$PROVIDER" "$ARCHIVE_DIR" "$RAW_DIR"
-else
-  uv run python src/ingest_raw.py --provider "$PROVIDER" "$RAW_DIR"
-fi
+# Only raw_dir is walked: every capture is filed there. archive_dir and the
+# subject folder around it are where people file paper and correspondence by
+# hand, which would land here as doc_type 'other'. data_dir is the provider's
+# work directory and holds derived output, not captures.
+uv run python src/ingest_raw.py --provider "$PROVIDER" "$RAW_DIR"
 echo
 echo "=== 3. parse (transactions) ==="
 uv run python src/parse_raw.py --provider "$PROVIDER" $NO_FORECAST

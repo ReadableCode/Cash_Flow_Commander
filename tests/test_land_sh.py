@@ -89,3 +89,13 @@ def test_dry_run_lands_nothing() -> None:
     assert "dry run — nothing filed, ingested or parsed." in result.stdout
     for stage in ("1. filing downloads", "2. ingest", "3. parse"):
         assert stage not in result.stdout
+
+
+def test_ingest_walks_raw_dir_only() -> None:
+    """archive_dir and the folders around it are filed by hand; only raw_dir holds captures."""
+    with open(LAND_SH, encoding="utf-8") as handle:
+        script = handle.read()
+    ingest_lines = [line.strip() for line in script.splitlines() if "src/ingest_raw.py" in line and "uv run" in line]
+
+    assert ingest_lines == ['uv run python src/ingest_raw.py --provider "$PROVIDER" "$RAW_DIR"']
+    assert 'entry["archive_dir"]' not in script

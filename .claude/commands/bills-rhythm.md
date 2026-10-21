@@ -197,7 +197,8 @@ which needs 15-minute data covering the new bill's whole service period.
 
 Downloads land in `download_dir`. Every provider command shares that folder,
 including the `/transactions-*` ones. When this was observed it was the **root** of
-the synced documents tree, and that shared root is also on `CFC_RAW_INGEST_DIRS`.
+the synced documents tree, and that shared root was then also on `CFC_RAW_INGEST_DIRS`
+(since removed: the no-argument default is now every provider's `raw_dir`).
 
 Observed 2026-09-04: a concurrent `/transactions-elan` run called
 `ingest_raw.py --provider elan` with **no explicit path**, so it fell back to the

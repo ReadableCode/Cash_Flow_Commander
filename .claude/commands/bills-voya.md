@@ -17,7 +17,7 @@ file. They live in the `voya` entry of `providers.local.yaml`, whose
 - Read `docs/LANDING.md` for repo conventions and the current state of the pipeline.
 - Load the `voya` entry from `providers.local.yaml` (repo root, gitignored):
   `service_type`, `display_name`, `account_number` (the plan number),
-  `archive_dir`, `raw_dir`, `download_dir`, `notes`.
+  `raw_dir`, `download_dir`, `notes`. `archive_dir` is blank on purpose.
 - **STOP if the entry is absent.** Do not guess paths or IDs — tell the user to
   run `/bills-add-company` first, then re-run this command.
 
@@ -169,8 +169,9 @@ other to the Trash, not into `raw_dir`.
   archive of Voya originals.
 - **Never overwrite** a file in `raw_dir`. On a collision the existing file
   stays and the new copy goes to `<raw_dir>/_to_delete/` for the user.
-- `archive_dir` holds paper and hand-filed documents of more than one plan and
-  provider. Never ingest it as `voya`; only `raw_dir` is ingested.
+- `archive_dir` is blank: `raw_dir` is the archive. The folder around it holds
+  hand-filed letters of more than one plan (notices beside `raw/`, other
+  plans in their own folders). Never ingest it; only `raw_dir` is ingested.
 
 ## 5. Email artifacts (optional)
 

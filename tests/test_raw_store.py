@@ -294,37 +294,64 @@ def test_classify(name: str, expected: tuple[str, dt.date | None]) -> None:
     assert ingest_raw.classify(name) == expected
 
 
-def test_provider_without_paths_is_refused(monkeypatch: Any) -> None:
-    """--provider must not ride the shared env fallback.
+def test_provider_without_paths_is_refused(tmp_path: Any, monkeypatch: Any) -> None:
+    """--provider must not ride the every-provider default.
 
-    CFC_RAW_INGEST_DIRS spans providers, so combining it with --provider stamps
+    The default spans providers, so combining it with --provider would stamp
     that one slug onto every other provider's documents too. Once mislabelled
     five rhythm documents as elan, hence the guard.
     """
-    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
+    monkeypatch.setattr(ingest_raw, "PROVIDERS_YAML_PATH", str(tmp_path / "missing.yaml"))
 
     with pytest.raises(SystemExit):
         ingest_raw._parse_args(["--provider", "elan"])
 
 
-def test_provider_with_explicit_path_is_allowed(monkeypatch: Any, tmp_path: Any) -> None:
-    """Naming the directory is what makes --provider safe; the env is then unused."""
-    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
-
+def test_provider_with_explicit_path_is_allowed(tmp_path: Any) -> None:
+    """Naming the directory is what makes --provider safe; the default is then unused."""
     args = ingest_raw._parse_args(["--provider", "elan", str(tmp_path)])
 
     assert args.provider == "elan"
     assert args.paths == [str(tmp_path)]
+    assert args.provider_dirs == []
 
 
-def test_env_fallback_still_works_without_provider(monkeypatch: Any) -> None:
-    """The bills workflow infers provider per file, so the fallback stays available."""
-    monkeypatch.setenv("CFC_RAW_INGEST_DIRS", "/some/shared/dir")
+def _providers_file(tmp_path: Any) -> str:
+    config = tmp_path / "providers.local.yaml"
+    config.write_text(
+        f'alpha:\n  archive_dir: "{tmp_path / "alpha"}"\n  raw_dir: "{tmp_path / "alpha" / "raw"}"\n'
+        f'beta:\n  raw_dir: "{tmp_path / "beta" / "raw"}"\n'
+        "gamma:\n  raw_dir: ''\n"
+        "our_cash:\n  emergency_fund: 1\n",
+        encoding="utf-8",
+    )
+    return str(config)
+
+
+def test_default_is_every_configured_raw_dir(tmp_path: Any, monkeypatch: Any) -> None:
+    """No paths and no --provider walks each provider's raw_dir under its own slug, nothing else."""
+    monkeypatch.setattr(ingest_raw, "PROVIDERS_YAML_PATH", _providers_file(tmp_path))
 
     args = ingest_raw._parse_args([])
 
     assert args.provider is None
-    assert args.paths == ["/some/shared/dir"]
+    assert args.provider_dirs == [("alpha", str(tmp_path / "alpha" / "raw")), ("beta", str(tmp_path / "beta" / "raw"))]
+
+
+def test_default_never_walks_archive_dir(tmp_path: Any, monkeypatch: Any, capsys: Any) -> None:
+    """A letter filed beside raw/ in the archive folder is not ingested by the default."""
+    monkeypatch.setattr(ingest_raw, "PROVIDERS_YAML_PATH", _providers_file(tmp_path))
+    (tmp_path / "alpha" / "raw").mkdir(parents=True)
+    (tmp_path / "alpha" / "raw" / "alpha_statement_2026-09-30.pdf").write_bytes(b"%PDF capture")
+    (tmp_path / "alpha" / "Notices").mkdir()
+    (tmp_path / "alpha" / "Notices" / "Fee Notice 2026-09.pdf").write_bytes(b"%PDF letter")
+    (tmp_path / "alpha" / "Loose Letter.pdf").write_bytes(b"%PDF letter")
+
+    assert ingest_raw.main(["--dry-run"]) == 0
+
+    out = capsys.readouterr().out
+    assert "alpha_statement_2026-09-30.pdf -> alpha/statement_pdf" in out
+    assert "Fee Notice" not in out and "Loose Letter" not in out
 
 
 def test_gather_files_skips_hidden_and_underscore_dirs(tmp_path: Any) -> None:
