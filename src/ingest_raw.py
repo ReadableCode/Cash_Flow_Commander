@@ -25,9 +25,11 @@ from sqlalchemy.engine import Engine  # noqa: E402
 
 VALID_DOC_TYPES = (
     "bill_pdf",
+    "statement_pdf",
     "api_invoice_json",
     "api_usage_json",
     "api_orders_json",
+    "api_balance_json",
     "weekly_email",
     "payment_email",
     "csv_export",
@@ -53,6 +55,14 @@ CSV_EXPORT_NAMES = frozenset(
 _RYTHM_MONTH_RE = re.compile(r"^Rythm (\d{4})-(\d{2})\.pdf$")
 # Portal bill downloads, named by the provider commands: {provider}_bill_{...}_{YYYY-MM-DD}.pdf
 _PORTAL_BILL_RE = re.compile(r"^[a-z0-9_]+?_bill_.*_(\d{4})-(\d{2})-(\d{2})\.pdf$")
+
+# Account statements, named by the provider commands:
+# {provider}_statement_{YYYY-MM-DD}.pdf, dated by the period's last day.
+_STATEMENT_RE = re.compile(r"^[a-z0-9_]+?_statement_(\d{4})-(\d{2})-(\d{2})\.pdf$")
+
+# Investment account activity exports, named by the provider commands:
+# {provider}_activity_{YYYYMMDD}_{YYYYMMDD}_captured{YYYYMMDD}.csv
+_ACTIVITY_EXPORT_RE = re.compile(r"^[a-z0-9_]+?_activity_(\d{4})(\d{2})\d{2}_\d{8}_captured\d{8}\.csv$")
 
 # Transaction exports, as filed by transaction_downloader/capture.py for any
 # provider (chase, citi, ...):
@@ -108,11 +118,28 @@ def _classify_bill_pdf(name: str) -> tuple[str, datetime.date] | None:
         return None
 
 
+def _classify_account_capture(name: str) -> tuple[str, datetime.date | None] | None:
+    """Match an investment account's statement or activity export; None otherwise."""
+    statement = _STATEMENT_RE.match(name)
+    if statement is not None:
+        try:
+            return ("statement_pdf", datetime.date(*(int(part) for part in statement.groups())))
+        except ValueError:
+            return ("other", None)
+    activity = _ACTIVITY_EXPORT_RE.match(name)
+    if activity is not None:
+        return ("csv_export", datetime.date(int(activity.group(1)), int(activity.group(2)), 1))
+    return None
+
+
 def classify(name: str) -> tuple[str, datetime.date | None]:
     """Classify a raw document filename (basename) into (doc_type, period_hint)."""
     bill = _classify_bill_pdf(name)
     if bill is not None:
         return bill
+    account_capture = _classify_account_capture(name)
+    if account_capture is not None:
+        return account_capture
     txn = _TXN_EXPORT_RE.match(name)
     if txn is not None:
         # period_hint is the first of the requested window's start month, which
@@ -139,6 +166,8 @@ def classify(name: str) -> tuple[str, datetime.date | None]:
         # A plan snapshot, whatever the provider's endpoint calls it.
         if "orders" in lowered or "current-plan" in lowered:
             return ("api_orders_json", None)
+        if "api_balance" in lowered:
+            return ("api_balance_json", None)
         return ("other", None)
     if "smt" in lowered or name.startswith("IntervalData"):
         return ("smt_export", None)

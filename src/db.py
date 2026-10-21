@@ -300,6 +300,78 @@ plans = Table(
 )
 
 
+# One row per account and date the source states a balance for: what an
+# account held, as opposed to the cash that moved through it. A statement
+# states its closing balance and the flows over its period; a balance snapshot
+# states only the balance, and leaves the flow columns of a row it lands on
+# alone. A source that does not state a column sends NULL, never zero.
+account_balances = Table(
+    "account_balances",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("provider", Text, nullable=False),
+    Column("account_id", Text, nullable=False),
+    Column("account_kind", Text, nullable=False),  # 'retirement'
+    Column("as_of_date", Date, nullable=False),
+    Column("balance", Numeric(14, 2), nullable=False),
+    Column("vested_balance", Numeric(14, 2), nullable=True),
+    # The statement period that ends on as_of_date, and its flows. Signed:
+    # withdrawals and fees are negative.
+    Column("period_start", Date, nullable=True),
+    Column("beginning_balance", Numeric(14, 2), nullable=True),
+    Column("contributions", Numeric(14, 2), nullable=True),  # everyone's, employer included
+    Column("employer_contributions", Numeric(14, 2), nullable=True),  # the employer's part of it
+    Column("withdrawals", Numeric(14, 2), nullable=True),  # fees included
+    Column("earnings", Numeric(14, 2), nullable=True),
+    Column("fees", Numeric(14, 2), nullable=True),
+    Column(
+        "raw_document_id",
+        Integer,
+        ForeignKey(raw_documents.c.id, name="fk_account_balances_raw_document"),
+        nullable=True,
+    ),
+    Column("parser_version", Text, nullable=False),
+    UniqueConstraint("account_id", "as_of_date", name="uq_account_balances_account_date"),
+)
+
+
+# One row per activity line of an investment account: a contribution, a
+# dividend, a fee. Each export restates the account's whole history, so the
+# rows upsert on their content plus an occurrence counter for identical lines.
+account_activity = Table(
+    "account_activity",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("provider", Text, nullable=False),
+    Column("account_id", Text, nullable=False),
+    Column("activity_date", Date, nullable=False),
+    Column("activity", Text, nullable=False),  # the source's word: 'Contribution', 'Fee', ...
+    Column("fund", Text, nullable=False),
+    Column("money_source", Text, nullable=False),  # 'Employee PreTax', 'Safe Harbor Match', ...
+    Column("units", Numeric(16, 4), nullable=True),  # signed
+    Column("unit_price", Numeric(14, 6), nullable=True),
+    Column("amount", Numeric(14, 2), nullable=False),  # signed; negative = out of the account
+    Column("occurrence", Integer, nullable=False, server_default=text("0")),
+    Column(
+        "raw_document_id",
+        Integer,
+        ForeignKey(raw_documents.c.id, name="fk_account_activity_raw_document"),
+        nullable=True,
+    ),
+    Column("parser_version", Text, nullable=False),
+    UniqueConstraint(
+        "account_id",
+        "activity_date",
+        "activity",
+        "fund",
+        "money_source",
+        "amount",
+        "occurrence",
+        name="uq_account_activity_natural",
+    ),
+)
+
+
 transactions = Table(
     "transactions",
     metadata,

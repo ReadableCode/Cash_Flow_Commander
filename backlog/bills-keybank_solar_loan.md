@@ -52,8 +52,9 @@ and build both parsers on it.
 
 ## not doing yet
 
-The sink is undecided: a `loan_statements` table keyed on
-`(account_id, statement_date)` with principal, interest, balance and payment
-columns, or a `bills` row plus `bill_line_items` for principal and interest.
-The balance argues for its own table, since a line item cannot carry a running
-total. Decide before scaffolding either loan.
+The sink is decided (2026-10-21): `account_balances`, built for the first
+retirement account, keyed on `(account_id, as_of_date)` with the balance and
+the statement period's flows. A loan is `account_kind = 'loan'` there, and
+needs principal, interest and payment columns it does not have yet. Adding a
+column to an existing table is an explicit migration, not a SCHEMA_VERSION
+bump (see `src/bootstrap.py`). Both loans share that one change.

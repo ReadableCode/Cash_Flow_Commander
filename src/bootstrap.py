@@ -42,7 +42,7 @@ except ImportError:  # pragma: no cover - import shim, same pattern as the store
 # %%
 # Version #
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # %%

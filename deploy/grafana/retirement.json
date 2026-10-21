@@ -1,0 +1,503 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource for the apps database, connecting as grafana_ro.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Sum of every retirement account's newest stated balance.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(balance) AS \"Balance\" FROM (SELECT DISTINCT ON (account_id) account_id, balance FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' ORDER BY account_id, as_of_date DESC) latest",
+          "refId": "A"
+        }
+      ],
+      "title": "Retirement balance now",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Everything paid in, yours and the employer's, summed over every statement held.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(contributions) AS \"Contributed\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' AND period_start IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Contributed to date",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Market gains and dividends, summed over every statement held.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(earnings) AS \"Earnings\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' AND period_start IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Investment earnings to date",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Withdrawals, which so far are only the plan's asset-based fee, summed over every statement held.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(withdrawals) AS \"Fees\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' AND period_start IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Fees to date",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Every retirement account added together. On each date an account holds its newest balance stated on or before it, so accounts with different statement dates still sum.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "always",
+            "spanNulls": true
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "All retirement accounts"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH days AS (SELECT DISTINCT as_of_date FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement'), accounts AS (SELECT DISTINCT account_id FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement') SELECT (days.as_of_date::timestamp AT TIME ZONE 'America/Chicago') AS \"time\", SUM(held.balance) AS \"All retirement accounts\" FROM days CROSS JOIN accounts CROSS JOIN LATERAL (SELECT b.balance FROM cash_flow_commander.account_balances b WHERE b.account_kind = 'retirement' AND b.account_id = accounts.account_id AND b.as_of_date <= days.as_of_date ORDER BY b.as_of_date DESC LIMIT 1) held GROUP BY days.as_of_date ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Retirement balance - all accounts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "One line per retirement account: quarter-end statements plus the portal's latest balance.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "always",
+            "spanNulls": true
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT (as_of_date::timestamp AT TIME ZONE 'America/Chicago') AS \"time\", provider || ' ' || account_id AS metric, balance AS \"value\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Balance by account",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "What moved each account over each statement quarter, all retirement accounts together.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Your contributions"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Employer contributions"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Investment earnings"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Withdrawals and fees"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (as_of_date::timestamp AT TIME ZONE 'America/Chicago') AS \"time\", SUM(contributions - COALESCE(employer_contributions, 0)) AS \"Your contributions\", SUM(employer_contributions) AS \"Employer contributions\", SUM(earnings) AS \"Investment earnings\", SUM(withdrawals) AS \"Withdrawals and fees\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' AND period_start IS NOT NULL GROUP BY as_of_date ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Quarterly change by source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "Every statement held, newest first.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 8,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT provider || ' ' || account_id AS \"Account\", period_start AS \"From\", as_of_date AS \"To\", beginning_balance AS \"Beginning\", contributions AS \"Contributions\", employer_contributions AS \"Of which employer\", earnings AS \"Earnings\", withdrawals AS \"Withdrawals\", fees AS \"Fees\", balance AS \"Ending\", vested_balance AS \"Vested\" FROM cash_flow_commander.account_balances WHERE account_kind = 'retirement' AND period_start IS NOT NULL ORDER BY as_of_date DESC, account_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Statements",
+      "type": "table"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "cash-flow-commander",
+    "retirement",
+    "balances"
+  ],
+  "time": {
+    "from": "now-5y",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Cash Flow Commander \u2014 Retirement",
+  "uid": "cfc-retirement",
+  "version": 1
+}

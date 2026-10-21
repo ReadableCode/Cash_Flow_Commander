@@ -67,7 +67,9 @@ Examples:
 - `rhythm_api_usage_INV123.json`
 - `rhythm_email_weekly_2026-08-01_<msgid>.txt`
 
-`doc_type` vocabulary comes from the ingest layer: `bill_pdf`, `api_invoice_json`, `api_usage_json`, `api_orders_json`, `weekly_email`, `payment_email`, `csv_export`, `smt_export`, `other`.
+`doc_type` vocabulary comes from the ingest layer: `bill_pdf`, `statement_pdf`, `api_invoice_json`, `api_usage_json`, `api_orders_json`, `api_balance_json`, `weekly_email`, `payment_email`, `csv_export`, `smt_export`, `other`.
+
+An account that holds money rather than billing it (a retirement account) lands in `account_balances`, one row per account and date with the statement period's flows, and `account_activity`, one row per activity line. `bills` and `usage_intervals` do not apply to it.
 
 ## 5. Filing captures
 

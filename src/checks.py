@@ -37,6 +37,10 @@ to parse, and the panels read it as a buyback of zero. A buyback line on a plan
 that pays none is a line filed under the wrong category. A bill whose plan term
 is not recorded is not judged.
 
+Account statements are checked as a chain: each period starts the day after
+the previous one ends and opens at its closing balance. A quarter that never
+landed draws as one long straight segment on the balance graphs.
+
 Exit code is 1 when any check finds something, so a provider command cannot
 finish green while its dashboards are quietly understating.
 """
@@ -476,7 +480,55 @@ def bills_buyback_mismatch(engine: Engine, account_id: str | None) -> list[dict[
     return findings
 
 
+def statements_unchained(engine: Engine, account_id: str | None) -> list[dict[str, Any]]:
+    """Account statements that do not follow on from the one before.
+
+    Each statement period starts the day after the previous one ends and opens
+    at its closing balance. A quarter that never landed breaks the first, and
+    the balance graphs simply draw a longer straight segment over it; a
+    misparsed balance breaks the second.
+    """
+    stmt = select(
+        db.account_balances.c.account_id,
+        db.account_balances.c.period_start,
+        db.account_balances.c.as_of_date,
+        db.account_balances.c.beginning_balance,
+        db.account_balances.c.balance,
+    ).where(db.account_balances.c.period_start.is_not(None))
+    if account_id is not None:
+        stmt = stmt.where(db.account_balances.c.account_id == account_id)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            stmt.order_by(db.account_balances.c.account_id, db.account_balances.c.as_of_date)
+        ).mappings().all()
+    findings = []
+    previous: dict[str, Any] = {}
+    for row in rows:
+        before = previous.get(row["account_id"])
+        previous[row["account_id"]] = row
+        if before is None:
+            continue
+        if row["period_start"] != before["as_of_date"] + datetime.timedelta(days=1):
+            missing_from = before["as_of_date"] + datetime.timedelta(days=1)
+            missing_to = row["period_start"] - datetime.timedelta(days=1)
+            problem = f"no statement held for {_fmt(missing_from)} .. {_fmt(missing_to)}"
+        elif row["beginning_balance"] != before["balance"]:
+            problem = f"opens at {row['beginning_balance']}, the previous statement closed at {before['balance']}"
+        else:
+            continue
+        findings.append(
+            {
+                "invoice_number": "statement",
+                "service_start": row["period_start"],
+                "service_end": row["as_of_date"],
+                "problem": problem,
+            }
+        )
+    return findings
+
+
 CHECKS = (
+    ("statements_unchained", statements_unchained),
     ("bills_without_line_items", bills_without_line_items),
     ("bills_without_energy_rate", bills_without_energy_rate),
     ("bills_without_usable_kwh", bills_without_usable_kwh),

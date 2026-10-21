@@ -9,6 +9,8 @@ routes the parsed rows to their sink:
   'payments'        -> bill_store.upsert_payments
   'plans'           -> bill_store.upsert_plans
   'pdf_bills'       -> bill_store.apply_pdf_bill
+  'account_balances' -> account_store.upsert_balances
+  'account_activity' -> account_store.upsert_activity
 
 Parsers either return a bare list (usage interval rows) or a dict mapping
 sink name -> rows. Within a run, api_invoice_json documents are parsed before
@@ -38,6 +40,7 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+import account_store  # noqa: E402
 import bill_store  # noqa: E402
 import bootstrap  # noqa: E402
 import db  # noqa: E402
@@ -72,14 +75,15 @@ _DEFAULT_PRIORITY = 1
 # Fixed display order for per-sink counts in the summary.
 _SINK_LABEL_ORDER = (
     "bills", "bills_patched", "line_items", "payments", "plans", "usage rows",
-    "transactions", "stale transactions removed",
+    "transactions", "stale transactions removed", "account_balances", "account_activity",
 )
 
 # Providers whose documents carry their own account identity, so the single
 # `account_number` in providers.local.yaml does not apply. One Chase, Citi, or
 # Elan login covers several accounts; each capture names the account it came
-# from, and the parser reads it from the filename.
-DERIVES_OWN_ACCOUNT_ID = frozenset({"chase", "citi", "elan"})
+# from, and the parser reads it from the filename. A Voya capture prints its
+# plan number, which is the account id.
+DERIVES_OWN_ACCOUNT_ID = frozenset({"chase", "citi", "elan", "voya"})
 
 
 # %%
@@ -180,7 +184,7 @@ def _dry_run_counts(sinks: dict[str, Any]) -> Counter[str]:
             continue  # metadata; a dry run cannot know what it would prune
         if sink == "usage_intervals":
             counts["usage rows"] += len(payload)
-        elif sink in ("bills", "payments", "plans", "transactions"):
+        elif sink in ("bills", "payments", "plans", "transactions", "account_balances", "account_activity"):
             counts[sink] += len(payload)
         elif sink == "pdf_bills":
             counts["bills_patched"] += len(payload)
@@ -220,6 +224,10 @@ def _upsert_sinks(engine: Engine, sinks: dict[str, Any]) -> tuple[Counter[str], 
                 counts["transactions"] += int(
                     transaction_store.upsert_transactions(engine, payload)["upserted"]
                 )
+        elif sink == "account_balances":
+            counts["account_balances"] += int(account_store.upsert_balances(engine, payload)["upserted"])
+        elif sink == "account_activity":
+            counts["account_activity"] += int(account_store.upsert_activity(engine, payload)["upserted"])
         elif sink == "pdf_bills":
             result = bill_store.apply_pdf_bill(engine, payload)
             counts["bills_patched"] += int(result["bills_patched"])

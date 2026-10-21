@@ -65,8 +65,9 @@ One row per endpoint you pull:
 | `{{/api/v1/usage?granularity=...}}` | `{{api_usage_json}}` | `{{slug}}_usage_{{YYYY-MM-DD}}.json` |
 
 - `doc_type` must be one of the values accepted by `src/ingest_raw.py`
-  (`bill_pdf`, `api_invoice_json`, `api_usage_json`, `api_orders_json`,
-  `weekly_email`, `payment_email`, `csv_export`, `smt_export`, `other`).
+  (`bill_pdf`, `statement_pdf`, `api_invoice_json`, `api_usage_json`,
+  `api_orders_json`, `api_balance_json`, `weekly_email`, `payment_email`,
+  `csv_export`, `smt_export`, `other`).
 - Pagination: `{{how the API pages — cursor/offset/page param — and how you know
   you are done}}`.
 - Re-pull window: `{{always re-pull the trailing N months}}` — providers restate
