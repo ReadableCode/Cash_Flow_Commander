@@ -242,5 +242,6 @@ If accepted, with the user:
 4. Tell the user `.claude/commands/transactions-<slug>.md` is ready for review
    and commit. Do NOT commit anything yourself — the user reviews and commits.
    Finished per-provider transaction commands are deployed globally like
-   `/transactions-chase`; remind the user to add a deployment entry for the
-   new command (the user handles deployment).
+   `/transactions-chase`: add the new command's link entry beside that one in
+   `personal_dev/personal_dev_manifest.yaml` yourself, and run the deploy once
+   the user says to.
