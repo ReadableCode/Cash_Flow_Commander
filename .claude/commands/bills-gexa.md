@@ -218,10 +218,11 @@ As last observed 2026-09-28.
 - **The token rides in the query string.** The page opens this URL in a new
   tab; do not. `fetch` it inside the signed-in tab, check that the body starts
   with `%PDF-`, and hand it to `Blob` + `a.download`. Never print the URL.
-- Auto mode refused this fetch on 2026-10-13 as credential exploration until
-  the user had allowed `osascript` in the settings and a new session had
-  loaded that rule; it then ran. When it is refused, do not retry it another
-  way: report the PDF as not obtained.
+- Auto mode can refuse this fetch as credential exploration (2026-10-13). The
+  `Bash(osascript:*)` allow rule did not clear it; switching the thread to
+  full access did. When it is refused, stop and ask the user to switch this
+  thread to full access, then run the same fetch once. Never work around the
+  refusal another way.
 - **A timed-out session answers `200` with the login page**, not an error
   (seen 2026-10-13, a few hours after sign-in: 175 KB of HTML, while the tab
   still showed the dashboard). The `%PDF-` check is what catches it. Reload
