@@ -277,5 +277,4 @@ uv run python deploy/grafana_sync.py list  # move dashboards between the repo an
 | `docs/` | `LANDING.md` (acquisition contract), `EXPECTED.md` (expected transactions) |
 | `deploy/` | Postgres role setup, Grafana dashboards and sync |
 | `templates/` | Provider command template, pairing board page |
-| `backlog/` | Known open issues and planned providers |
 | `tests/` | pytest suite (`uv run pytest`) |
