@@ -130,7 +130,7 @@ discovery session or the 2026-09-04 run — login landed straight on the
 dashboard both times. Expect them anyway; when one appears, add it here with
 the date first seen.
 
-## 3. The export flow — as last observed 2026-09-24
+## 3. The export flow — as last observed 2026-10-28
 
 Verified live against the real portal on that date. Elan will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -160,12 +160,19 @@ Three buttons above the list: `#transaction-search-button`,
   download panel takes its own dates, so a run never needs the search
   panel**; it is described here because it shares input ids with the
   download panel (only one is visible at a time — scope queries carefully).
-- **Download** (`#transaction-download-button`) opens the export panel:
+- **Download** (`#transaction-download-button`) opens the export panel,
+  a "Download Transactions" modal (`div.usb-modal-v2--dialog`,
+  `role=dialog`, `aria-modal=true`; seen 2026-10-28) with a close X
+  `#transactionsDownloadOptions--close`, the account shown as static text,
   its own `#input_startDate` / `#input_endDate` (`MM/DD/YYYY`, prefilled to
   the last 30 days), a native format select `#select_download-types`
   (`CSV` default, `QBO`, `QFX` — keep CSV), and
   `#transactionsDownloadOptionsDownload` / `...Dismiss` buttons. The panel
   stays open after a download, so consecutive windows need no re-opening.
+  A successful download adds "Your download is complete." inside it. An
+  empty-window notice (below) stays on screen after you change the dates and
+  clears only on the next Download click, so judge each window by `claim`
+  and the state after its own click, not by what is showing beforehand.
   Drive the date inputs with the native value setter, then dispatch
   `input`/`change` with `{bubbles:true}` and blur; verify by reading
   `.value` back. Take a download marker before every click on
@@ -238,7 +245,8 @@ of `providers.local.yaml`. The filename pattern is
 requested end date**: three downloads whose requested end was "today" came
 back named four days later (2026-08-24 ×2 → `..._08-28-2026.csv`,
 2026-09-04 → `..._09-08-2026.csv`), while a closed past month requested as
-07/01–07/31 on 2026-09-24 came back `..._07-31-2026.csv`, matching exactly.
+07/01–07/31 on 2026-09-24 and again on 2026-10-28 came back
+`..._07-31-2026.csv`, matching exactly.
 The offset is not a contract either way, so never read the window from the
 name.
 

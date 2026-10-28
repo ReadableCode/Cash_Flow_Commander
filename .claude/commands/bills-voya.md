@@ -106,6 +106,8 @@ Balance snapshot:
 
 - The session id is the 32-hex `s=` value the dashboard's own requests carry;
   read it from `performance.getEntriesByType("resource")` on the dashboard.
+  It is uppercase hex (seen 2026-10-28): match `[0-9A-Fa-f]{32}`, or take it
+  straight from the `dashboard/accounts?s=` entry.
 - One JSON object. `categorizedAccounts[].accounts[]` carries `planId`,
   `accountBalance` (string) and `accountBalanceAsOf` (`MM/DD/YYYY`, the prior
   business day). The parser lands one balance per plan.
@@ -132,6 +134,20 @@ Activity CSV:
   are in parentheses. Rows are not in date order.
 - An empty window is not an empty file: the body is the sponsor line and
   "You have no transaction history." The parser lands no rows for it.
+- A failed export is a 200 `text/html` page (about 11.7 KB, starting
+  `<!-- force_pref_structure.jsp`) whose text is "System Unavailable. Sorry
+  for the Interruption." Check the content type before saving; never save
+  that page. On 2026-10-28 every request got it for 15 minutes, the full
+  range, a six-month window and the form's own "Prior 30 days" alike, and
+  re-navigating from the dashboard did not clear it, while the balance and
+  statement endpoints answered normally. Skip the CSV that run and report it;
+  the next run's full-history request covers the gap.
+- The page's own `doSubmit()` (`/static/eportal/js/txn_download.js`,
+  `validateData`) allows only windows of six months or less that start after
+  a date two years back. That is client-side only; the direct POST above
+  ignored it on 2026-10-21.
+- The dashboard's "View My Statements" and "Download Transactions to Excel"
+  links have no `href`; clicking one navigates the same tab (no new tab).
 
 Statements:
 

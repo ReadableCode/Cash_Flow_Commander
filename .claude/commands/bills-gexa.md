@@ -73,7 +73,10 @@ As last observed 2026-09-28.
   in the portal tab cannot read it at all, including which card or bank account
   is on file. The readable signal is the bill card on the dashboard, which
   says `You have Auto Payments enabled` and gives the scheduled date once
-  enrolled. Do not read the Next Steps list for this: its `Set up Auto Pay`
+  enrolled. Once a draft has run, the card instead reads `Auto Pay payment
+  processed` with the amount and due date (seen 2026-10-28), and the invoice
+  list marks that invoice `IsPaid: "paid"` with `InvoicePaidDate` filled.
+  Do not read the Next Steps list for this: its `Set up Auto Pay`
   item stays listed after enrollment, and only the completion percentage moves.
 
 ### 1.1 Calling the portal's endpoints
@@ -138,7 +141,13 @@ The plan capture, as first observed 2026-09-30:
   `plans` upsert on account and contract start is what keeps the term to one
   row, and a renewal lands as a new term by itself.
 - To tell whether the plan itself changed, compare the parsed JSON with the
-  newest held capture ignoring `CurrentPlan.Id`, not the sha256.
+  newest held capture ignoring `CurrentPlan.Id` and `CurrentPlan.LogID`, not
+  the sha256. `LogID` also appears as a query parameter inside `EFLLink`;
+  ignore it there too. Observed 2026-10-28: `LogID` went from 84865 (held
+  2026-09-30 and 2026-10-13) to 83883 with nothing else changed. The label
+  fetched through the new link differed from the held one only in those
+  digits, echoed into the link embedded in the PDF (same size, same
+  `/ID`, same creation date), so it was the same label and was not filed.
 - **The advertised averages move while the plan stays the same.** Observed
   2026-10-13: `EFL_Rate500`, `EFL_Rate1000`, `EFL_Rate2000` and `EFLRatePrice`
   had each risen by the same 0.8378 cents per kWh since the 2026-09-30 capture,
@@ -197,8 +206,10 @@ part by subtracting the delivery utility's fixed charge, which it reads from
 `tdu_fixed_monthly_charges` in providers.local.yaml (effective date → dollars).
 
 - The provider publishes the current fixed and per-kWh charge for each
-  delivery utility at `https://mygexa2.gexaenergy.com/tdu-charges`, a public
-  page with its own "updated" date.
+  delivery utility at `https://myaccount.gexaenergy.com/tdu-charges`, a public
+  page with its own "updated" date; `curl` it, no session needed. As of
+  2026-10-28 the old host `mygexa2.gexaenergy.com` no longer resolves, though
+  search results still list it with a stale copy.
 - Compare the fixed charge for the user's delivery utility with the newest
   entry in the config. If it changed, tell the user and add a new dated entry;
   never edit an old one, because older bills were billed at the older charge.
@@ -269,7 +280,7 @@ The Electricity Facts Label, as first observed 2026-09-30:
   two-page PDF. It needs no session, so fetch it with `curl` straight to its
   place; it does not pass through the browser's download folder.
 - Fetch it once per plan, when the plan capture differs from the newest held
-  one in anything other than `CurrentPlan.Id` (section 2), and file it as
+  one in anything other than `CurrentPlan.Id` and `LogID` (section 2), and file it as
   `<archive_dir>/_contract/gexa_efl_{ProductCode}_{YYYY-MM-DD}.pdf`, the date
   being the label's own date. It is the contract document behind the plan
   capture. It is kept, not ingested: ingest skips folders whose name starts

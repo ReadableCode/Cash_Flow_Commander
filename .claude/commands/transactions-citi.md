@@ -137,7 +137,10 @@ Observed at least once (2026-08-24):
   varies under the same URL and title: on 2026-10-13 it was a single
   promotional-APR offer ("Activate your promo rate with one click") with
   "Activate Offer", "Remind Me Later" and "No Thanks" buttons. The home link
-  was there and worked the same way; no button was touched.
+  was there and worked the same way; no button was touched. On 2026-10-28 it
+  was a personal-loan offer ("Check My Rate & Apply", "Remind Me Later", "No
+  Thanks"); the home link (`aria-label="citi-Home"`) again routed to the card
+  dashboard in under 10s.
 - **A card-conversion notice modal** ("We're Converting Your Card") exists in
   the page's modal stack. It is an account-lifecycle notice, not marketing —
   never click through it, and tell the user it exists: a conversion changes
@@ -150,7 +153,7 @@ Observed at least once (2026-08-24):
   empty) measures 1x1 px on the card dashboard (seen 2026-10-13) and is not
   a dialog. Require a size above 1 px or skip `aria-hidden` elements.
 
-## 3. The export flow — as last observed 2026-10-13
+## 3. The export flow — as last observed 2026-10-28
 
 Verified live against the real portal on that date. Citi will move this page,
 so if what you see disagrees, believe the page and then update this section
@@ -186,9 +189,14 @@ is no separate download page.
   the controls named below directly. The **compact layout** (seen 2026-09-30
   in a 960 px wide window) hides them behind two header dropdowns:
   - **"Search & Filter"** (`div.search-and-filters div.header-dropdown`):
-    click it to reveal the keyword search and the "Filter By" button. Filter
-    By, the From/To inputs and the primary Search button then work as
-    described below.
+    click it to reveal the range controls. **On 2026-10-28 this panel was
+    different from earlier runs**: no "Filter By" (`button.expand-cta`) and
+    no From/To inputs. It held a Time Period dropdown, a **readonly Date
+    Range input** (`#ums-sf-date-range`, placeholder `mm/dd/yyyy -
+    mm/dd/yyyy`) with a "Calendar View." button beside it, a keyword search
+    (`#ums-sf-search`) with its own `button[aria-label="Search"]`, and a
+    "Filter" button. See *Custom range* below for how the range is set in
+    this panel.
   - **"I want to..."** (`div.iWantTo-wrapper`): click it to reveal three
     `button.header-button` entries, View Last Statement, **Export** and
     Print. Export opens the same export dialog as the download icon. In this
@@ -199,17 +207,34 @@ is no separate download page.
   ("Since <last statement close>"), ~6 statement cycles, "Last year", "Year
   to date". **Presets are statement-shaped, not month-shaped — always use the
   custom date range instead**, so the requested window is explicit.
-- **Custom range**: expand "Filter By" (`button.expand-cta`), fill the From
-  and To inputs (format `MMM D, YYYY`; drive with the native value setter,
-  then dispatch `input`/`change`/`blur` with `{bubbles:true}`), click the
-  panel's primary **Search** button.
-- **The Filter By panel collapses after every search.** Re-expand it before
-  the next range. And **verify the applied range chip** (`button.ums-chip`,
-  text like "Aug 5, 2024 - Aug 24, 2026" above the results, next to a
-  "Clear All" button) after every search — a search clicked while the panel
-  is half-rendered does nothing and leaves the previous range silently
-  active. With a custom range applied the Time Period dropdown reads
-  "Select Time Period".
+- **Custom range, calendar panel (2026-10-28, compact layout)**: click
+  `button[aria-label="Calendar View."]`. A `div.cds-calendar-dropdown-menu`
+  opens showing Start Date / End Date (pre-filled with the last six months)
+  and one month grid. Step the grid with `button.cds-calendar-nav-right` /
+  `-left` until its `button.cds-dd2-button` label reads the target month
+  ("October 2026"), then click the start day and the end day. Day buttons
+  are selected by aria-label **prefix** ("Thursday, October 1, 2026"): the
+  label gains suffixes such as ", in selected range" or ", selected as start
+  date", so an exact or `$=` match misses. Read the Start Date / End Date
+  values back from `.cds-calendar-start-end`, then click **Confirm**.
+  Confirm applies the range by itself; no Search click is needed. The
+  `Search` button next to the panel belongs to the keyword field, and
+  clicking it with an empty keyword only shows "Search field requires at
+  least 2 characters." (harmless; the range stays applied).
+- **Custom range, Filter By panel (as seen through 2026-10-13)**: expand
+  "Filter By" (`button.expand-cta`), fill the From and To inputs (format
+  `MMM D, YYYY`; drive with the native value setter, then dispatch
+  `input`/`change`/`blur` with `{bubbles:true}`), click the panel's primary
+  **Search** button. The Filter By panel collapses after every search;
+  re-expand it before the next range.
+- **Verify the applied range chip after every search.** Through 2026-10-13
+  it was `button.ums-chip`, text like "Aug 5, 2024 - Aug 24, 2026". On
+  2026-10-28 it was `cds-chip3.ums-search-filter-applied-chips__chip`, text
+  `10/01/2026 - 10/28/2026` (MM/DD/YYYY), its inner button carrying the
+  range in `name`. Either way it sits above the results next to "Clear All".
+  A search clicked while the panel is half-rendered does nothing and leaves
+  the previous range silently active. With a custom range applied the Time
+  Period dropdown reads "Select Time Period" (just "Select" on 2026-10-28).
 - **Do not count on an error rendering.** An inline `Error.` message near the
   fields was observed 2026-08-24, but on 2026-09-04 a refused range produced
   no message of any kind (see *Retention* below). Never conclude a range was
@@ -251,7 +276,10 @@ after every search and compare it to what you asked for; treat "chip
 unchanged" as refusal, not as success. Do not wait for an error message —
 there is none. If you need to tell "refused" apart from "raced the
 half-rendered panel", re-run the same search with a known-good From as a
-control: the form working proves the date was the problem.
+control: the form working proves the date was the problem. All of the
+above was observed with the Filter By panel; how the calendar panel seen
+2026-10-28 handles a start day before the floor (disabled days, a refusal
+on Confirm, or something else) has not been tested.
 
 - Observed floor: **the statement-close date ~24 months back** — a
   statement-cycle boundary, not Chase's rolling daily floor. A From at
@@ -297,9 +325,11 @@ Header: `Status,Date,Description,Debit,Credit,Member Name`.
   two rows labelled Pending inside the requested range and neither was in
   the CSV, which held only `Cleared` rows. On 2026-10-13 the word Pending was on the page four times
   with the range applied and the CSV again held only `Cleared` rows, but
-  whether those were transaction rows inside the range was not checked. One
-  confirmed observation, so whether a pending row can ever export (and with
-  what Status value) is still open.
+  whether those were transaction rows inside the range was not checked. On
+  2026-10-28 the list showed three rows under "Pending Purchases" dated
+  inside the requested range (the last two days of it) and the CSV again
+  held only `Cleared` rows, none of them dated after the last posted day.
+  Two confirmed observations now: pending rows do not export.
 - `Member Name` distinguishes cardholders/authorized users.
 - The filename is the **scope label, not the account or window**:
   `Since Aug 06, 2026.CSV`, `Date range.CSV`, and collisions get
