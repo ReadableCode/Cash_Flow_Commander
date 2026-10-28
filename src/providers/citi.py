@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - fallback for `import src.providers.cit
 # %%
 # Constants #
 
-PARSER_VERSION = "citi-transactions-2"
+PARSER_VERSION = "citi-transactions-3"
 
 PROVIDER = "citi"
 
@@ -98,6 +98,31 @@ def _parse_money(raw: str) -> float | None:
         return None
     value = float(cleaned)
     return -abs(value) if negative else value
+
+
+# Since 2026-10-28 Citi prints amounts as "$ 23.80" and "-$ 5,268.23" without
+# quoting them, so a thousands comma splits one cell into two: "-$ 5" and
+# "268.23". The head carries the "$"; each tail is a three-digit group.
+_SPLIT_MONEY_HEAD = re.compile(r"^\s*\(?-?\s*\$\s*-?\d{1,3}(?:,\d{3})*$")
+_SPLIT_MONEY_TAIL = re.compile(r"^\d{3}(?:\.\d{1,2})?\)?$")
+
+
+def _rejoin_split_money(values: list[str], width: int) -> list[str]:
+    """Rejoin money cells an unquoted thousands comma split apart.
+
+    Only a row wider than the header row is touched, and only a "$" cell
+    followed by a three-digit group, so a well-formed row is returned as is.
+    """
+    values = list(values)
+    index = 0
+    while len(values) > width and index < len(values) - 1:
+        if _SPLIT_MONEY_HEAD.match(values[index]) and _SPLIT_MONEY_TAIL.match(
+            values[index + 1]
+        ):
+            values[index : index + 2] = [values[index] + "," + values[index + 1]]
+            continue
+        index += 1
+    return values
 
 
 def _squash(raw: str) -> str:
@@ -158,6 +183,7 @@ def parse_transactions_csv(content: bytes, ctx: dict[str, Any]) -> dict[str, Any
     for raw in reader:
         if not raw or not any(value.strip() for value in raw):
             continue
+        raw = _rejoin_split_money(raw, len(headers))
         record = {key: (raw[i] if i < len(raw) else "") for i, key in enumerate(keys)}
         extra = _verbatim_row(headers, raw)
 

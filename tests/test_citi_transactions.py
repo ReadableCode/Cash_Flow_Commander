@@ -163,6 +163,22 @@ def test_values_past_the_last_header_are_kept() -> None:
     assert rows[0]["extra"]["unnamed"] == ["SURPRISE"]
 
 
+def test_an_unquoted_thousands_comma_is_rejoined() -> None:
+    """Citi's dollar-sign layout leaves amounts unquoted, so 5,268.23 splits."""
+    text = (
+        "Status,Date,Description,Debit,Credit,Member Name\n"
+        'Cleared,10/01/2026,"AUTOPAY AUTO-PMT",, -$ 5,268.23,JANE Q MEMBER\n'
+        'Cleared,10/01/2026,"SHOP",$ 23.80,,JANE Q MEMBER\n'
+        'Cleared,10/02/2026,"RESORT",$ 1,234,567.89,,JANE Q MEMBER\n'
+    )
+    rows = _parse(text)
+
+    assert [row["amount"] for row in rows] == [5268.23, -23.80, -1234567.89]
+    assert rows[0]["extra"]["columns"]["Credit"] == " -$ 5,268.23"
+    assert rows[0]["memo"] == "JANE Q MEMBER"
+    assert "unnamed" not in rows[0]["extra"]
+
+
 def test_footer_and_blank_rows_are_skipped() -> None:
     text = CARD + "\nTotals,,,,,\n"
     rows = _parse(text)
