@@ -14,9 +14,14 @@ from providers import get_parser, enphase_enlighten
 # Synthetic fixtures (never a real system id or account) #
 
 ACCOUNT_ID = "ACCT-TEST-SOLAR"
-CTX: dict[str, Any] = {"account_id": ACCOUNT_ID}
-
 UTC = dt.timezone.utc
+
+# A capture taken long after every synthetic day below, so the parser's
+# capture-time cutoff drops nothing in the tests that are not about it.
+CTX: dict[str, Any] = {
+    "account_id": ACCOUNT_ID,
+    "fetched_at": dt.datetime(2100, 1, 1, tzinfo=UTC),
+}
 
 # 2026-03-08 is a US spring-forward date: the local day is 23 hours, so
 # Enlighten emits 92 fifteen-minute intervals instead of 96. start_time is the
@@ -163,6 +168,76 @@ def test_five_minute_payload_is_labeled_correctly() -> None:
 
     assert {row["granularity"] for row in rows} == {"5min"}
     assert rows[1]["ts"] - rows[0]["ts"] == dt.timedelta(minutes=5)
+
+
+# %%
+# Capture-time cutoff: today's unelapsed slots are zero padding, not readings #
+
+
+def _lifetime(start_date: str, production: list[Any]) -> bytes:
+    return json.dumps({"system_id": 1, "start_date": start_date, "production": production}).encode()
+
+
+def test_same_day_capture_keeps_only_elapsed_intervals_and_no_rollup() -> None:
+    """A mid-day capture yields rows only before the capture time and no rollup for that day.
+
+    Enlighten serves all of today's slots with the ones still to come as zeros.
+    NORMAL_START is 2026-07-02 local midnight (05:00 UTC); a capture at 09:20
+    local is 14:20 UTC, so slots 00:00 to 14:15 UTC (38 of them) are real and
+    the rest are padding. lifetime_energy's last element is today's running
+    total, so only yesterday's rollup may land.
+    """
+    ctx = {"account_id": ACCOUNT_ID, "fetched_at": dt.datetime(2026, 7, 2, 14, 20, tzinfo=UTC)}
+
+    rows = enphase_enlighten.parse_daily_energy_json(
+        _payload([_day(NORMAL_START, [10] * 38 + [0] * 58)]), ctx
+    )
+    assert len(rows) == 38
+    assert all(row["ts"] < ctx["fetched_at"] for row in rows)
+    assert rows[-1]["ts"] == dt.datetime(2026, 7, 2, 14, 15, tzinfo=UTC)
+    assert all(row["value"] == Decimal("0.01") for row in rows)
+
+    daily = enphase_enlighten.parse_lifetime_energy_json(
+        _lifetime("2026-07-01", [48000, 380]), ctx
+    )
+    assert [row["ts"].date() for row in daily] == [dt.date(2026, 7, 1)]
+    assert daily[0]["value"] == Decimal("48")
+
+
+def test_past_day_capture_is_unchanged() -> None:
+    """A capture taken after the day ended keeps every interval and the day's rollup."""
+    ctx = {"account_id": ACCOUNT_ID, "fetched_at": dt.datetime(2026, 7, 3, 5, 0, tzinfo=UTC)}
+
+    rows = enphase_enlighten.parse_daily_energy_json(
+        _payload([_day(NORMAL_START, [10] * 96)]), ctx
+    )
+    assert len(rows) == 96
+
+    daily = enphase_enlighten.parse_lifetime_energy_json(
+        _lifetime("2026-07-01", [48000, 51000]), ctx
+    )
+    assert [row["ts"].date() for row in daily] == [dt.date(2026, 7, 1), dt.date(2026, 7, 2)]
+
+
+def test_naive_fetched_at_is_utc_and_capture_day_is_local() -> None:
+    """SQLite hands fetched_at back naive: it is UTC, and 'today' is the Central date.
+
+    03:00 UTC on 2026-07-03 is 22:00 CDT on 2026-07-02, so the local day of the
+    capture is still 07-02: its rollup is dropped although the UTC date has
+    moved on, and the interval slots from 22:00 local onward (8 of 96) go.
+    """
+    ctx = {"account_id": ACCOUNT_ID, "fetched_at": dt.datetime(2026, 7, 3, 3, 0)}
+
+    rows = enphase_enlighten.parse_daily_energy_json(
+        _payload([_day(NORMAL_START, [10] * 96)]), ctx
+    )
+    assert len(rows) == 88
+    assert rows[-1]["ts"] == dt.datetime(2026, 7, 3, 2, 45, tzinfo=UTC)
+
+    daily = enphase_enlighten.parse_lifetime_energy_json(
+        _lifetime("2026-07-01", [48000, 51000]), ctx
+    )
+    assert [row["ts"].date() for row in daily] == [dt.date(2026, 7, 1)]
 
 
 # %%

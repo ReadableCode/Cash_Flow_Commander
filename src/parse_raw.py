@@ -294,6 +294,9 @@ def _process_document(
         "doc_type": doc["doc_type"],
         "original_name": doc["original_name"],
         "raw_document_id": doc["id"],
+        # When the capture was taken, for a parser that must tell a reading
+        # from a slot the portal pads ahead of time (enphase_enlighten).
+        "fetched_at": doc["fetched_at"],
     }
     try:
         result: Any = parse_fn(doc["content"], ctx)

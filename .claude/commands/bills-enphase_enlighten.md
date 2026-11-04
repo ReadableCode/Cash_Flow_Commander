@@ -85,10 +85,13 @@ add today to the persistent-gap list; the next run picks it up.
 zeros.** Observed 2026-09-30 at ~09:20 local: today's `production` had all 96 slots, 8 positive
 and 88 zero (no nulls), including zeros for intervals that had not happened yet, and
 `totals.production` was the running total. `lifetime_energy` likewise carried today's running
-total as its last element. The array is not empty, so the parser does **not** skip it: a
-daytime run lands today's unelapsed intervals as zero readings and a short `day` rollup. They
-are placeholders, not measurements. The next run's overlap restates them by natural-key upsert,
-so do not read today's numbers as final and do not spot-check against today.
+total as its last element. Since `enphase-production/1.1.0` the parser drops every slot that
+starts at or after the capture time (the document's `fetched_at`, the capture file's mtime at
+ingest) and drops the `day` rollup for the capture's own local day, so a same-day capture is
+fine: today lands as the elapsed intervals only, with no rollup, and the next run's overlap
+fills in the rest by natural-key upsert. Keep filing captures with `mv`, which keeps the mtime;
+a `cp` without `-p` moves the cutoff later and lets a few zero slots through. Do not read
+today's numbers as final and do not spot-check against today.
 
 Because this provider has no retention limit and serves the whole lifetime in one call, `full`
 in `$ARGUMENTS` is always safe — it costs one request.
@@ -244,6 +247,9 @@ Facts the parser encodes, repeated here because they are the ones that bite:
   reconciliation compare a series against itself.
 - Empty-array days are **skipped, not zeroed**. Absence of a reading is not a measurement of
   zero, and writing zeros would make an outage look like a day with no sun.
+- Today's slots at or after the capture time (`fetched_at`) are **dropped**, and so is today's
+  `day` rollup: Enlighten pads the current day with zeros and reports a running total, neither
+  of which is a measurement (section 0.1).
 - If a non-production channel ever arrives populated, the parse **raises** — that means
   consumption CTs or a battery were added and the parser must be extended deliberately.
 
