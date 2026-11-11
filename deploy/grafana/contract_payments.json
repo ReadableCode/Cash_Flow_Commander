@@ -1,0 +1,443 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CASH_FLOW_COMMANDER",
+      "label": "Cash Flow Commander Postgres",
+      "description": "Postgres datasource for the apps database, connecting as grafana_ro.",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "13.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "editable": true,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
+      "description": "One bar per billed month of the contract (every series named ...Contract Invoices): days from the end of that month until the deposit landed. Solid bars are paid. Hollow outlined bars are still owed and grow every day. The faint grey track behind every month runs to day 60, when payment is due, so a bar that runs past the track is overdue. Colors: green 45 days or less, yellow 46 to 60, orange 61 to 75 (a little overdue), red over 75 (way overdue). Billed month is inferred from the order of the series' occurrences; paid status follows the pairing board's matches.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "gray"
+          },
+          "custom": {
+            "axisLabel": "days after month end",
+            "axisPlacement": "auto",
+            "axisSoftMin": 0,
+            "axisSoftMax": 90,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "lineWidth": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paid, on time"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paid, slow"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FADE2A"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paid, a little overdue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paid, way overdue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Owed, on time"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Owed, slow"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FADE2A"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Owed, a little overdue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Owed, way overdue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Left"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#CCCCDC"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 12
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": -1,
+                      "to": 100000,
+                      "result": {
+                        "text": " "
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.78,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "Billed month",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH occ AS (\n  SELECT o.id, o.amount,\n         (date_trunc('month', MIN(s.active_from) OVER ()) + (ROW_NUMBER() OVER (ORDER BY o.due_date, o.id) - 1) * interval '1 month')::date AS billed_month\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE s.name ILIKE '%Contract Invoices' AND o.skipped_at IS NULL\n),\npaid AS (\n  SELECT m.occurrence_id, MAX(t.post_date) AS paid_on\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t\n    ON t.account_id = m.txn_account_id AND t.post_date = m.txn_post_date\n   AND t.description = m.txn_description AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n  GROUP BY m.occurrence_id\n),\nbilled AS (\n  SELECT o.billed_month, o.amount, p.paid_on,\n         COALESCE(p.paid_on, CURRENT_DATE) - (o.billed_month + interval '1 month' - interval '1 day')::date AS days\n  FROM occ o LEFT JOIN paid p ON p.occurrence_id = o.id\n  WHERE (o.billed_month + interval '1 month')::date <= CURRENT_DATE\n),\nr AS (\n  SELECT billed_month, to_char(billed_month, 'Mon YY') || '  ' || to_char(amount, 'FM$999,990') AS label,\n         paid_on IS NOT NULL AS paid, days\n  FROM billed\n)\n-- Every series is 0, never NULL, where it does not apply: a NULL makes the bar chart draw a stray label in the corner.\nSELECT label AS \"Billed month\",\n       CASE WHEN paid AND days <= 45 THEN days ELSE 0 END AS \"Paid, on time\",\n       CASE WHEN paid AND days BETWEEN 46 AND 60 THEN days ELSE 0 END AS \"Paid, slow\",\n       CASE WHEN paid AND days BETWEEN 61 AND 75 THEN days ELSE 0 END AS \"Paid, a little overdue\",\n       CASE WHEN paid AND days >= 76 THEN days ELSE 0 END AS \"Paid, way overdue\",\n       CASE WHEN NOT paid AND days <= 45 THEN days ELSE 0 END AS \"Owed, on time\",\n       CASE WHEN NOT paid AND days BETWEEN 46 AND 60 THEN days ELSE 0 END AS \"Owed, slow\",\n       CASE WHEN NOT paid AND days BETWEEN 61 AND 75 THEN days ELSE 0 END AS \"Owed, a little overdue\",\n       CASE WHEN NOT paid AND days >= 76 THEN days ELSE 0 END AS \"Owed, way overdue\",\n       CASE WHEN days < 60 THEN 60 - days ELSE 0 END AS \"Left\"\nFROM r\nORDER BY billed_month DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Contract ${owed}",
+      "type": "barchart"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "cash-flow-commander",
+    "income",
+    "contract"
+  ],
+  "templating": {
+    "list": [
+      {
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${DS_CASH_FLOW_COMMANDER}"
+        },
+        "definition": "WITH occ AS (\n  SELECT o.id, o.amount,\n         (date_trunc('month', MIN(s.active_from) OVER ()) + (ROW_NUMBER() OVER (ORDER BY o.due_date, o.id) - 1) * interval '1 month')::date AS billed_month\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE s.name ILIKE '%Contract Invoices' AND o.skipped_at IS NULL\n),\npaid AS (\n  SELECT m.occurrence_id, MAX(t.post_date) AS paid_on\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t\n    ON t.account_id = m.txn_account_id AND t.post_date = m.txn_post_date\n   AND t.description = m.txn_description AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n  GROUP BY m.occurrence_id\n),\nbilled AS (\n  SELECT o.billed_month, o.amount, p.paid_on,\n         COALESCE(p.paid_on, CURRENT_DATE) - (o.billed_month + interval '1 month' - interval '1 day')::date AS days\n  FROM occ o LEFT JOIN paid p ON p.occurrence_id = o.id\n  WHERE (o.billed_month + interval '1 month')::date <= CURRENT_DATE\n),\nr AS (\n  SELECT billed_month, to_char(billed_month, 'Mon YY') || '  ' || to_char(amount, 'FM$999,990') AS label,\n         paid_on IS NOT NULL AS paid, days\n  FROM billed\n)\nSELECT CASE WHEN COUNT(*) = 0 THEN 'nothing owed'\n            ELSE to_char(SUM(amount), 'FM$999,990') || ' owed, oldest ' || MAX(days) || 'd' END\nFROM billed WHERE paid_on IS NULL",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "owed",
+        "label": "Owed",
+        "query": "WITH occ AS (\n  SELECT o.id, o.amount,\n         (date_trunc('month', MIN(s.active_from) OVER ()) + (ROW_NUMBER() OVER (ORDER BY o.due_date, o.id) - 1) * interval '1 month')::date AS billed_month\n  FROM cash_flow_commander.expected_occurrences o\n  JOIN cash_flow_commander.expected_series s ON s.id = o.series_id\n  WHERE s.name ILIKE '%Contract Invoices' AND o.skipped_at IS NULL\n),\npaid AS (\n  SELECT m.occurrence_id, MAX(t.post_date) AS paid_on\n  FROM cash_flow_commander.expected_matches m\n  JOIN cash_flow_commander.transactions t\n    ON t.account_id = m.txn_account_id AND t.post_date = m.txn_post_date\n   AND t.description = m.txn_description AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\n  WHERE m.voided_at IS NULL\n  GROUP BY m.occurrence_id\n),\nbilled AS (\n  SELECT o.billed_month, o.amount, p.paid_on,\n         COALESCE(p.paid_on, CURRENT_DATE) - (o.billed_month + interval '1 month' - interval '1 day')::date AS days\n  FROM occ o LEFT JOIN paid p ON p.occurrence_id = o.id\n  WHERE (o.billed_month + interval '1 month')::date <= CURRENT_DATE\n),\nr AS (\n  SELECT billed_month, to_char(billed_month, 'Mon YY') || '  ' || to_char(amount, 'FM$999,990') AS label,\n         paid_on IS NOT NULL AS paid, days\n  FROM billed\n)\nSELECT CASE WHEN COUNT(*) = 0 THEN 'nothing owed'\n            ELSE to_char(SUM(amount), 'FM$999,990') || ' owed, oldest ' || MAX(days) || 'd' END\nFROM billed WHERE paid_on IS NULL",
+        "refresh": 2,
+        "type": "query",
+        "sort": 0,
+        "options": [],
+        "current": {}
+      }
+    ]
+  },
+  "time": {
+    "from": "now-2y",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "timezone": "browser",
+  "title": "Cash Flow Commander — Contract Payments",
+  "uid": "cfc-contract-payments",
+  "version": 1
+}
