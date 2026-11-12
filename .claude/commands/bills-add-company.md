@@ -15,7 +15,10 @@ Follow these steps in order.
 
 ## 0. Orient
 
-**This command is deployed globally, so the session may not start in the repo.** Every path below is relative to the Cash Flow Commander clone — conventionally `~/GitHub/Cash_Flow_Commander`. Change into it before anything else; if it lives somewhere else on this host, find it and use that. Do not hardcode a machine-specific path here, and do not scaffold into an unrelated directory's `.claude/commands/`.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 ## 1. Interview
 
@@ -72,4 +75,4 @@ If accepted, with the user:
 1. Run the pre-commit hygiene checklist (bottom of `templates/provider-command.md`) against the new command file: no account numbers, no meter/ESI-style identifiers, no personal paths, no emails, no credentials — personal values only via `providers.local.yaml`. Fix any violations before proceeding.
 2. Check the generated command's report-and-verify section carries the download-location line from `templates/provider-command.md` (`uv run python src/downloads.py leftovers --provider <slug>` exits 0 and prints nothing), then run that check now: a discovery session writes probe downloads, and no later run looks for them.
 3. Tell the user `.claude/commands/bills-<slug>.md` is ready for review and commit. Do NOT commit anything yourself — the user reviews and commits.
-4. Finished per-provider commands are deployed globally like `/bills-rhythm`: add the new command's link entry beside that one in `personal_dev/personal_dev_manifest.yaml` yourself, and run the deploy once the user says to.
+4. The new command needs no deploy step: Claude reads it from this repo's `.claude/commands`, in threads started in this repo. On a machine whose global git ignore lists `.claude/commands/`, its first commit needs `git add -f .claude/commands/bills-<slug>.md`; tell the user so with the review. Later edits commit normally.

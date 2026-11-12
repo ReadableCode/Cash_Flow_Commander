@@ -19,11 +19,10 @@ still gets everything.
 
 ## 0. Orient
 
-**This command is deployed globally, so the session may not start in the repo.**
-Every path below is relative to the Cash Flow Commander clone. Before anything
-else, change into it — conventionally `~/GitHub/Cash_Flow_Commander`. If it is
-somewhere else on this host, find it and use that; do not run these commands
-from an unrelated directory, and do not hardcode a machine-specific path here.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 `transaction_downloader/land.sh` locates the repo from its own path, so it can
 be invoked from anywhere; the `uv run python ...` calls cannot.

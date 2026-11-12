@@ -12,12 +12,10 @@ source of truth; tables and CSVs are disposable projections that can be rebuilt.
 
 ## 0. Setup
 
-**This command is deployed globally, so the session may not start in the repo.**
-Every path below — `src/...`, `deploy/...`, `docs/...` — is relative to the Cash
-Flow Commander clone. Change into it first, conventionally
-`~/GitHub/Cash_Flow_Commander`. If it lives elsewhere on this host, find it and
-use that; do not run these commands from an unrelated directory, and do not
-hardcode a machine-specific path in this file.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `rhythm` entry from `providers.local.yaml` in the repo root. You need its

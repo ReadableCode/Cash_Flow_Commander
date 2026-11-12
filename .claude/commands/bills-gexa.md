@@ -12,10 +12,10 @@ disposable projections that can be rebuilt.
 
 ## 0. Orient
 
-**This command is deployed globally, so the session may not start in the repo.**
-Every path below is relative to the Cash Flow Commander clone, conventionally
-`~/GitHub/Cash_Flow_Commander`. Change into it first; if it lives elsewhere on
-this host, find it and use that.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 - Read `docs/LANDING.md` for the landing architecture and ingest conventions.
 - Load the `gexa` entry from `providers.local.yaml` (repo root, gitignored):

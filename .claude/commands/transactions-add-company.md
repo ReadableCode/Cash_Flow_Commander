@@ -29,7 +29,10 @@ Follow these steps in order.
 
 ## 0. Orient
 
-**This command is deployed globally, so the session may not start in the repo.** Every path below is relative to the Cash Flow Commander clone — conventionally `~/GitHub/Cash_Flow_Commander`. Change into it before anything else; if it lives somewhere else on this host, find it and use that. Do not hardcode a machine-specific path here, and do not scaffold into an unrelated directory's `.claude/commands/`.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 ## 1. Interview
 
@@ -111,7 +114,7 @@ There is deliberately no fill-in-the-blanks template — the onboarded commands
 what changes between sources. Copy the section skeleton and the
 provider-independent rules into `.claude/commands/transactions-<slug>.md`:
 
-- **0 Orient** — deployed globally, so locate the repo first; load config from
+- **0 Orient** — work in the checkout the session started in; load config from
   `providers.local.yaml`; STOP if the entry is absent.
 - **0.1 Plan** — planner invocation and argument handling (`full`, `YYYY-MM`).
   One download per planner window; never merge windows.
@@ -241,7 +244,8 @@ If accepted, with the user:
    runnable until the planner, capture, and parser support this source.
 4. Tell the user `.claude/commands/transactions-<slug>.md` is ready for review
    and commit. Do NOT commit anything yourself — the user reviews and commits.
-   Finished per-provider transaction commands are deployed globally like
-   `/transactions-chase`: add the new command's link entry beside that one in
-   `personal_dev/personal_dev_manifest.yaml` yourself, and run the deploy once
-   the user says to.
+   The new command needs no deploy step: Claude reads it from this repo's
+   `.claude/commands`, in threads started in this repo. On a machine whose
+   global git ignore lists `.claude/commands/`, its first commit needs
+   `git add -f .claude/commands/transactions-<slug>.md`; tell the user so with
+   the review. Later edits commit normally.

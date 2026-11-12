@@ -1,5 +1,6 @@
 ---
 description: Update everything in Cash Flow Commander in one run. Open every portal, sign in once, download from all of them at the same time with one agent each, then land, check and report
+parts: ["transactions-*", "bills-*", "!*-add-company"]
 argument-hint: [optional: provider slugs to limit the run, e.g. "elan citi"; "chain" to run one portal at a time]
 ---
 
@@ -20,10 +21,10 @@ no download taken by the wrong agent. See "What the runs have shown".
 
 ## 0. Orient
 
-**This command is deployed globally, so the session may not start in the repo.**
-Every path below is relative to the Cash Flow Commander clone, conventionally
-`~/GitHub/Cash_Flow_Commander`. Change into it first; if it lives elsewhere on
-this host, find it and use that.
+**This command is read from this repo's own `.claude/commands`, so the session starts in the
+Cash Flow Commander checkout: the clone, or a thread worktree of it.** Every path below is
+relative to the root of the checkout the session started in. Work there, and do not hardcode a
+machine-specific path here.
 
 - Read `docs/LANDING.md` and the project `CLAUDE.md`.
 - The providers of a run are every `.claude/commands/transactions-<slug>.md`
