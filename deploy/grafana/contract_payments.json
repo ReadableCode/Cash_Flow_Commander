@@ -30,6 +30,98 @@
         "type": "grafana-postgresql-datasource",
         "uid": "${DS_CASH_FLOW_COMMANDER}"
       },
+      "description": "Days since the most recent deposit matched to any contract invoice (every series named ...Contract Invoices) on the pairing board, with that deposit's date and amount. Same colors as the bars: green 45 days or less, yellow 46 to 60, orange 61 to 75, red over 75.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "unit": "suffix: days",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#73BF69",
+                "value": null
+              },
+              {
+                "color": "#FADE2A",
+                "value": 46
+              },
+              {
+                "color": "#FF9830",
+                "value": 61
+              },
+              {
+                "color": "#F2495C",
+                "value": 76
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last payment"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_CASH_FLOW_COMMANDER}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CURRENT_DATE - t.post_date AS \"Days since last payment\",\n       to_char(t.post_date, 'Mon FMDD, YYYY') || '  ' || to_char(t.amount, 'FM$999,990') AS \"Last payment\"\nFROM cash_flow_commander.expected_matches m\nJOIN cash_flow_commander.expected_occurrences o ON o.id = m.occurrence_id\nJOIN cash_flow_commander.expected_series s ON s.id = o.series_id\nJOIN cash_flow_commander.transactions t\n  ON t.account_id = m.txn_account_id AND t.post_date = m.txn_post_date\n AND t.description = m.txn_description AND t.amount = m.txn_amount AND t.occurrence = m.txn_occurrence\nWHERE s.name ILIKE '%Contract Invoices' AND m.voided_at IS NULL\nORDER BY t.post_date DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Since last payment",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_CASH_FLOW_COMMANDER}"
+      },
       "description": "One bar per billed month of the contract (every series named ...Contract Invoices): days from the end of that month until the deposit landed. Solid bars are paid. Hollow outlined bars are still owed and grow every day. The faint grey track behind every month runs to day 60, when payment is due, so a bar that runs past the track is overdue. Colors: green 45 days or less, yellow 46 to 60, orange 61 to 75 (a little overdue), red over 75 (way overdue). Billed month is inferred from the order of the series' occurrences; paid status follows the pairing board's matches.",
       "fieldConfig": {
         "defaults": {
@@ -358,7 +450,7 @@
         "h": 16,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "id": 1,
       "options": {
